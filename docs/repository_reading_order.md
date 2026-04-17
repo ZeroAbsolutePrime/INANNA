@@ -10,6 +10,7 @@ Use this order if you are reading the project for the first time.
 4. `docs/foundational_laws.md`
 5. `docs/system_ontology.md`
 6. `docs/governance_paradigm.md`
+7. `docs/security_and_guardianship.md`
 
 ## Full Path
 
@@ -19,13 +20,14 @@ Use this order if you are reading the project for the first time.
 4. `docs/foundational_laws.md`
 5. `docs/system_ontology.md`
 6. `docs/governance_paradigm.md`
-7. `docs/civic_horizon.md`
-8. `docs/architecture_for_many_bodies.md`
-9. `docs/first_proof_candidate.md`
-10. `docs/future_handoff.md`
-11. `docs/glossary.md`
-12. `docs/non_goals_and_current_limits.md`
-13. `docs/notion_transfer_ledger.md`
+7. `docs/security_and_guardianship.md`
+8. `docs/civic_horizon.md`
+9. `docs/architecture_for_many_bodies.md`
+10. `docs/first_proof_candidate.md`
+11. `docs/future_handoff.md`
+12. `docs/glossary.md`
+13. `docs/non_goals_and_current_limits.md`
+14. `docs/notion_transfer_ledger.md`
 
 ## Why This Order
 

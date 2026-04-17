@@ -26,9 +26,10 @@ Every agent should read in this order before proposing changes:
 4. `docs/foundational_laws.md`
 5. `docs/system_ontology.md`
 6. `docs/governance_paradigm.md`
-7. `docs/first_proof_candidate.md`
-8. `docs/future_handoff.md`
-9. `docs/non_goals_and_current_limits.md`
+7. `docs/security_and_guardianship.md`
+8. `docs/first_proof_candidate.md`
+9. `docs/future_handoff.md`
+10. `docs/non_goals_and_current_limits.md`
 
 ## Boundary Rules
 
@@ -39,6 +40,7 @@ Agents working in this repository must preserve the following boundaries:
 - This repo should remain clean of mixed implementation residue unless a legacy import is deliberate and documented.
 - No implementation proposal should silently overrule the law layer.
 - The model layer must never be described as sovereign over governance.
+- The guardianship layer must remain constitutional, not merely operational or tool-centric.
 
 ## Expected Agent Roles
 

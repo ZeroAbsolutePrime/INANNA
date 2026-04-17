@@ -20,6 +20,7 @@ The present phase is one of **architectural seed formation**:
 - define the law
 - clarify the beings
 - describe the governance paradigm
+- make the guardianship layer explicit
 - protect the civic horizon
 - prepare a clean handoff for future builders
 

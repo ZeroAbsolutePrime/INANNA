@@ -47,15 +47,19 @@ The project needs a first believable manifestation, but that manifestation must 
 
 Governance is central, not secondary. The project seeks dynamic, bounded, consent-aware, structurally explicit governance. Intelligence assists inside law; it does not define the law.
 
-### 6. Civic Life
+### 6. Guardianship
+
+The architecture requires a protective layer that is broader than technical security alone. Guardianship protects sovereignty, boundaries, consent, memory, proposal integrity, and plurality against hidden capture or drift.
+
+### 7. Civic Life
 
 The architecture serves living communal life, not only device administration. Its civic horizon includes learning, care, governance, culture, infrastructure, provisioning, habitat, and participation.
 
-### 7. Scaling
+### 8. Scaling
 
 INANNA NYX must be able to grow from one body to many bodies, many realms, and many communities without collapsing into a monolith or a scatter of disconnected fragments.
 
-### 8. Handoff
+### 9. Handoff
 
 The project must remain inheritable across time. Future builders may change the implementation stack, but they must not betray the deeper truths.
 

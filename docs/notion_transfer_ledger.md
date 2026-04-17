@@ -15,7 +15,7 @@ This ledger records which Notion pages informed the initial GitHub-native spine 
 
 ### Secondary Strategic Source
 
-- `02 ∴ MVP`
+- `02 MVP`
 
 ## How They Were Transferred
 
@@ -29,6 +29,7 @@ The Notion material was not copied as a literal export. It was reframed into rep
 - The law layer became `docs/foundational_laws.md`.
 - The ontology layer became `docs/system_ontology.md`.
 - Governance became `docs/governance_paradigm.md`.
+- Guardianship and security became `docs/security_and_guardianship.md`.
 - Civic direction became `docs/civic_horizon.md`.
 - Scaling became `docs/architecture_for_many_bodies.md`.
 - The older MVP became `docs/first_proof_candidate.md`.
@@ -39,6 +40,7 @@ The Notion material was not copied as a literal export. It was reframed into rep
 - The older MVP is preserved as secondary, not central.
 - The repository begins without legacy implementation imports.
 - The repo is optimized for future inheritance, not for literal Notion symmetry.
+- The guardianship layer is synthesized from NYX law/governance material plus older protection-related signals, rather than copied literally from mythic archive pages.
 
 ## Not Yet Transferred
 

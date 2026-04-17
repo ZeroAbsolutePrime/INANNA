@@ -39,11 +39,12 @@ This repository is not:
 3. [Foundational Laws](docs/foundational_laws.md)
 4. [System Ontology](docs/system_ontology.md)
 5. [Governance Paradigm](docs/governance_paradigm.md)
-6. [Civic Horizon](docs/civic_horizon.md)
-7. [Architecture for Many Bodies](docs/architecture_for_many_bodies.md)
-8. [First Proof Candidate](docs/first_proof_candidate.md)
-9. [Future Handoff](docs/future_handoff.md)
-10. [Repository Reading Order](docs/repository_reading_order.md)
+6. [Security And Guardianship](docs/security_and_guardianship.md)
+7. [Civic Horizon](docs/civic_horizon.md)
+8. [Architecture for Many Bodies](docs/architecture_for_many_bodies.md)
+9. [First Proof Candidate](docs/first_proof_candidate.md)
+10. [Future Handoff](docs/future_handoff.md)
+11. [Repository Reading Order](docs/repository_reading_order.md)
 
 ## Strategic Posture
 
@@ -60,6 +61,7 @@ The older practical MVP remains meaningful as one possible first manifestation, 
 - `docs/foundational_laws.md` — non-negotiable laws
 - `docs/system_ontology.md` — beings and layers
 - `docs/governance_paradigm.md` — governance above the model
+- `docs/security_and_guardianship.md` — constitutional protection and guardianship layer
 - `docs/civic_horizon.md` — civic horizon and eight areas
 - `docs/architecture_for_many_bodies.md` — plurality without fragmentation
 - `docs/first_proof_candidate.md` — the older MVP, preserved as secondary path
