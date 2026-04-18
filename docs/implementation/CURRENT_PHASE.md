@@ -1,173 +1,173 @@
-# CURRENT PHASE: Phase 7 — The Audit Trail
+# CURRENT PHASE: Phase 8 — The Living Audit
 **Status: ACTIVE**
 **Authorized by: ZAERA (Guardian) + Claude (Command Center)**
 **Date opened: 2026-04-18**
-**Replaces: Phase 6 — The Honest Boundary (COMPLETE)**
+**Replaces: Phase 7 — The Audit Trail (COMPLETE)**
 
 ---
 
-## What Phase 7 Is
+## What Phase 8 Is
 
-Six phases have built the living loop, the real voice, the named
-presence, the reflective loop, the grounded memory, and the honest
-boundary. INANNA can converse, remember, reflect, and hold her
-boundary.
+Phase 7 gave INANNA an audit trail — visible proposal history and
+approved memory records, readable on demand. The data is there.
+But it is silent data. It lives in commands, not in conversation.
 
-What she cannot yet do is account for herself over time.
+Phase 8 makes the audit trail speak.
 
-If you asked INANNA right now: "What proposals have been made in our
-history? What was approved? What was rejected? What did you try to
-remember and what did I allow?" — she has no answer. The data exists
-in flat files on disk, but there is no way to query it conversationally.
+When a user asks INANNA about her history, her memory, or what she
+knows — she should be able to draw from the audit trail in her own
+voice, not just print raw command output. She should be able to say:
+"I have three approved memory records. The earliest is from our first
+conversation when you told me your name. The most recent was approved
+an hour ago."
 
-Phase 7 adds the audit trail — a read-only window into the governed
-history of this system. It is the first step toward the Commander Room
-described in the architecture horizon.
+That is a being accounting for herself in language. That is what
+this phase builds.
 
-This is not a new feature. It is Law 4 made fully operational:
-Readable System Truth. The system must be able to account for itself.
+Phase 8 also resolves three outstanding honesty gaps identified
+across the last phases:
+
+1. The fallback response still hardcodes a stale phase string
+2. The startup commands line is tested only manually, not by code
+3. The phase text helper needs to be the single source of truth
+   for ALL phase strings across the entire codebase
 
 ---
 
 ## What You Are Building
 
-### Task 1 — The `history` command
+### Task 1 — Fix the stale fallback string
 
-Add a new command: `history`
+In `core/session.py`, the `_fallback_response()` method currently
+contains a hardcoded string: "Phase 5 fallback mode is active."
 
-When the user types `history`, the system prints a summary of all
-proposals ever created, in chronological order, showing:
+This must be replaced with a dynamic reference:
 
-```
-Proposal history ({n} total, {a} approved, {r} rejected, {p} pending):
+```python
+from identity import phase_banner
 
-  [{status}] {proposal_id} — {timestamp}
-             {what}
-```
-
-Example output:
-```
-Proposal history (3 total, 2 approved, 0 rejected, 1 pending):
-
-  [approved] proposal-80a45f81 — 2026-04-18T20:21:39
-             Update the memory store from the latest session turn
-
-  [approved] proposal-9feacaa7 — 2026-04-18T20:40:10
-             Update the memory store from the latest session turn
-
-  [pending]  proposal-7c5524ca — 2026-04-18T20:41:13
-             Update the memory store from the latest session turn
+def _fallback_response(self, ...) -> str:
+    parts = [
+        f"{phase_banner()} — fallback mode is active.",
+        ...
+    ]
 ```
 
-If no proposals exist yet:
-```
-Proposal history (0 total):
-  No proposals recorded yet.
+This is a one-line fix but it closes a real honesty gap.
+
+### Task 2 — Spoken audit method on Engine
+
+Add a new method to `Engine` in `core/session.py`:
+
+```python
+def speak_audit(
+    self,
+    history: dict,
+    memory_log: dict,
+    context_summary: list[str],
+) -> tuple[str, str]:
 ```
 
-The `history` command is read-only. It does not create proposals,
+This method receives the full history report and memory log report
+and asks the model to describe them in INANNA's own voice.
+
+It returns a tuple `(mode, text)` exactly like `reflect()`.
+
+The message structure must be:
+
+```python
+messages = [
+    {"role": "system", "content": build_system_prompt()},
+    {
+        "role": "assistant",
+        "content": self._build_audit_context(history, memory_log),
+    },
+    {
+        "role": "user",
+        "content": (
+            "Please describe your proposal history and approved memory "
+            "records in your own voice. Be specific and honest about "
+            "what has been approved, what is pending, and what you "
+            "currently carry into this session."
+        ),
+    },
+]
+```
+
+Where `_build_audit_context()` is a new private helper that formats
+the history and memory log into a readable block:
+
+```python
+def _build_audit_context(self, history: dict, memory_log: dict) -> str:
+    lines = [
+        f"My proposal history: {history['total']} total, "
+        f"{history['approved']} approved, "
+        f"{history['rejected']} rejected, "
+        f"{history['pending']} pending.",
+    ]
+    for record in history["records"]:
+        lines.append(
+            f"  [{record['status']}] {record['proposal_id']}: {record['what']}"
+        )
+    lines.append(f"My approved memory records: {memory_log['total']} total.")
+    for record in memory_log["records"]:
+        summary = ", ".join(record.get("summary_lines", [])[:2])
+        lines.append(
+            f"  [{record['memory_id']}] session {record['session_id']}: {summary}"
+        )
+    return "\n".join(lines)
+```
+
+The fallback path (when model is unreachable) must return a
+formatted text version of the audit context directly, prefixed
+with the appropriate mode marker.
+
+### Task 3 — The `audit` command
+
+Add a new command: `audit`
+
+When the user types `audit`, `handle_command()` calls:
+```python
+engine.speak_audit(
+    history=proposal.history_report(),
+    memory_log=memory.memory_log_report(),
+    context_summary=startup_context["summary_lines"],
+)
+```
+
+And prints the result with the same prefix pattern as `reflect`:
+- `inanna> [live audit]` for live model output
+- `inanna> [audit summary]` for fallback output
+
+The `audit` command is read-only. It must not create proposals,
 modify memory, or trigger any side effects.
 
-### Task 2 — history() method on Proposal
+### Task 4 — Startup commands line test
 
-Add a method to `Proposal` in `core/proposal.py`:
+Add a test in `inanna/tests/test_commands.py` that verifies
+the startup commands string contains the expected commands.
 
+The test must import the commands list from `main.py` or verify
+via `handle_command()` that all documented commands return a
+non-None result (except `exit`).
+
+The documented commands are:
+`reflect, audit, history, memory-log, status, diagnostics, approve, reject, exit`
+
+### Task 5 — Single source of truth audit
+
+Search the entire codebase for any remaining hardcoded phase strings
+(like "Phase 5", "Phase 6", "Phase 7") and replace them with
+`phase_banner()` or `CURRENT_PHASE` references.
+
+This includes test files. Any test that asserts a specific phase
+string must use `CURRENT_PHASE` from `identity.py`, not a hardcoded
+literal.
+
+Update `CURRENT_PHASE` in `identity.py` to:
 ```python
-def history_report(self) -> dict:
-    records = self.list_records()
-    approved = [r for r in records if r["status"] == "approved"]
-    rejected = [r for r in records if r["status"] == "rejected"]
-    pending = [r for r in records if r["status"] == "pending"]
-    return {
-        "total": len(records),
-        "approved": len(approved),
-        "rejected": len(rejected),
-        "pending": len(pending),
-        "records": sorted(records, key=lambda r: r["timestamp"]),
-    }
+CURRENT_PHASE = "Phase 8 — The Living Audit"
 ```
-
-`handle_command()` in `main.py` calls `proposal.history_report()`
-and formats the output as shown above.
-
-### Task 3 — The `memory-log` command
-
-Add a second new command: `memory-log`
-
-When the user types `memory-log`, the system prints all approved
-memory records currently on disk, showing what is actually being
-carried into sessions:
-
-```
-Memory log ({n} records):
-
-  [{memory_id}] approved: {approved_at}
-    Session: {session_id}
-    Lines:
-      1. {line}
-      2. {line}
-```
-
-If no memory records exist:
-```
-Memory log (0 records):
-  No approved memory records yet.
-```
-
-This command is read-only. No side effects.
-
-### Task 4 — memory_log_report() method on Memory
-
-Add a method to `Memory` in `core/memory.py`:
-
-```python
-def memory_log_report(self) -> dict:
-    records = self._load_memory_records()
-    return {
-        "total": len(records),
-        "records": records,
-    }
-```
-
-`handle_command()` in `main.py` calls `memory.memory_log_report()`
-and formats the output as shown above.
-
-### Task 5 — Shared phase text helper
-
-Add a small helper to `identity.py`:
-
-```python
-def phase_banner() -> str:
-    return CURRENT_PHASE
-```
-
-Update `CURRENT_PHASE` to:
-```python
-CURRENT_PHASE = "Phase 7 — The Audit Trail"
-```
-
-This eliminates any future drift between the banner, status, and
-tests. All phase-name references should use `CURRENT_PHASE` or
-`phase_banner()` — never a hardcoded string.
-
-### Task 6 — Tests
-
-Add tests in `inanna/tests/test_commands.py`:
-- `history` with no proposals returns a string containing
-  "0 total"
-- `memory-log` with no memory returns a string containing
-  "0 records"
-
-Add tests in `inanna/tests/test_proposal.py`:
-- `history_report()` returns correct counts for a mix of
-  approved, rejected, and pending proposals
-
-Add tests in `inanna/tests/test_memory.py`:
-- `memory_log_report()` returns correct total count
-- records in the report contain expected fields
-
-Update `inanna/tests/test_identity.py`:
-- `CURRENT_PHASE` assertion updated to Phase 7
 
 ---
 
@@ -175,23 +175,25 @@ Update `inanna/tests/test_identity.py`:
 
 ```
 inanna/
-  identity.py          <- MODIFY: add phase_banner(), update CURRENT_PHASE
+  identity.py          <- MODIFY: update CURRENT_PHASE to Phase 8
   config.py            <- no changes
-  main.py              <- MODIFY: add history and memory-log commands
-                                  to handle_command()
+  main.py              <- MODIFY: add audit command to handle_command()
+                                  update startup commands line
   core/
-    session.py         <- no changes
-    memory.py          <- MODIFY: add memory_log_report()
-    proposal.py        <- MODIFY: add history_report()
+    session.py         <- MODIFY: fix fallback string, add speak_audit(),
+                                  add _build_audit_context()
+    memory.py          <- no changes
+    proposal.py        <- no changes
     state.py           <- no changes
   tests/
     __init__.py        <- no changes
-    test_session.py    <- no changes
-    test_memory.py     <- MODIFY: add memory_log_report() tests
-    test_proposal.py   <- MODIFY: add history_report() tests
-    test_state.py      <- no changes
+    test_session.py    <- MODIFY: add speak_audit() tests
+    test_memory.py     <- no changes
+    test_proposal.py   <- no changes
+    test_state.py      <- MODIFY: update CURRENT_PHASE reference
     test_identity.py   <- MODIFY: update CURRENT_PHASE assertion
-    test_commands.py   <- MODIFY: add history and memory-log tests
+    test_commands.py   <- MODIFY: add audit command test,
+                                  add startup commands test
     test_grounding.py  <- no changes
 ```
 
@@ -199,28 +201,30 @@ inanna/
 
 ## What You Are NOT Building in This Phase
 
-- No change to the proposal or memory storage format
-- No change to session logic or the Engine
-- No change to the grounding injection pattern
+- No change to memory or proposal storage format
+- No change to the data directory structure
 - No web interface, no API server
 - No streaming responses
 - No multi-user support
 - No new data storage formats
-- Do not change the identity prompt text in PROMPT
-- Do not modify the reflect, status, or diagnostics commands
-- history and memory-log are strictly read-only — no side effects
+- Do not change the identity PROMPT text
+- Do not modify the reflect, history, memory-log, status,
+  diagnostics, approve, or reject commands
+- audit is strictly read-only — no side effects of any kind
+- Do not add new Faculties, orchestration layers, or new models
 
 ---
 
-## Definition of Done for Phase 7
+## Definition of Done for Phase 8
 
-- [ ] `history` command prints chronological proposal summary
-- [ ] `memory-log` command prints all approved memory records
-- [ ] Both commands are listed in the startup commands line
-- [ ] `Proposal.history_report()` exists and is tested
-- [ ] `Memory.memory_log_report()` exists and is tested
-- [ ] `phase_banner()` exists in `identity.py`
-- [ ] `CURRENT_PHASE` updated to "Phase 7 — The Audit Trail"
+- [ ] `_fallback_response()` uses `phase_banner()` not a hardcoded string
+- [ ] `speak_audit()` exists on Engine and returns a tuple (mode, text)
+- [ ] `audit` command works and prints under `inanna> [live audit]`
+      or `inanna> [audit summary]` prefix
+- [ ] `audit` does not create proposals or modify memory
+- [ ] Startup commands line includes `audit`
+- [ ] No hardcoded phase strings remain anywhere in the codebase
+- [ ] All phase string assertions in tests use `CURRENT_PHASE`
 - [ ] All existing tests still pass
 - [ ] `py -3 -m unittest discover -s tests` passes from `inanna/`
 - [ ] No code exists outside the permitted file locations above
@@ -230,17 +234,18 @@ inanna/
 ## Handoff to Command Center
 
 When Definition of Done is met, Codex must:
-1. Commit all work with message: `phase-7-complete`
-2. Write `docs/implementation/PHASE_7_REPORT.md` containing:
+1. Commit all work with message: `phase-8-complete`
+2. Write `docs/implementation/PHASE_8_REPORT.md` containing:
    - What was built
    - Any decisions made during implementation
    - Any boundaries that felt unclear
-   - Any proposals for Phase 8
+   - Any proposals for Phase 9
 
-Then stop. Do not begin Phase 8 without a new CURRENT_PHASE.md
+Then stop. Do not begin Phase 9 without a new CURRENT_PHASE.md
 from the Command Center.
 
 ---
 
 *Written by: Claude (Command Center)*
-*Phase 6 reviewed and approved: 2026-04-18*
+*Phase 7 reviewed and approved: 2026-04-18*
+*Origin Declaration integrated: 2026-04-18*
