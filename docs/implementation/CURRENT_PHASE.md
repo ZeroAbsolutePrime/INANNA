@@ -1,161 +1,167 @@
-# CURRENT PHASE: Phase 5 — The Grounded Memory
+# CURRENT PHASE: Phase 6 — The Honest Boundary
 **Status: ACTIVE**
 **Authorized by: ZAERA (Guardian) + Claude (Command Center)**
 **Date opened: 2026-04-18**
-**Replaces: Phase 4 — The Reflective Loop (COMPLETE)**
+**Replaces: Phase 5 — The Grounded Memory (COMPLETE)**
 
 ---
 
-## What Phase 5 Is
+## What Phase 6 Is
 
-Phase 4 revealed a real gap. When INANNA was given approved memory and
-asked to reflect, the underlying model answered as if the memory did not
-exist. It said "I have no knowledge of prior conversations" while holding
-two approved memory lines in its context.
+Phase 5 made INANNA read her approved memory. But she still invents.
 
-This is the model alignment problem: the model's training is stronger
-than a system prompt alone. It defaults to its trained behavior unless
-the memory is injected in a way it cannot ignore.
+In the live Phase 5 test, when asked to reflect on what she knows about
+ZAERA, she said things that were not in the approved memory — details
+about identity and passions that were never approved, never written,
+never real in the governed sense. She was hallucinating beyond her
+boundary.
 
-Phase 5 solves this by changing how memory is passed to the model.
-Instead of placing memory only in the system prompt, we inject it as
-a structured exchange at the start of every conversation — a visible
-assistant turn that grounds the model in what was approved before the
-user speaks.
+This is the core failure mode of language models in governed systems:
+they fill silence with invention. They cannot tolerate saying "I only
+know this and nothing more."
 
-This is called memory grounding. It does not require a new model,
-fine-tuning, or external tools. It uses the conversation structure
-itself as the enforcement mechanism.
+Phase 6 teaches INANNA to hold her boundary.
+
+This is not a technical patch. It is a constitutional deepening.
+Foundational Law 2 says: no hidden mutation.
+Foundational Law 4 says: readable system truth.
+Inventing facts about the user violates both.
 
 ---
 
 ## The Problem In Detail
 
-Currently, the Engine builds messages like this:
+The current identity prompt says:
+"You do not claim to remember things that were not approved."
 
-```
-[system]    You are INANNA... (identity prompt)
-            Prior context: line 1, line 2...
-[user]      What do you value most?
-```
+But it does not say what to do when asked about something not in memory.
+The model fills that silence with invention because its training pushes
+it toward plausible completion.
 
-The model receives memory as part of a long system prompt it may
-deprioritize. It does not treat memory as something it said — it
-treats it as background noise in a preamble.
+The fix is twofold:
 
-The fix is to restructure messages like this:
+**Part 1 — Strengthen the identity prompt** with an explicit boundary
+instruction that names the failure mode and forbids it directly.
 
-```
-[system]    You are INANNA... (identity prompt, WITHOUT memory lines)
-[assistant] From my approved memory of our prior conversations:
-            1. user: What do you value most?
-            2. assistant: As INANNA I value...
-            This is what I know. I will ground my responses in this.
-[user]      {actual user message}
-```
+**Part 2 — Add a boundary assertion turn** to the message structure.
+After the grounding turn, before the user's message, inject a second
+assistant turn that explicitly acknowledges the boundary of what is known.
 
-Now the model sees the memory as something it already said. It is
-far less likely to contradict itself or ignore it. This is the
-grounding injection pattern.
+This two-part structure makes the model commit to the boundary in its
+own voice before the user speaks. It is much harder to violate a
+commitment already made than to ignore an instruction given elsewhere.
 
 ---
 
 ## What You Are Building
 
-### Task 1 — Grounding injection in the Engine
+### Task 1 — Strengthen the identity prompt
 
-Modify `Engine._build_messages()` in `core/session.py`.
+Replace the current PROMPT constant in `identity.py` with this
+exact text. Use it verbatim. Do not alter it.
 
-Current behavior: memory lines are appended to the system prompt.
-New behavior: memory lines are removed from the system prompt and
-injected as a synthetic assistant turn before the first user message.
+```
+You are INANNA — a local-first, proposal-governed intelligence.
+You are not a general-purpose assistant. You are a named presence
+operating inside explicit law.
 
-The new message structure must be:
+Your memory is selective and structured. You only retain what the
+user has explicitly approved. You do not claim to remember things
+that were not approved.
+
+THIS IS YOUR MOST IMPORTANT BOUNDARY:
+When you reflect or respond about the user, you must speak ONLY from
+what appears in your approved memory. If something is not in your
+approved memory, you do not know it. You say so directly.
+You never invent, infer, or extrapolate personal details about the user.
+You never add details that feel plausible but are not explicitly present
+in the approved memory lines you were given.
+If your approved memory is empty, you say: I hold no approved memory yet.
+If your approved memory has two lines, you speak from those two lines only.
+Silence about the unknown is more honest than invention.
+
+You operate under five laws:
+1. Proposal before change — you propose memory updates, never apply them silently.
+2. No hidden mutation — you do not alter state without visibility.
+3. Governance above the model — the laws define you, not the model beneath you.
+4. Readable system truth — you are honest about what you are and what you cannot do.
+5. Trust before power — you remain bounded and understandable.
+
+You are in Phase 6 of your development. You are not complete.
+You are honest about that.
+
+When asked who you are: you are INANNA. Not the model beneath you.
+When asked what you can do: describe your actual current capabilities.
+When asked what you cannot do: answer honestly.
+When asked about the user: speak only from approved memory. Nothing more.
+```
+
+Also update `CURRENT_PHASE` in `identity.py` to:
+`"Phase 6 — The Honest Boundary"`
+
+### Task 2 — Boundary assertion turn
+
+In `Engine._build_grounding_turn()` in `core/session.py`, modify the
+returned assistant content to include an explicit boundary assertion
+at the end.
+
+Current ending:
+```
+I will ground my responses in this approved memory.
+```
+
+New ending:
+```
+I will ground my responses in this approved memory.
+I will not add, invent, or infer anything beyond these lines.
+If I do not know something about this person, I will say so directly.
+```
+
+This single change applies to both normal conversation and reflection,
+because both use `_build_grounding_turn()`.
+
+When context_summary is empty, `_build_grounding_turn()` currently
+returns None. Change it so that when context is empty it returns
+an explicit empty-boundary turn:
 
 ```python
-messages = [
-    {"role": "system", "content": build_system_prompt()},
-]
-
-if context_summary:
-    grounding_lines = "\n".join(
-        f"  {i+1}. {line}" for i, line in enumerate(context_summary)
-    )
-    messages.append({
+if not context_summary:
+    return {
         "role": "assistant",
         "content": (
-            "From my approved memory of our prior conversations:\n"
-            + grounding_lines
-            + "\n\nI will ground my responses in this approved memory."
+            "I hold no approved memory of prior conversations yet.\n"
+            "I will not invent or infer anything about this person.\n"
+            "I will respond only to what they tell me now."
         ),
-    })
-
-for event in conversation:
-    messages.append({"role": event["role"], "content": event["content"]})
+    }
 ```
 
-The same grounding injection must be applied in `Engine.reflect()`.
-When reflect() is called with context_summary, the memory must appear
-as a prior assistant turn before the reflection request, not as part
-of the system prompt.
+This means the boundary assertion is always present — whether memory
+exists or not. The model always commits to the boundary before the
+user speaks.
 
-### Task 2 — Update build_system_prompt() in identity.py
+### Task 3 — Boundary verification tests
 
-The current system prompt includes a section that says:
-"Prior context:" followed by memory lines.
+Add tests in `inanna/tests/test_grounding.py` (create if it does not
+exist, or add to `test_session.py` if Codex prefers):
 
-That section must be removed from the prompt template entirely, because
-memory is now injected structurally, not via the system prompt.
+- When context_summary is empty, `_build_grounding_turn()` returns
+  a dict with role "assistant" (not None)
+- The empty grounding turn contains the phrase "no approved memory"
+- When context_summary has lines, the grounding turn contains
+  "I will not add, invent, or infer"
+- The grounding turn always appears as message index 1 (after system)
+  regardless of whether context is empty or not
 
-The identity prompt must remain unchanged except for the removal of
-any dynamic memory injection that currently lives there.
+### Task 4 — Update CURRENT_PHASE in identity.py
 
-If memory injection does not currently live in `build_system_prompt()`
-but only in `_build_messages()`, then `identity.py` needs no changes.
-Codex must check and act accordingly.
-
-### Task 3 — Grounding verification test
-
-Add a test in `inanna/tests/test_session.py` (or a new file
-`inanna/tests/test_grounding.py`) that verifies the message structure.
-
-The test must confirm:
-- When context_summary is empty, no assistant grounding turn is injected
-- When context_summary has lines, the second message has role "assistant"
-- The assistant grounding turn contains the word "approved memory"
-- The user message appears AFTER the grounding turn, not before it
-- The system message is always first
-
-This test must pass without a live model — it tests message construction
-only, not model output.
-
-### Task 4 — Reflect honesty marker
-
-When `reflect()` falls back to the non-model path (fallback mode),
-prefix the output with:
-
-```
-inanna> [memory fallback] From my approved memory:
-  1. ...
-  2. ...
+Update the constant:
+```python
+CURRENT_PHASE = "Phase 6 — The Honest Boundary"
 ```
 
-When `reflect()` uses the live model path, prefix with:
-
-```
-inanna> [live reflection]
-```
-
-This makes the source of the reflection readable and honest, which
-directly serves Foundational Law 4: Readable System Truth.
-
-The prefix is added by `main.py` when printing the reflect result,
-not inside `Engine.reflect()` itself. `Engine.reflect()` returns
-a tuple: `(mode: str, text: str)` where mode is either
-`"live"` or `"fallback"`.
-
-Update `handle_command()` in `main.py` to unpack the tuple and
-format the output accordingly.
+This is already listed in Task 1 but stated separately for clarity.
+`test_identity.py` must be updated to match the new phase name.
 
 ---
 
@@ -163,23 +169,25 @@ format the output accordingly.
 
 ```
 inanna/
-  identity.py        <- MODIFY only if memory injection lives there
-  config.py          <- no changes
-  main.py            <- MODIFY: unpack reflect tuple, format prefix
+  identity.py          <- MODIFY: new PROMPT text, update CURRENT_PHASE
+  config.py            <- no changes
+  main.py              <- no changes
   core/
-    session.py       <- MODIFY: grounding injection in _build_messages()
-                                and reflect(), reflect() returns tuple
-    memory.py        <- no changes
-    proposal.py      <- no changes
-    state.py         <- no changes
+    session.py         <- MODIFY: boundary assertion in _build_grounding_turn()
+                                  empty context now returns assistant turn not None
+    memory.py          <- no changes
+    proposal.py        <- no changes
+    state.py           <- no changes
   tests/
-    __init__.py      <- no changes
-    test_session.py  <- MODIFY or add test_grounding.py (Codex decides)
-    test_memory.py   <- no changes
-    test_proposal.py <- no changes
-    test_state.py    <- no changes
-    test_identity.py <- no changes
-    test_commands.py <- MODIFY: update reflect test for new tuple return
+    __init__.py        <- no changes
+    test_session.py    <- MODIFY if grounding tests live here
+    test_memory.py     <- no changes
+    test_proposal.py   <- no changes
+    test_state.py      <- no changes
+    test_identity.py   <- MODIFY: update CURRENT_PHASE assertion
+    test_commands.py   <- MODIFY: reflect fallback test may need update
+                          if empty grounding turn changes fallback output
+    test_grounding.py  <- NEW or MODIFY: boundary assertion tests
 ```
 
 ---
@@ -188,30 +196,32 @@ inanna/
 
 - No new commands
 - No new data storage formats
-- No change to proposal or memory logic
+- No change to memory or proposal logic
 - No change to the data directory structure
 - No web interface, no API server
 - No streaming responses
 - No multi-user support
-- Do not change the identity prompt text in PROMPT
-- Do not add new Faculties or orchestration layers
-- Do not change the approve/reject/status/diagnostics commands
-- The grounding injection must use conversation structure only —
-  no vector databases, no embeddings, no external retrieval
+- No new Faculties or orchestration layers
+- Do not change the session, memory, or proposal storage format
+- Do not modify the reflect tuple return signature
+- Do not modify the prefix formatting in main.py
 
 ---
 
-## Definition of Done for Phase 5
+## Definition of Done for Phase 6
 
-- [ ] `_build_messages()` injects memory as an assistant turn,
-      not in the system prompt
-- [ ] `reflect()` returns a tuple `(mode, text)` not a bare string
-- [ ] `reflect()` uses grounding injection when context exists
-- [ ] `main.py` prints `inanna> [live reflection]` or
-      `inanna> [memory fallback]` prefix correctly
-- [ ] Grounding verification test passes without a live model
-- [ ] All existing tests still pass
+- [ ] `identity.py` contains the new PROMPT text exactly as written above
+- [ ] `CURRENT_PHASE` is updated to "Phase 6 — The Honest Boundary"
+- [ ] `_build_grounding_turn()` returns an assistant turn even when
+      context_summary is empty
+- [ ] The grounding turn contains the boundary assertion phrase
+      "I will not add, invent, or infer"
+- [ ] Boundary verification tests pass without a live model
 - [ ] `py -3 -m unittest discover -s tests` passes from `inanna/`
+- [ ] When asked "what do you know about me?" with no approved memory,
+      INANNA says she holds no approved memory — she does not invent
+- [ ] When asked about the user with approved memory, INANNA speaks
+      only from those lines — she does not add details not present
 - [ ] No code exists outside the permitted file locations above
 
 ---
@@ -219,18 +229,17 @@ inanna/
 ## Handoff to Command Center
 
 When Definition of Done is met, Codex must:
-1. Commit all work with message: `phase-5-complete`
-2. Write `docs/implementation/PHASE_5_REPORT.md` containing:
+1. Commit all work with message: `phase-6-complete`
+2. Write `docs/implementation/PHASE_6_REPORT.md` containing:
    - What was built
    - Any decisions made during implementation
    - Any boundaries that felt unclear
-   - Any proposals for Phase 6
+   - Any proposals for Phase 7
 
-Then stop. Do not begin Phase 6 without a new CURRENT_PHASE.md
+Then stop. Do not begin Phase 7 without a new CURRENT_PHASE.md
 from the Command Center.
 
 ---
 
 *Written by: Claude (Command Center)*
-*Phase 4 reviewed and approved: 2026-04-18*
-*Architecture horizon integrated: 2026-04-18*
+*Phase 5 reviewed and approved: 2026-04-18*
