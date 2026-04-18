@@ -59,10 +59,10 @@ class Session:
 
 
 class Engine:
-    # Phase 2 policy, still active in Phase 3: LM Studio is the explicit local
+    # Phase 2 policy, still active in Phase 4: LM Studio is the explicit local
     # model provider and uses its OpenAI-compatible endpoint at the configured
     # URL.
-    # Phase 2 policy, still active in Phase 3: approve and reject always
+    # Phase 2 policy, still active in Phase 4: approve and reject always
     # resolve the oldest pending proposal first; that rule is enforced in
     # Proposal.resolve_next.
     def __init__(
@@ -75,14 +75,16 @@ class Engine:
         self.model_name = (model_name or "").strip()
         self.api_key = (api_key or "").strip()
         self.fallback_mode = not (self.model_url and self.model_name)
+        self._connected = False
 
     @property
     def mode(self) -> str:
-        return "fallback" if self.fallback_mode else "connected"
+        return "connected" if self._connected else "fallback"
 
     def verify_connection(self) -> bool:
         if not (self.model_url and self.model_name):
             self.fallback_mode = True
+            self._connected = False
             return False
 
         try:
@@ -91,9 +93,11 @@ class Engine:
             )
         except (OSError, ValueError, error.URLError):
             self.fallback_mode = True
+            self._connected = False
             return False
 
         self.fallback_mode = False
+        self._connected = True
         return True
 
     def respond(
@@ -114,12 +118,48 @@ class Engine:
             return self._call_openai_compatible(messages)
         except (OSError, ValueError, error.URLError) as exc:
             self.fallback_mode = True
+            self._connected = False
             return self._fallback_response(
                 latest_user=latest_user,
                 context_summary=context_summary,
                 conversation=conversation,
                 note=f"Model call failed, so fallback mode continued safely: {exc}",
             )
+
+    def reflect(self, context_summary: list[str]) -> str:
+        if not context_summary:
+            return "I hold no approved memory of our prior conversations yet."
+        messages = [
+            {
+                "role": "system",
+                "content": build_system_prompt(),
+            },
+            {
+                "role": "user",
+                "content": (
+                    "Please reflect on what you currently remember about me "
+                    "and our conversation history, based only on your approved memory. "
+                    "Speak honestly about what you know and what you do not know."
+                ),
+            },
+        ]
+        if context_summary:
+            memory_block = "\n".join(context_summary)
+            messages.insert(
+                1,
+                {
+                    "role": "assistant",
+                    "content": f"From my approved memory:\n{memory_block}",
+                },
+            )
+        if self.model_url and self.model_name and self._connected:
+            try:
+                return self._call_openai_compatible(messages)
+            except Exception:
+                pass
+        return "From my approved memory I hold these lines:\n" + "\n".join(
+            f"  {line}" for line in context_summary
+        )
 
     def _latest_user_message(self, conversation: list[dict[str, str]]) -> str:
         for event in reversed(conversation):

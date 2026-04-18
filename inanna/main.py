@@ -57,6 +57,76 @@ def build_diagnostics_report(
     return "\n".join(lines)
 
 
+def handle_command(
+    command: str,
+    session: Session,
+    memory: Memory,
+    proposal: Proposal,
+    state_report: StateReport,
+    engine: Engine,
+    startup_context: dict,
+    config: Config,
+) -> str | None:
+    normalized = command.strip()
+    if not normalized:
+        return ""
+
+    lowered = normalized.lower()
+    if lowered in {"exit", "quit"}:
+        return None
+
+    if lowered == "status":
+        return state_report.render(
+            session_id=session.session_id,
+            mode=engine.mode,
+            memory_count=memory.memory_count(),
+            pending_count=proposal.pending_count(),
+        )
+
+    if lowered == "diagnostics":
+        return build_diagnostics_report(config=config, engine=engine, session=session)
+
+    if lowered == "reflect":
+        reflection = engine.reflect(startup_context["summary_lines"])
+        return f"inanna> {reflection}"
+
+    if lowered in {"approve", "reject"}:
+        resolved = proposal.resolve_next(lowered)
+        if not resolved:
+            return "No pending proposals."
+
+        if resolved["status"] == "approved":
+            payload = resolved["payload"]
+            memory.write_memory(
+                proposal_id=resolved["proposal_id"],
+                session_id=payload["session_id"],
+                summary_lines=payload["summary_lines"],
+                approved_at=resolved["resolved_at"],
+            )
+            return (
+                f"Approved {resolved['proposal_id']} and wrote a memory record for the next session."
+            )
+
+        return f"Rejected {resolved['proposal_id']}."
+
+    session.add_event("user", normalized)
+    assistant_text = engine.respond(
+        context_summary=startup_context["summary_lines"],
+        conversation=session.events,
+    )
+    session.add_event("assistant", assistant_text)
+
+    created = proposal.create(
+        what="Update the memory store from the latest session turn",
+        why="Keep the next session grounded in readable, user-approved context.",
+        payload=memory.build_candidate(
+            session_id=session.session_id,
+            events=session.events,
+        ),
+    )
+    return f"assistant> {assistant_text}\n{created['line']}"
+
+
 def main() -> None:
     ensure_directories()
 
@@ -81,14 +151,14 @@ def main() -> None:
         context_summary=startup_context["summary_lines"],
     )
 
-    print("Phase 3 - The Named Presence")
+    print("Phase 4 - The Reflective Loop")
     print(f"Session ID: {session.session_id}")
     print_startup_context(startup_context["summary_lines"])
-    print("Commands: status, diagnostics, approve, reject, exit")
+    print("Commands: reflect, status, diagnostics, approve, reject, exit")
 
     while True:
         try:
-            user_input = input("you> ").strip()
+            user_input = input("you> ")
         except EOFError:
             print()
             print("Session closed.")
@@ -98,67 +168,21 @@ def main() -> None:
             print("Session closed.")
             break
 
-        if not user_input:
-            continue
-
-        command = user_input.lower()
-        if command in {"exit", "quit"}:
+        result = handle_command(
+            command=user_input,
+            session=session,
+            memory=memory,
+            proposal=proposal,
+            state_report=state_report,
+            engine=engine,
+            startup_context=startup_context,
+            config=config,
+        )
+        if result is None:
             print("Session closed.")
             break
-
-        if command == "status":
-            print(
-                state_report.render(
-                    session_id=session.session_id,
-                    mode=engine.mode,
-                    memory_count=memory.memory_count(),
-                    pending_count=proposal.pending_count(),
-                )
-            )
-            continue
-
-        if command == "diagnostics":
-            print(build_diagnostics_report(config=config, engine=engine, session=session))
-            continue
-
-        if command in {"approve", "reject"}:
-            resolved = proposal.resolve_next(command)
-            if not resolved:
-                print("No pending proposals.")
-                continue
-
-            if resolved["status"] == "approved":
-                payload = resolved["payload"]
-                memory.write_memory(
-                    proposal_id=resolved["proposal_id"],
-                    session_id=payload["session_id"],
-                    summary_lines=payload["summary_lines"],
-                    approved_at=resolved["resolved_at"],
-                )
-                print(
-                    f"Approved {resolved['proposal_id']} and wrote a memory record for the next session."
-                )
-            else:
-                print(f"Rejected {resolved['proposal_id']}.")
-            continue
-
-        session.add_event("user", user_input)
-        assistant_text = engine.respond(
-            context_summary=startup_context["summary_lines"],
-            conversation=session.events,
-        )
-        print(f"assistant> {assistant_text}")
-        session.add_event("assistant", assistant_text)
-
-        created = proposal.create(
-            what="Update the memory store from the latest session turn",
-            why="Keep the next session grounded in readable, user-approved context.",
-            payload=memory.build_candidate(
-                session_id=session.session_id,
-                events=session.events,
-            ),
-        )
-        print(created["line"])
+        if result:
+            print(result)
 
 
 if __name__ == "__main__":

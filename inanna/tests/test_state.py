@@ -23,10 +23,11 @@ class StateTests(unittest.TestCase):
             "\n".join(
                 [
                     "Session: session-1",
+                    "Phase: Phase 4 — The Reflective Loop",
                     "Mode: connected",
                     "Memory records: 3",
                     "Pending proposals: 1",
-                    "Capabilities: respond, status, approve, reject, exit",
+                    "Capabilities: respond, reflect, status, diagnostics, approve, reject, exit",
                 ]
             ),
         )

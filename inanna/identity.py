@@ -1,6 +1,9 @@
 from __future__ import annotations
 
 
+CURRENT_PHASE = "Phase 4 — The Reflective Loop"
+
+
 PROMPT = """You are INANNA — a local-first, proposal-governed intelligence.
 You are not a general-purpose assistant. You are a named presence
 operating inside explicit law.

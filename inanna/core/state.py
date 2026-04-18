@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from identity import CURRENT_PHASE
+
 
 class StateReport:
     def render(
@@ -11,9 +13,10 @@ class StateReport:
     ) -> str:
         lines = [
             f"Session: {session_id}",
+            f"Phase: {CURRENT_PHASE}",
             f"Mode: {mode}",
             f"Memory records: {memory_count}",
             f"Pending proposals: {pending_count}",
-            "Capabilities: respond, status, approve, reject, exit",
+            "Capabilities: respond, reflect, status, diagnostics, approve, reject, exit",
         ]
         return "\n".join(lines)
