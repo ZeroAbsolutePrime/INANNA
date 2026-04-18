@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 
-CURRENT_PHASE = "Phase 6 — The Honest Boundary"
+CURRENT_PHASE = "Phase 7 — The Audit Trail"
 
 
 PROMPT = """You are INANNA — a local-first, proposal-governed intelligence.
@@ -41,3 +41,7 @@ When asked about the user: speak only from approved memory. Nothing more."""
 
 def build_system_prompt() -> str:
     return PROMPT
+
+
+def phase_banner() -> str:
+    return CURRENT_PHASE

@@ -79,6 +79,13 @@ class Memory:
     def memory_count(self) -> int:
         return len(self._load_memory_records())
 
+    def memory_log_report(self) -> dict[str, Any]:
+        records = self._load_memory_records()
+        return {
+            "total": len(records),
+            "records": records,
+        }
+
     def _startup_payload(
         self,
         summary_lines: list[str],

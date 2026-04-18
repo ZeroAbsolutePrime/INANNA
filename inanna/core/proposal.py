@@ -33,6 +33,19 @@ class Proposal:
     def pending_records(self) -> list[dict[str, Any]]:
         return [record for record in self.list_records() if record["status"] == "pending"]
 
+    def history_report(self) -> dict[str, Any]:
+        records = self.list_records()
+        approved = [record for record in records if record["status"] == "approved"]
+        rejected = [record for record in records if record["status"] == "rejected"]
+        pending = [record for record in records if record["status"] == "pending"]
+        return {
+            "total": len(records),
+            "approved": len(approved),
+            "rejected": len(rejected),
+            "pending": len(pending),
+            "records": sorted(records, key=lambda record: record["timestamp"]),
+        }
+
     def resolve_next(self, decision: str) -> dict[str, Any] | None:
         pending = sorted(self.pending_records(), key=lambda record: record["timestamp"])
         if not pending:

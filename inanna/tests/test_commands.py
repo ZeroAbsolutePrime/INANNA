@@ -65,6 +65,40 @@ class CommandTests(unittest.TestCase):
 
         self.assertIn("Model URL:", result)
 
+    def test_history_with_no_proposals_returns_zero_total(self) -> None:
+        session, memory, proposal, state_report, engine, startup_context, config = self.make_runtime()
+
+        result = handle_command(
+            "history",
+            session,
+            memory,
+            proposal,
+            state_report,
+            engine,
+            startup_context,
+            config,
+        )
+
+        self.assertIn("0 total", result)
+        self.assertIn("No proposals recorded yet.", result)
+
+    def test_memory_log_with_no_memory_returns_zero_records(self) -> None:
+        session, memory, proposal, state_report, engine, startup_context, config = self.make_runtime()
+
+        result = handle_command(
+            "memory-log",
+            session,
+            memory,
+            proposal,
+            state_report,
+            engine,
+            startup_context,
+            config,
+        )
+
+        self.assertIn("0 records", result)
+        self.assertIn("No approved memory records yet.", result)
+
     def test_reflect_with_empty_context_returns_no_memory_message(self) -> None:
         session, memory, proposal, state_report, engine, startup_context, config = self.make_runtime()
 

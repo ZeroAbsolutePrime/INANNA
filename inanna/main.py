@@ -9,6 +9,7 @@ from core.memory import Memory
 from core.proposal import Proposal
 from core.session import Engine, Session
 from core.state import StateReport
+from identity import phase_banner
 
 
 APP_ROOT = Path(__file__).resolve().parent
@@ -57,6 +58,55 @@ def build_diagnostics_report(
     return "\n".join(lines)
 
 
+def build_history_report(report: dict) -> str:
+    total = report["total"]
+    if total == 0:
+        return "Proposal history (0 total):\n  No proposals recorded yet."
+
+    lines = [
+        (
+            "Proposal history "
+            f"({total} total, {report['approved']} approved, "
+            f"{report['rejected']} rejected, {report['pending']} pending):"
+        ),
+        "",
+    ]
+
+    entries: list[str] = []
+    for record in report["records"]:
+        label = f"[{record['status']}]"
+        entries.append(
+            "\n".join(
+                [
+                    f"  {label:<11}{record['proposal_id']} — {record['timestamp']}",
+                    f"             {record['what']}",
+                ]
+            )
+        )
+    lines.append("\n\n".join(entries))
+    return "\n".join(lines)
+
+
+def build_memory_log_report(report: dict) -> str:
+    total = report["total"]
+    if total == 0:
+        return "Memory log (0 records):\n  No approved memory records yet."
+
+    lines = [f"Memory log ({total} records):", ""]
+    entries: list[str] = []
+    for record in report["records"]:
+        entry_lines = [
+            f"  [{record['memory_id']}] approved: {record['approved_at']}",
+            f"    Session: {record['session_id']}",
+            "    Lines:",
+        ]
+        for index, line in enumerate(record.get("summary_lines", []), start=1):
+            entry_lines.append(f"      {index}. {line}")
+        entries.append("\n".join(entry_lines))
+    lines.append("\n\n".join(entries))
+    return "\n".join(lines)
+
+
 def handle_command(
     command: str,
     session: Session,
@@ -85,6 +135,12 @@ def handle_command(
 
     if lowered == "diagnostics":
         return build_diagnostics_report(config=config, engine=engine, session=session)
+
+    if lowered == "history":
+        return build_history_report(proposal.history_report())
+
+    if lowered == "memory-log":
+        return build_memory_log_report(memory.memory_log_report())
 
     if lowered == "reflect":
         reflection_mode, reflection_text = engine.reflect(startup_context["summary_lines"])
@@ -153,10 +209,10 @@ def main() -> None:
         context_summary=startup_context["summary_lines"],
     )
 
-    print("Phase 5 - The Grounded Memory")
+    print(phase_banner())
     print(f"Session ID: {session.session_id}")
     print_startup_context(startup_context["summary_lines"])
-    print("Commands: reflect, status, diagnostics, approve, reject, exit")
+    print("Commands: reflect, history, memory-log, status, diagnostics, approve, reject, exit")
 
     while True:
         try:

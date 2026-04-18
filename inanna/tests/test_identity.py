@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import unittest
 
-from identity import CURRENT_PHASE, build_system_prompt
+from identity import CURRENT_PHASE, build_system_prompt, phase_banner
 
 
 EXPECTED_PROMPT = """You are INANNA — a local-first, proposal-governed intelligence.
@@ -57,8 +57,11 @@ class IdentityTests(unittest.TestCase):
         self.assertIn("proposal", lowered)
         self.assertTrue("law" in lowered or "laws" in lowered)
 
-    def test_current_phase_constant_matches_phase_six(self) -> None:
-        self.assertEqual(CURRENT_PHASE, "Phase 6 — The Honest Boundary")
+    def test_current_phase_constant_matches_phase_seven(self) -> None:
+        self.assertEqual(CURRENT_PHASE, "Phase 7 — The Audit Trail")
+
+    def test_phase_banner_returns_current_phase(self) -> None:
+        self.assertEqual(phase_banner(), CURRENT_PHASE)
 
 
 if __name__ == "__main__":

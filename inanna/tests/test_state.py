@@ -25,7 +25,7 @@ class StateTests(unittest.TestCase):
                     "Session: session-1",
                     # DECISION POINT: status reads the shared CURRENT_PHASE
                     # constant, so this expectation must move with the active phase.
-                    "Phase: Phase 6 — The Honest Boundary",
+                    "Phase: Phase 7 — The Audit Trail",
                     "Mode: connected",
                     "Memory records: 3",
                     "Pending proposals: 1",
