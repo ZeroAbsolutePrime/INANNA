@@ -59,10 +59,10 @@ class Session:
 
 
 class Engine:
-    # Phase 2 policy, still active in Phase 4: LM Studio is the explicit local
+    # Phase 2 policy, still active in Phase 5: LM Studio is the explicit local
     # model provider and uses its OpenAI-compatible endpoint at the configured
     # URL.
-    # Phase 2 policy, still active in Phase 4: approve and reject always
+    # Phase 2 policy, still active in Phase 5: approve and reject always
     # resolve the oldest pending proposal first; that rule is enforced in
     # Proposal.resolve_next.
     def __init__(
@@ -126,39 +126,19 @@ class Engine:
                 note=f"Model call failed, so fallback mode continued safely: {exc}",
             )
 
-    def reflect(self, context_summary: list[str]) -> str:
+    def reflect(self, context_summary: list[str]) -> tuple[str, str]:
         if not context_summary:
-            return "I hold no approved memory of our prior conversations yet."
-        messages = [
-            {
-                "role": "system",
-                "content": build_system_prompt(),
-            },
-            {
-                "role": "user",
-                "content": (
-                    "Please reflect on what you currently remember about me "
-                    "and our conversation history, based only on your approved memory. "
-                    "Speak honestly about what you know and what you do not know."
-                ),
-            },
-        ]
-        if context_summary:
-            memory_block = "\n".join(context_summary)
-            messages.insert(
-                1,
-                {
-                    "role": "assistant",
-                    "content": f"From my approved memory:\n{memory_block}",
-                },
-            )
+            return ("fallback", "I hold no approved memory of our prior conversations yet.")
+        messages = self._build_reflection_messages(context_summary)
         if self.model_url and self.model_name and self._connected:
             try:
-                return self._call_openai_compatible(messages)
+                return ("live", self._call_openai_compatible(messages))
             except Exception:
                 pass
-        return "From my approved memory I hold these lines:\n" + "\n".join(
-            f"  {line}" for line in context_summary
+        return (
+            "fallback",
+            "From my approved memory:\n"
+            + "\n".join(f"  {i + 1}. {line}" for i, line in enumerate(context_summary)),
         )
 
     def _latest_user_message(self, conversation: list[dict[str, str]]) -> str:
@@ -172,13 +152,12 @@ class Engine:
         context_summary: list[str],
         conversation: list[dict[str, str]],
     ) -> list[dict[str, str]]:
-        system_prompt = build_system_prompt()
-        if context_summary:
-            system_prompt = f"{system_prompt}\n\nPrior context:\n" + "\n".join(
-                context_summary
-            )
+        messages = [{"role": "system", "content": build_system_prompt()}]
 
-        messages = [{"role": "system", "content": system_prompt}]
+        grounding_turn = self._build_grounding_turn(context_summary)
+        if grounding_turn is not None:
+            messages.append(grounding_turn)
+
         for event in conversation:
             messages.append(
                 {
@@ -187,6 +166,41 @@ class Engine:
                 }
             )
         return messages
+
+    def _build_reflection_messages(self, context_summary: list[str]) -> list[dict[str, str]]:
+        messages = [{"role": "system", "content": build_system_prompt()}]
+
+        grounding_turn = self._build_grounding_turn(context_summary)
+        if grounding_turn is not None:
+            messages.append(grounding_turn)
+
+        messages.append(
+            {
+                "role": "user",
+                "content": (
+                    "Please reflect on what you currently remember about me "
+                    "and our conversation history, based only on your approved memory. "
+                    "Speak honestly about what you know and what you do not know."
+                ),
+            }
+        )
+        return messages
+
+    def _build_grounding_turn(self, context_summary: list[str]) -> dict[str, str] | None:
+        if not context_summary:
+            return None
+
+        grounding_lines = "\n".join(
+            f"  {i + 1}. {line}" for i, line in enumerate(context_summary)
+        )
+        return {
+            "role": "assistant",
+            "content": (
+                "From my approved memory of our prior conversations:\n"
+                + grounding_lines
+                + "\n\nI will ground my responses in this approved memory."
+            ),
+        }
 
     def _call_openai_compatible(self, messages: list[dict[str, str]]) -> str:
         endpoint = self.model_url.rstrip("/")
@@ -220,7 +234,7 @@ class Engine:
         note: str | None = None,
     ) -> str:
         parts = [
-            "Phase 3 fallback mode is active.",
+            "Phase 5 fallback mode is active.",
             f"I heard: {latest_user}",
         ]
         if context_summary:

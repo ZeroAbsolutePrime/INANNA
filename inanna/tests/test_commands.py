@@ -81,7 +81,7 @@ class CommandTests(unittest.TestCase):
 
         self.assertEqual(
             result,
-            "inanna> I hold no approved memory of our prior conversations yet.",
+            "inanna> [memory fallback] I hold no approved memory of our prior conversations yet.",
         )
         self.assertEqual(proposal.pending_count(), 0)
 

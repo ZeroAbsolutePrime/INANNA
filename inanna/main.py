@@ -87,8 +87,10 @@ def handle_command(
         return build_diagnostics_report(config=config, engine=engine, session=session)
 
     if lowered == "reflect":
-        reflection = engine.reflect(startup_context["summary_lines"])
-        return f"inanna> {reflection}"
+        reflection_mode, reflection_text = engine.reflect(startup_context["summary_lines"])
+        if reflection_mode == "live":
+            return f"inanna> [live reflection] {reflection_text}"
+        return f"inanna> [memory fallback] {reflection_text}"
 
     if lowered in {"approve", "reject"}:
         resolved = proposal.resolve_next(lowered)
@@ -151,7 +153,7 @@ def main() -> None:
         context_summary=startup_context["summary_lines"],
     )
 
-    print("Phase 4 - The Reflective Loop")
+    print("Phase 5 - The Grounded Memory")
     print(f"Session ID: {session.session_id}")
     print_startup_context(startup_context["summary_lines"])
     print("Commands: reflect, status, diagnostics, approve, reject, exit")

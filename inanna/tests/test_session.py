@@ -29,7 +29,7 @@ class SessionTests(unittest.TestCase):
             conversation=[{"role": "user", "content": "Is anyone there?"}],
         )
 
-        self.assertIn("Phase 3 fallback mode is active.", reply)
+        self.assertIn("Phase 5 fallback mode is active.", reply)
         self.assertIn("Is anyone there?", reply)
         self.assertIn("prior context", reply)
         self.assertEqual(engine.mode, "fallback")
@@ -61,13 +61,65 @@ class SessionTests(unittest.TestCase):
     def test_engine_uses_inanna_identity_prompt(self) -> None:
         engine = Engine()
         messages = engine._build_messages(
-            context_summary=["user: hello"],
+            context_summary=[],
             conversation=[{"role": "user", "content": "who are you?"}],
         )
 
-        self.assertTrue(messages[0]["content"].startswith(build_system_prompt()))
-        self.assertIn("you are INANNA", messages[0]["content"])
+        self.assertEqual(messages[0]["content"], build_system_prompt())
+        self.assertEqual(messages[0]["role"], "system")
         self.assertNotIn("DeepSeek Coder", messages[0]["content"])
+
+    def test_grounding_is_not_injected_when_context_is_empty(self) -> None:
+        engine = Engine()
+        messages = engine._build_messages(
+            context_summary=[],
+            conversation=[{"role": "user", "content": "hello"}],
+        )
+
+        self.assertEqual(messages[0]["role"], "system")
+        self.assertEqual(len(messages), 2)
+        self.assertEqual(messages[1]["role"], "user")
+
+    def test_grounding_is_injected_as_assistant_turn_before_user(self) -> None:
+        engine = Engine()
+        messages = engine._build_messages(
+            context_summary=["user: What do you value most?", "assistant: As INANNA I value..."],
+            conversation=[{"role": "user", "content": "tell me more"}],
+        )
+
+        self.assertEqual(messages[0]["role"], "system")
+        self.assertEqual(messages[1]["role"], "assistant")
+        self.assertIn("approved memory", messages[1]["content"])
+        self.assertEqual(messages[2]["role"], "user")
+        self.assertEqual(messages[2]["content"], "tell me more")
+
+    def test_reflect_uses_grounding_and_returns_live_tuple_when_connected(self) -> None:
+        engine = Engine(
+            model_url="http://localhost:1234/v1",
+            model_name="local-model",
+        )
+        engine._connected = True
+
+        with patch.object(engine, "_call_openai_compatible", return_value="grounded reflection") as mocked_call:
+            mode, text = engine.reflect(["user: hello", "assistant: welcome back"])
+
+        messages = mocked_call.call_args.args[0]
+        self.assertEqual(mode, "live")
+        self.assertEqual(text, "grounded reflection")
+        self.assertEqual(messages[0]["role"], "system")
+        self.assertEqual(messages[1]["role"], "assistant")
+        self.assertIn("approved memory", messages[1]["content"])
+        self.assertEqual(messages[2]["role"], "user")
+
+    def test_reflect_fallback_returns_numbered_memory_lines(self) -> None:
+        engine = Engine()
+
+        mode, text = engine.reflect(["user: hello", "assistant: welcome back"])
+
+        self.assertEqual(mode, "fallback")
+        self.assertIn("From my approved memory:", text)
+        self.assertIn("1. user: hello", text)
+        self.assertIn("2. assistant: welcome back", text)
 
 
 if __name__ == "__main__":
