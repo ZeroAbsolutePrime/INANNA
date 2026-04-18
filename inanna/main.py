@@ -19,12 +19,27 @@ DATA_ROOT = APP_ROOT / "data"
 SESSION_DIR = DATA_ROOT / "sessions"
 MEMORY_DIR = DATA_ROOT / "memory"
 PROPOSAL_DIR = DATA_ROOT / "proposals"
+STARTUP_COMMANDS = (
+    "reflect",
+    "audit",
+    "history",
+    "memory-log",
+    "status",
+    "diagnostics",
+    "approve",
+    "reject",
+    "exit",
+)
 
 
 def ensure_directories() -> None:
     SESSION_DIR.mkdir(parents=True, exist_ok=True)
     MEMORY_DIR.mkdir(parents=True, exist_ok=True)
     PROPOSAL_DIR.mkdir(parents=True, exist_ok=True)
+
+
+def startup_commands_line() -> str:
+    return f"Commands: {', '.join(STARTUP_COMMANDS)}"
 
 
 def print_startup_context(summary_lines: list[str]) -> None:
@@ -142,6 +157,16 @@ def handle_command(
     if lowered == "memory-log":
         return build_memory_log_report(memory.memory_log_report())
 
+    if lowered == "audit":
+        audit_mode, audit_text = engine.speak_audit(
+            history=proposal.history_report(),
+            memory_log=memory.memory_log_report(),
+            context_summary=startup_context["summary_lines"],
+        )
+        if audit_mode == "live":
+            return f"inanna> [live audit] {audit_text}"
+        return f"inanna> [audit summary] {audit_text}"
+
     if lowered == "reflect":
         reflection_mode, reflection_text = engine.reflect(startup_context["summary_lines"])
         if reflection_mode == "live":
@@ -212,7 +237,7 @@ def main() -> None:
     print(phase_banner())
     print(f"Session ID: {session.session_id}")
     print_startup_context(startup_context["summary_lines"])
-    print("Commands: reflect, history, memory-log, status, diagnostics, approve, reject, exit")
+    print(startup_commands_line())
 
     while True:
         try:

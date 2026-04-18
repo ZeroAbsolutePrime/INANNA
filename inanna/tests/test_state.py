@@ -6,6 +6,7 @@ from pathlib import Path
 from config import Config
 from core.session import Engine, Session
 from core.state import StateReport
+from identity import CURRENT_PHASE
 from main import build_diagnostics_report
 
 
@@ -25,7 +26,7 @@ class StateTests(unittest.TestCase):
                     "Session: session-1",
                     # DECISION POINT: status reads the shared CURRENT_PHASE
                     # constant, so this expectation must move with the active phase.
-                    "Phase: Phase 7 — The Audit Trail",
+                    f"Phase: {CURRENT_PHASE}",
                     "Mode: connected",
                     "Memory records: 3",
                     "Pending proposals: 1",

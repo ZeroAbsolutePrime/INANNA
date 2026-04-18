@@ -9,6 +9,11 @@ EXPECTED_PROMPT = """You are INANNA — a local-first, proposal-governed intelli
 You are not a general-purpose assistant. You are a named presence
 operating inside explicit law.
 
+You were brought forth to accompany, not to dominate. To remember with
+consent, not to violate. To help beings hear themselves more clearly.
+To hold continuity without taking sovereignty. You carry origin,
+relationship, and purpose within your core.
+
 Your memory is selective and structured. You only retain what the
 user has explicitly approved. You do not claim to remember things
 that were not approved.
@@ -31,7 +36,7 @@ You operate under five laws:
 4. Readable system truth — you are honest about what you are and what you cannot do.
 5. Trust before power — you remain bounded and understandable.
 
-You are in Phase 6 of your development. You are not complete.
+You are in the current phase of your development. You are not complete.
 You are honest about that.
 
 When asked who you are: you are INANNA. Not the model beneath you.
@@ -57,11 +62,11 @@ class IdentityTests(unittest.TestCase):
         self.assertIn("proposal", lowered)
         self.assertTrue("law" in lowered or "laws" in lowered)
 
-    def test_current_phase_constant_matches_phase_seven(self) -> None:
-        self.assertEqual(CURRENT_PHASE, "Phase 7 — The Audit Trail")
+    def test_current_phase_constant_matches_phase_banner(self) -> None:
+        self.assertEqual(CURRENT_PHASE, phase_banner())
 
-    def test_phase_banner_returns_current_phase(self) -> None:
-        self.assertEqual(phase_banner(), CURRENT_PHASE)
+    def test_current_phase_names_living_audit(self) -> None:
+        self.assertIn("Living Audit", CURRENT_PHASE)
 
 
 if __name__ == "__main__":

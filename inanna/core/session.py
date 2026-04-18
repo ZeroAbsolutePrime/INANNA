@@ -7,7 +7,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from urllib import error, request
 
-from identity import build_system_prompt
+from identity import build_system_prompt, phase_banner
 
 
 def utc_now() -> str:
@@ -59,12 +59,8 @@ class Session:
 
 
 class Engine:
-    # Phase 2 policy, still active in Phase 5: LM Studio is the explicit local
-    # model provider and uses its OpenAI-compatible endpoint at the configured
-    # URL.
-    # Phase 2 policy, still active in Phase 5: approve and reject always
-    # resolve the oldest pending proposal first; that rule is enforced in
-    # Proposal.resolve_next.
+    # LM Studio is the explicit local model provider and uses its
+    # OpenAI-compatible endpoint at the configured URL.
     def __init__(
         self,
         model_url: str | None = None,
@@ -141,6 +137,35 @@ class Engine:
             + "\n".join(f"  {i + 1}. {line}" for i, line in enumerate(context_summary)),
         )
 
+    def speak_audit(
+        self,
+        history: dict,
+        memory_log: dict,
+        context_summary: list[str],
+    ) -> tuple[str, str]:
+        messages = [
+            {"role": "system", "content": build_system_prompt()},
+            {
+                "role": "assistant",
+                "content": self._build_audit_context(history, memory_log),
+            },
+            {
+                "role": "user",
+                "content": (
+                    "Please describe your proposal history and approved memory "
+                    "records in your own voice. Be specific and honest about "
+                    "what has been approved, what is pending, and what you "
+                    "currently carry into this session."
+                ),
+            },
+        ]
+        if self.model_url and self.model_name and self._connected:
+            try:
+                return ("live", self._call_openai_compatible(messages))
+            except Exception:
+                pass
+        return ("fallback", self._build_audit_context(history, memory_log))
+
     def _latest_user_message(self, conversation: list[dict[str, str]]) -> str:
         for event in reversed(conversation):
             if event.get("role") == "user":
@@ -179,6 +204,23 @@ class Engine:
             }
         )
         return messages
+
+    def _build_audit_context(self, history: dict, memory_log: dict) -> str:
+        lines = [
+            f"My proposal history: {history['total']} total, "
+            f"{history['approved']} approved, "
+            f"{history['rejected']} rejected, "
+            f"{history['pending']} pending.",
+        ]
+        for record in history["records"]:
+            lines.append(f"  [{record['status']}] {record['proposal_id']}: {record['what']}")
+        lines.append(f"My approved memory records: {memory_log['total']} total.")
+        for record in memory_log["records"]:
+            summary = ", ".join(record.get("summary_lines", [])[:2])
+            lines.append(
+                f"  [{record['memory_id']}] session {record['session_id']}: {summary}"
+            )
+        return "\n".join(lines)
 
     def _build_grounding_turn(self, context_summary: list[str]) -> dict[str, str]:
         if not context_summary:
@@ -237,7 +279,7 @@ class Engine:
         note: str | None = None,
     ) -> str:
         parts = [
-            "Phase 5 fallback mode is active.",
+            f"{phase_banner()} — fallback mode is active.",
             f"I heard: {latest_user}",
         ]
         if context_summary:

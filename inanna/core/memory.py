@@ -20,9 +20,9 @@ class Memory:
         memory_records = self._load_memory_records()
         session_records = self._load_session_records()
 
-        # Phase 2 policy, still active in Phase 3: approved memory loads first,
-        # and raw session lines only supplement the startup context if approved
-        # memory provides fewer than max_lines entries.
+        # Approved memory loads first, and raw session lines only supplement
+        # the startup context if approved memory provides fewer than
+        # max_lines entries.
         summary_lines: list[str] = []
         for record in memory_records:
             for line in record.get("summary_lines", []):

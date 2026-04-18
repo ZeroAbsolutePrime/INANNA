@@ -51,8 +51,7 @@ class Proposal:
         if not pending:
             return None
 
-        # Phase 2 policy, still active in Phase 3: approve and reject always
-        # target the oldest pending proposal first.
+        # Approve and reject always target the oldest pending proposal first.
         record = pending[0]
         record["status"] = "approved" if decision == "approve" else "rejected"
         record["resolved_at"] = utc_now()

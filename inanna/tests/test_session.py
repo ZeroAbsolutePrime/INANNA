@@ -7,7 +7,7 @@ from tempfile import TemporaryDirectory
 from unittest.mock import patch
 
 from core.session import Engine, Session
-from identity import build_system_prompt
+from identity import build_system_prompt, phase_banner
 
 
 class SessionTests(unittest.TestCase):
@@ -29,7 +29,7 @@ class SessionTests(unittest.TestCase):
             conversation=[{"role": "user", "content": "Is anyone there?"}],
         )
 
-        self.assertIn("Phase 5 fallback mode is active.", reply)
+        self.assertIn(f"{phase_banner()} — fallback mode is active.", reply)
         self.assertIn("Is anyone there?", reply)
         self.assertIn("prior context", reply)
         self.assertEqual(engine.mode, "fallback")
@@ -124,6 +124,86 @@ class SessionTests(unittest.TestCase):
         self.assertIn("From my approved memory:", text)
         self.assertIn("1. user: hello", text)
         self.assertIn("2. assistant: welcome back", text)
+
+    def test_speak_audit_uses_audit_context_and_returns_live_tuple_when_connected(self) -> None:
+        engine = Engine(
+            model_url="http://localhost:1234/v1",
+            model_name="local-model",
+        )
+        engine._connected = True
+        history = {
+            "total": 2,
+            "approved": 1,
+            "rejected": 0,
+            "pending": 1,
+            "records": [
+                {
+                    "status": "approved",
+                    "proposal_id": "proposal-a",
+                    "what": "Update memory",
+                },
+                {
+                    "status": "pending",
+                    "proposal_id": "proposal-b",
+                    "what": "Update memory again",
+                },
+            ],
+        }
+        memory_log = {
+            "total": 1,
+            "records": [
+                {
+                    "memory_id": "proposal-a",
+                    "session_id": "session-1",
+                    "summary_lines": ["user: hello", "assistant: welcome back"],
+                }
+            ],
+        }
+
+        with patch.object(engine, "_call_openai_compatible", return_value="audit voice") as mocked_call:
+            mode, text = engine.speak_audit(history, memory_log, ["user: hello"])
+
+        messages = mocked_call.call_args.args[0]
+        self.assertEqual(mode, "live")
+        self.assertEqual(text, "audit voice")
+        self.assertEqual(messages[0]["role"], "system")
+        self.assertEqual(messages[1]["role"], "assistant")
+        self.assertIn("My proposal history: 2 total, 1 approved, 0 rejected, 1 pending.", messages[1]["content"])
+        self.assertIn("[proposal-a] session session-1: user: hello, assistant: welcome back", messages[1]["content"])
+        self.assertEqual(messages[2]["role"], "user")
+
+    def test_speak_audit_fallback_returns_formatted_audit_context(self) -> None:
+        engine = Engine()
+        history = {
+            "total": 1,
+            "approved": 1,
+            "rejected": 0,
+            "pending": 0,
+            "records": [
+                {
+                    "status": "approved",
+                    "proposal_id": "proposal-a",
+                    "what": "Update memory",
+                }
+            ],
+        }
+        memory_log = {
+            "total": 1,
+            "records": [
+                {
+                    "memory_id": "proposal-a",
+                    "session_id": "session-1",
+                    "summary_lines": ["user: hello"],
+                }
+            ],
+        }
+
+        mode, text = engine.speak_audit(history, memory_log, ["user: hello"])
+
+        self.assertEqual(mode, "fallback")
+        self.assertIn("My proposal history: 1 total, 1 approved, 0 rejected, 0 pending.", text)
+        self.assertIn("[approved] proposal-a: Update memory", text)
+        self.assertIn("My approved memory records: 1 total.", text)
 
 
 if __name__ == "__main__":

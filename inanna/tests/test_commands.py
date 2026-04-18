@@ -9,7 +9,7 @@ from core.memory import Memory
 from core.proposal import Proposal
 from core.session import Engine, Session
 from core.state import StateReport
-from main import handle_command
+from main import STARTUP_COMMANDS, handle_command, startup_commands_line
 
 
 class CommandTests(unittest.TestCase):
@@ -98,6 +98,44 @@ class CommandTests(unittest.TestCase):
 
         self.assertIn("0 records", result)
         self.assertIn("No approved memory records yet.", result)
+
+    def test_audit_returns_summary_prefix_and_has_no_side_effects(self) -> None:
+        session, memory, proposal, state_report, engine, startup_context, config = self.make_runtime()
+
+        result = handle_command(
+            "audit",
+            session,
+            memory,
+            proposal,
+            state_report,
+            engine,
+            startup_context,
+            config,
+        )
+
+        self.assertTrue(result.startswith("inanna> [audit summary] "))
+        self.assertEqual(proposal.pending_count(), 0)
+        self.assertEqual(memory.memory_count(), 0)
+
+    def test_startup_commands_line_lists_expected_commands(self) -> None:
+        self.assertEqual(
+            STARTUP_COMMANDS,
+            (
+                "reflect",
+                "audit",
+                "history",
+                "memory-log",
+                "status",
+                "diagnostics",
+                "approve",
+                "reject",
+                "exit",
+            ),
+        )
+        self.assertEqual(
+            startup_commands_line(),
+            "Commands: reflect, audit, history, memory-log, status, diagnostics, approve, reject, exit",
+        )
 
     def test_reflect_with_empty_context_returns_no_memory_message(self) -> None:
         session, memory, proposal, state_report, engine, startup_context, config = self.make_runtime()
