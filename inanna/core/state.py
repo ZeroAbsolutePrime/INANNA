@@ -19,13 +19,13 @@ class StateReport:
             "Not allowed right now:",
             "- Change memory without a proposal and user approval.",
             "- Change behavior without a logged proposal.",
-            "- Use web, database, authentication, deployment, or multi-user features in Phase 1.",
+            "- Use web, database, authentication, deployment, or multi-user features in the current phase.",
         ]
         return "\n".join(lines)
 
 
-# DECISION POINT: CURRENT_PHASE.md requires unit tests to pass but only lists
-# component file locations, so the basic tests live inside the component module.
+# Phase 2 policy: tests remain inside component modules until Phase 3 creates a
+# dedicated test layout.
 class StateComponentTests(unittest.TestCase):
     def test_report_is_honest_and_readable(self) -> None:
         report = StateReport().render(

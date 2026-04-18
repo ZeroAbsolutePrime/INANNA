@@ -1,8 +1,10 @@
 from __future__ import annotations
 
-import os
 from pathlib import Path
 
+from dotenv import load_dotenv
+
+from config import Config
 from core.memory import Memory
 from core.proposal import Proposal
 from core.session import Engine, Session
@@ -10,6 +12,8 @@ from core.state import StateReport
 
 
 APP_ROOT = Path(__file__).resolve().parent
+load_dotenv(APP_ROOT / ".env")
+
 DATA_ROOT = APP_ROOT / "data"
 SESSION_DIR = DATA_ROOT / "sessions"
 MEMORY_DIR = DATA_ROOT / "memory"
@@ -22,17 +26,34 @@ def ensure_directories() -> None:
     PROPOSAL_DIR.mkdir(parents=True, exist_ok=True)
 
 
+def print_startup_context(summary_lines: list[str]) -> None:
+    if not summary_lines:
+        print("Prior context (0 lines):")
+        print("  none yet.")
+        return
+
+    print(f"Prior context ({len(summary_lines)} lines):")
+    for index, line in enumerate(summary_lines, start=1):
+        print(f"  {index}. {line}")
+
+
 def main() -> None:
     ensure_directories()
 
+    config = Config.from_env()
     memory = Memory(session_dir=SESSION_DIR, memory_dir=MEMORY_DIR)
     proposal = Proposal(proposal_dir=PROPOSAL_DIR)
     state_report = StateReport()
     engine = Engine(
-        model_url=os.getenv("INANNA_MODEL_URL"),
-        model_name=os.getenv("INANNA_MODEL_NAME"),
-        api_key=os.getenv("INANNA_API_KEY"),
+        model_url=config.model_url,
+        model_name=config.model_name,
+        api_key=config.api_key,
     )
+
+    if engine.verify_connection():
+        print(f"Model connected: {config.model_name} at {config.model_url}")
+    else:
+        print("Model unreachable \u2014 fallback mode active. Set INANNA_MODEL_URL to connect.")
 
     startup_context = memory.load_startup_context()
     session = Session.create(
@@ -40,14 +61,9 @@ def main() -> None:
         context_summary=startup_context["summary_lines"],
     )
 
-    print("Phase 1 — The Living Loop")
+    print("Phase 2 - The Real Voice")
     print(f"Session ID: {session.session_id}")
-    if startup_context["summary_lines"]:
-        print("Startup context:")
-        for line in startup_context["summary_lines"]:
-            print(f"- {line}")
-    else:
-        print("Startup context: none yet.")
+    print_startup_context(startup_context["summary_lines"])
     print("Commands: status, approve, reject, exit")
 
     while True:

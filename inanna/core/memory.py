@@ -22,6 +22,9 @@ class Memory:
         memory_records = self._load_memory_records()
         session_records = self._load_session_records()
 
+        # Phase 2 policy: approved memory loads first, and raw session lines
+        # only supplement the startup context if approved memory provides fewer
+        # than max_lines entries.
         summary_lines: list[str] = []
         for record in memory_records:
             for line in record.get("summary_lines", []):
@@ -121,8 +124,8 @@ class Memory:
         return records
 
 
-# DECISION POINT: CURRENT_PHASE.md requires unit tests to pass but only lists
-# component file locations, so the basic tests live inside the component module.
+# Phase 2 policy: tests remain inside component modules until Phase 3 creates a
+# dedicated test layout.
 class MemoryComponentTests(unittest.TestCase):
     def test_startup_context_reads_sessions_and_memory(self) -> None:
         with TemporaryDirectory() as temp_dir:

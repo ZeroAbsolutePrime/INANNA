@@ -1,14 +1,13 @@
 from __future__ import annotations
 
 import json
-import os
 import unittest
 import uuid
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
 from tempfile import TemporaryDirectory
-from typing import Any
+from unittest.mock import patch
 from urllib import error, request
 
 
@@ -61,19 +60,36 @@ class Session:
 
 
 class Engine:
-    # DECISION POINT: The phase document requires a local or API-based model
-    # but does not define the provider, so this engine uses an
-    # OpenAI-compatible endpoint when configured and a deterministic local
-    # fallback otherwise.
+    # Phase 2 policy: LM Studio is the explicit local model provider and uses
+    # its OpenAI-compatible endpoint at the configured URL.
+    # Phase 2 policy: approve and reject always resolve the oldest pending
+    # proposal first; that rule is enforced in Proposal.resolve_next.
     def __init__(
         self,
         model_url: str | None = None,
         model_name: str | None = None,
         api_key: str | None = None,
     ) -> None:
-        self.model_url = (model_url or os.getenv("INANNA_MODEL_URL", "")).strip()
-        self.model_name = (model_name or os.getenv("INANNA_MODEL_NAME", "")).strip()
-        self.api_key = (api_key or os.getenv("INANNA_API_KEY", "")).strip()
+        self.model_url = (model_url or "").strip()
+        self.model_name = (model_name or "").strip()
+        self.api_key = (api_key or "").strip()
+        self.fallback_mode = not (self.model_url and self.model_name)
+
+    def verify_connection(self) -> bool:
+        if not (self.model_url and self.model_name):
+            self.fallback_mode = True
+            return False
+
+        try:
+            self._call_openai_compatible(
+                [{"role": "user", "content": "Connection check. Reply with ok."}]
+            )
+        except (OSError, ValueError, error.URLError):
+            self.fallback_mode = True
+            return False
+
+        self.fallback_mode = False
+        return True
 
     def respond(
         self,
@@ -81,24 +97,24 @@ class Engine:
         conversation: list[dict[str, str]],
     ) -> str:
         latest_user = self._latest_user_message(conversation)
+        if self.fallback_mode or not (self.model_url and self.model_name):
+            return self._fallback_response(
+                latest_user=latest_user,
+                context_summary=context_summary,
+                conversation=conversation,
+            )
+
         messages = self._build_messages(context_summary, conversation)
-
-        if self.model_url and self.model_name:
-            try:
-                return self._call_openai_compatible(messages)
-            except (OSError, ValueError, error.URLError) as exc:
-                return self._fallback_response(
-                    latest_user=latest_user,
-                    context_summary=context_summary,
-                    conversation=conversation,
-                    note=f"Model call failed, so fallback mode continued safely: {exc}",
-                )
-
-        return self._fallback_response(
-            latest_user=latest_user,
-            context_summary=context_summary,
-            conversation=conversation,
-        )
+        try:
+            return self._call_openai_compatible(messages)
+        except (OSError, ValueError, error.URLError) as exc:
+            self.fallback_mode = True
+            return self._fallback_response(
+                latest_user=latest_user,
+                context_summary=context_summary,
+                conversation=conversation,
+                note=f"Model call failed, so fallback mode continued safely: {exc}",
+            )
 
     def _latest_user_message(self, conversation: list[dict[str, str]]) -> str:
         for event in reversed(conversation):
@@ -112,7 +128,7 @@ class Engine:
         conversation: list[dict[str, str]],
     ) -> list[dict[str, str]]:
         system_lines = [
-            "You are the Phase 1 living loop companion.",
+            "You are the Phase 2 real voice companion.",
             "Keep responses clear, brief, and grounded in readable truth.",
             "Do not claim abilities beyond this session.",
         ]
@@ -163,7 +179,7 @@ class Engine:
         note: str | None = None,
     ) -> str:
         parts = [
-            "Phase 1 fallback mode is active.",
+            "Phase 2 fallback mode is active.",
             f"I heard: {latest_user}",
         ]
         if context_summary:
@@ -177,8 +193,8 @@ class Engine:
         return " ".join(parts)
 
 
-# DECISION POINT: CURRENT_PHASE.md requires unit tests to pass but only lists
-# component file locations, so the basic tests live inside the component module.
+# Phase 2 policy: tests remain inside component modules until Phase 3 creates a
+# dedicated test layout.
 class SessionComponentTests(unittest.TestCase):
     def test_session_persists_context_and_events(self) -> None:
         with TemporaryDirectory() as temp_dir:
@@ -198,9 +214,33 @@ class SessionComponentTests(unittest.TestCase):
             conversation=[{"role": "user", "content": "Is anyone there?"}],
         )
 
-        self.assertIn("Phase 1 fallback mode is active.", reply)
+        self.assertIn("Phase 2 fallback mode is active.", reply)
         self.assertIn("Is anyone there?", reply)
         self.assertIn("prior context", reply)
+
+    def test_verify_connection_enables_model_mode_on_success(self) -> None:
+        engine = Engine(
+            model_url="http://localhost:1234/v1",
+            model_name="local-model",
+        )
+
+        with patch.object(engine, "_call_openai_compatible", return_value="ok"):
+            connected = engine.verify_connection()
+
+        self.assertTrue(connected)
+        self.assertFalse(engine.fallback_mode)
+
+    def test_verify_connection_falls_back_when_model_is_unreachable(self) -> None:
+        engine = Engine(
+            model_url="http://localhost:1234/v1",
+            model_name="local-model",
+        )
+
+        with patch.object(engine, "_call_openai_compatible", side_effect=OSError("down")):
+            connected = engine.verify_connection()
+
+        self.assertFalse(connected)
+        self.assertTrue(engine.fallback_mode)
 
 
 if __name__ == "__main__":
