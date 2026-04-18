@@ -86,6 +86,13 @@ class Memory:
             "records": records,
         }
 
+    def delete_memory_record(self, memory_id: str) -> bool:
+        memory_path = self.memory_dir / f"{memory_id}.json"
+        if not memory_path.exists():
+            return False
+        memory_path.unlink()
+        return True
+
     def _startup_payload(
         self,
         summary_lines: list[str],

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from datetime import datetime, timezone
 from pathlib import Path
 
 from dotenv import load_dotenv
@@ -28,6 +29,7 @@ STARTUP_COMMANDS = (
     "diagnostics",
     "approve",
     "reject",
+    "forget",
     "exit",
 )
 
@@ -122,6 +124,64 @@ def build_memory_log_report(report: dict) -> str:
     return "\n".join(lines)
 
 
+def _resolve_inline_proposal(
+    proposal: Proposal,
+    created: dict,
+    decision: str,
+) -> dict:
+    resolved = {
+        **created,
+        "status": "approved" if decision == "approve" else "rejected",
+        "resolved_at": datetime.now(timezone.utc).isoformat(),
+    }
+    # The forget flow must resolve the specific proposal it just created,
+    # even if older unrelated pending proposals exist.
+    proposal._write_record(resolved)
+    return {**resolved, "line": proposal.format_line(resolved)}
+
+
+def run_forget_flow(
+    memory: Memory,
+    proposal: Proposal,
+) -> str:
+    report = memory.memory_log_report()
+    print(build_memory_log_report(report))
+
+    memory_id = input('Which memory record to remove? Enter memory_id or "cancel":').strip()
+    if memory_id.lower() == "cancel":
+        return "No memory removed."
+
+    record = next(
+        (item for item in report["records"] if item.get("memory_id") == memory_id),
+        None,
+    )
+    if record is None:
+        return "Memory record not found."
+
+    created = proposal.create(
+        what=f"Remove memory record {memory_id} from approved memory",
+        why="User requested removal — sovereignty over personal memory",
+        payload={"memory_id": memory_id, "action": "forget"},
+    )
+    print(created["line"])
+
+    while True:
+        decision = input('Type "approve" to confirm removal or "reject" to cancel:').strip().lower()
+        if decision in {"approve", "reject"}:
+            break
+
+    if decision == "reject":
+        _resolve_inline_proposal(proposal, created, decision)
+        return "Memory record retained."
+
+    if not memory.delete_memory_record(memory_id):
+        _resolve_inline_proposal(proposal, created, "reject")
+        return "Memory record not found."
+
+    _resolve_inline_proposal(proposal, created, "approve")
+    return f"Memory record {memory_id} removed."
+
+
 def handle_command(
     command: str,
     session: Session,
@@ -156,6 +216,9 @@ def handle_command(
 
     if lowered == "memory-log":
         return build_memory_log_report(memory.memory_log_report())
+
+    if lowered == "forget":
+        return run_forget_flow(memory=memory, proposal=proposal)
 
     if lowered == "audit":
         audit_mode, audit_text = engine.speak_audit(

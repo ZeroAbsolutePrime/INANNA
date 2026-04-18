@@ -30,7 +30,11 @@ class StateTests(unittest.TestCase):
                     "Mode: connected",
                     "Memory records: 3",
                     "Pending proposals: 1",
-                    "Capabilities: respond, reflect, status, diagnostics, approve, reject, exit",
+                    (
+                        "Capabilities: respond, reflect, audit, history, "
+                        "memory-log, status, diagnostics, approve, reject, "
+                        "forget, exit"
+                    ),
                 ]
             ),
         )

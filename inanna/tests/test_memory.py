@@ -92,6 +92,48 @@ class MemoryTests(unittest.TestCase):
         self.assertEqual(report["records"][0]["approved_at"], "2026-04-18T20:21:39")
         self.assertEqual(report["records"][0]["summary_lines"], ["user: hello"])
 
+    def test_delete_memory_record_returns_true_and_decreases_count(self) -> None:
+        with TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            session_dir = root / "sessions"
+            memory_dir = root / "memory"
+            session_dir.mkdir()
+            memory_dir.mkdir()
+
+            memory = Memory(session_dir=session_dir, memory_dir=memory_dir)
+            memory.write_memory(
+                proposal_id="proposal-a",
+                session_id="session-1",
+                summary_lines=["user: hello"],
+                approved_at="2026-04-18T20:21:39",
+            )
+            memory.write_memory(
+                proposal_id="proposal-b",
+                session_id="session-2",
+                summary_lines=["assistant: welcome back"],
+                approved_at="2026-04-18T20:40:10",
+            )
+
+            deleted = memory.delete_memory_record("proposal-a")
+            remaining = memory.memory_count()
+
+        self.assertTrue(deleted)
+        self.assertEqual(remaining, 1)
+
+    def test_delete_memory_record_returns_false_when_record_is_missing(self) -> None:
+        with TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            session_dir = root / "sessions"
+            memory_dir = root / "memory"
+            session_dir.mkdir()
+            memory_dir.mkdir()
+
+            memory = Memory(session_dir=session_dir, memory_dir=memory_dir)
+
+            deleted = memory.delete_memory_record("proposal-missing")
+
+        self.assertFalse(deleted)
+
 
 if __name__ == "__main__":
     unittest.main()

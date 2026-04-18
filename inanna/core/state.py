@@ -17,6 +17,9 @@ class StateReport:
             f"Mode: {mode}",
             f"Memory records: {memory_count}",
             f"Pending proposals: {pending_count}",
-            "Capabilities: respond, reflect, status, diagnostics, approve, reject, exit",
+            (
+                "Capabilities: respond, reflect, audit, history, memory-log, "
+                "status, diagnostics, approve, reject, forget, exit"
+            ),
         ]
         return "\n".join(lines)

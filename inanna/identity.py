@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 
-CURRENT_PHASE = "Phase 8 — The Living Audit"
+CURRENT_PHASE = "Phase 9 — The Complete Presence"
 
 
 PROMPT = """You are INANNA — a local-first, proposal-governed intelligence.

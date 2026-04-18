@@ -1,8 +1,11 @@
 from __future__ import annotations
 
+import io
 import unittest
+from contextlib import redirect_stdout
 from pathlib import Path
 from tempfile import TemporaryDirectory
+from unittest.mock import patch
 
 from config import Config
 from core.memory import Memory
@@ -33,6 +36,46 @@ class CommandTests(unittest.TestCase):
         config = Config(model_url="", model_name="", api_key="")
         return session, memory, proposal, state_report, engine, startup_context, config
 
+    def write_memory_record(self, memory: Memory, memory_id: str = "proposal-a") -> None:
+        memory.write_memory(
+            proposal_id=memory_id,
+            session_id="session-1",
+            summary_lines=["user: hello", "assistant: welcome back"],
+            approved_at="2026-04-19T10:00:00",
+        )
+
+    def run_forget_command(
+        self,
+        session: Session,
+        memory: Memory,
+        proposal: Proposal,
+        state_report: StateReport,
+        engine: Engine,
+        startup_context: dict,
+        config: Config,
+        answers: list[str],
+    ) -> tuple[str, str, list[str]]:
+        prompts: list[str] = []
+        answer_iter = iter(answers)
+
+        def fake_input(prompt: str) -> str:
+            prompts.append(prompt)
+            return next(answer_iter)
+
+        output = io.StringIO()
+        with patch("builtins.input", side_effect=fake_input), redirect_stdout(output):
+            result = handle_command(
+                "forget",
+                session,
+                memory,
+                proposal,
+                state_report,
+                engine,
+                startup_context,
+                config,
+            )
+        return result, output.getvalue(), prompts
+
     def test_status_returns_session_line(self) -> None:
         session, memory, proposal, state_report, engine, startup_context, config = self.make_runtime()
 
@@ -48,6 +91,7 @@ class CommandTests(unittest.TestCase):
         )
 
         self.assertIn("Session:", result)
+        self.assertIn("forget", result)
 
     def test_diagnostics_returns_model_url_line(self) -> None:
         session, memory, proposal, state_report, engine, startup_context, config = self.make_runtime()
@@ -129,13 +173,97 @@ class CommandTests(unittest.TestCase):
                 "diagnostics",
                 "approve",
                 "reject",
+                "forget",
                 "exit",
             ),
         )
         self.assertEqual(
             startup_commands_line(),
-            "Commands: reflect, audit, history, memory-log, status, diagnostics, approve, reject, exit",
+            "Commands: reflect, audit, history, memory-log, status, diagnostics, approve, reject, forget, exit",
         )
+
+    def test_forget_cancel_returns_no_memory_removed(self) -> None:
+        session, memory, proposal, state_report, engine, startup_context, config = self.make_runtime()
+        self.write_memory_record(memory)
+
+        result, output, prompts = self.run_forget_command(
+            session,
+            memory,
+            proposal,
+            state_report,
+            engine,
+            startup_context,
+            config,
+            ["cancel"],
+        )
+
+        self.assertEqual(result, "No memory removed.")
+        self.assertIn("Memory log (1 records):", output)
+        self.assertEqual(
+            prompts,
+            ['Which memory record to remove? Enter memory_id or "cancel":'],
+        )
+        self.assertEqual(memory.memory_count(), 1)
+        self.assertEqual(proposal.history_report()["total"], 0)
+
+    def test_forget_approve_removes_memory_after_inline_proposal(self) -> None:
+        session, memory, proposal, state_report, engine, startup_context, config = self.make_runtime()
+        self.write_memory_record(memory, "proposal-a")
+
+        result, output, prompts = self.run_forget_command(
+            session,
+            memory,
+            proposal,
+            state_report,
+            engine,
+            startup_context,
+            config,
+            ["proposal-a", "approve"],
+        )
+
+        history = proposal.history_report()
+        self.assertEqual(result, "Memory record proposal-a removed.")
+        self.assertIn("[PROPOSAL]", output)
+        self.assertEqual(
+            prompts,
+            [
+                'Which memory record to remove? Enter memory_id or "cancel":',
+                'Type "approve" to confirm removal or "reject" to cancel:',
+            ],
+        )
+        self.assertEqual(memory.memory_count(), 0)
+        self.assertEqual(history["approved"], 1)
+        self.assertEqual(history["rejected"], 0)
+        self.assertEqual(history["records"][0]["payload"], {"memory_id": "proposal-a", "action": "forget"})
+
+    def test_forget_reject_retains_memory(self) -> None:
+        session, memory, proposal, state_report, engine, startup_context, config = self.make_runtime()
+        self.write_memory_record(memory, "proposal-a")
+
+        result, output, prompts = self.run_forget_command(
+            session,
+            memory,
+            proposal,
+            state_report,
+            engine,
+            startup_context,
+            config,
+            ["proposal-a", "reject"],
+        )
+
+        history = proposal.history_report()
+        self.assertEqual(result, "Memory record retained.")
+        self.assertIn("[PROPOSAL]", output)
+        self.assertEqual(
+            prompts,
+            [
+                'Which memory record to remove? Enter memory_id or "cancel":',
+                'Type "approve" to confirm removal or "reject" to cancel:',
+            ],
+        )
+        self.assertEqual(memory.memory_count(), 1)
+        self.assertEqual(history["approved"], 0)
+        self.assertEqual(history["rejected"], 1)
 
     def test_reflect_with_empty_context_returns_no_memory_message(self) -> None:
         session, memory, proposal, state_report, engine, startup_context, config = self.make_runtime()

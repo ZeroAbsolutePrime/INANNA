@@ -65,8 +65,8 @@ class IdentityTests(unittest.TestCase):
     def test_current_phase_constant_matches_phase_banner(self) -> None:
         self.assertEqual(CURRENT_PHASE, phase_banner())
 
-    def test_current_phase_names_living_audit(self) -> None:
-        self.assertIn("Living Audit", CURRENT_PHASE)
+    def test_current_phase_names_complete_presence(self) -> None:
+        self.assertIn("Complete Presence", CURRENT_PHASE)
 
 
 if __name__ == "__main__":
