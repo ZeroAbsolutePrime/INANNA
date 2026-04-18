@@ -23,7 +23,9 @@ class StateTests(unittest.TestCase):
             "\n".join(
                 [
                     "Session: session-1",
-                    "Phase: Phase 4 — The Reflective Loop",
+                    # DECISION POINT: status reads the shared CURRENT_PHASE
+                    # constant, so this expectation must move with the active phase.
+                    "Phase: Phase 6 — The Honest Boundary",
                     "Mode: connected",
                     "Memory records: 3",
                     "Pending proposals: 1",

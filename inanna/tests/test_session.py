@@ -69,7 +69,7 @@ class SessionTests(unittest.TestCase):
         self.assertEqual(messages[0]["role"], "system")
         self.assertNotIn("DeepSeek Coder", messages[0]["content"])
 
-    def test_grounding_is_not_injected_when_context_is_empty(self) -> None:
+    def test_grounding_is_injected_when_context_is_empty(self) -> None:
         engine = Engine()
         messages = engine._build_messages(
             context_summary=[],
@@ -77,8 +77,10 @@ class SessionTests(unittest.TestCase):
         )
 
         self.assertEqual(messages[0]["role"], "system")
-        self.assertEqual(len(messages), 2)
-        self.assertEqual(messages[1]["role"], "user")
+        self.assertEqual(len(messages), 3)
+        self.assertEqual(messages[1]["role"], "assistant")
+        self.assertIn("no approved memory", messages[1]["content"])
+        self.assertEqual(messages[2]["role"], "user")
 
     def test_grounding_is_injected_as_assistant_turn_before_user(self) -> None:
         engine = Engine()
@@ -90,6 +92,7 @@ class SessionTests(unittest.TestCase):
         self.assertEqual(messages[0]["role"], "system")
         self.assertEqual(messages[1]["role"], "assistant")
         self.assertIn("approved memory", messages[1]["content"])
+        self.assertIn("I will not add, invent, or infer", messages[1]["content"])
         self.assertEqual(messages[2]["role"], "user")
         self.assertEqual(messages[2]["content"], "tell me more")
 
@@ -109,6 +112,7 @@ class SessionTests(unittest.TestCase):
         self.assertEqual(messages[0]["role"], "system")
         self.assertEqual(messages[1]["role"], "assistant")
         self.assertIn("approved memory", messages[1]["content"])
+        self.assertIn("I will not add, invent, or infer", messages[1]["content"])
         self.assertEqual(messages[2]["role"], "user")
 
     def test_reflect_fallback_returns_numbered_memory_lines(self) -> None:

@@ -153,10 +153,7 @@ class Engine:
         conversation: list[dict[str, str]],
     ) -> list[dict[str, str]]:
         messages = [{"role": "system", "content": build_system_prompt()}]
-
-        grounding_turn = self._build_grounding_turn(context_summary)
-        if grounding_turn is not None:
-            messages.append(grounding_turn)
+        messages.append(self._build_grounding_turn(context_summary))
 
         for event in conversation:
             messages.append(
@@ -169,10 +166,7 @@ class Engine:
 
     def _build_reflection_messages(self, context_summary: list[str]) -> list[dict[str, str]]:
         messages = [{"role": "system", "content": build_system_prompt()}]
-
-        grounding_turn = self._build_grounding_turn(context_summary)
-        if grounding_turn is not None:
-            messages.append(grounding_turn)
+        messages.append(self._build_grounding_turn(context_summary))
 
         messages.append(
             {
@@ -186,9 +180,16 @@ class Engine:
         )
         return messages
 
-    def _build_grounding_turn(self, context_summary: list[str]) -> dict[str, str] | None:
+    def _build_grounding_turn(self, context_summary: list[str]) -> dict[str, str]:
         if not context_summary:
-            return None
+            return {
+                "role": "assistant",
+                "content": (
+                    "I hold no approved memory of prior conversations yet.\n"
+                    "I will not invent or infer anything about this person.\n"
+                    "I will respond only to what they tell me now."
+                ),
+            }
 
         grounding_lines = "\n".join(
             f"  {i + 1}. {line}" for i, line in enumerate(context_summary)
@@ -198,7 +199,9 @@ class Engine:
             "content": (
                 "From my approved memory of our prior conversations:\n"
                 + grounding_lines
-                + "\n\nI will ground my responses in this approved memory."
+                + "\n\nI will ground my responses in this approved memory.\n"
+                + "I will not add, invent, or infer anything beyond these lines.\n"
+                + "If I do not know something about this person, I will say so directly."
             ),
         }
 
