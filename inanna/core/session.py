@@ -1,14 +1,13 @@
 from __future__ import annotations
 
 import json
-import unittest
 import uuid
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
-from tempfile import TemporaryDirectory
-from unittest.mock import patch
 from urllib import error, request
+
+from identity import build_system_prompt
 
 
 def utc_now() -> str:
@@ -60,10 +59,12 @@ class Session:
 
 
 class Engine:
-    # Phase 2 policy: LM Studio is the explicit local model provider and uses
-    # its OpenAI-compatible endpoint at the configured URL.
-    # Phase 2 policy: approve and reject always resolve the oldest pending
-    # proposal first; that rule is enforced in Proposal.resolve_next.
+    # Phase 2 policy, still active in Phase 3: LM Studio is the explicit local
+    # model provider and uses its OpenAI-compatible endpoint at the configured
+    # URL.
+    # Phase 2 policy, still active in Phase 3: approve and reject always
+    # resolve the oldest pending proposal first; that rule is enforced in
+    # Proposal.resolve_next.
     def __init__(
         self,
         model_url: str | None = None,
@@ -74,6 +75,10 @@ class Engine:
         self.model_name = (model_name or "").strip()
         self.api_key = (api_key or "").strip()
         self.fallback_mode = not (self.model_url and self.model_name)
+
+    @property
+    def mode(self) -> str:
+        return "fallback" if self.fallback_mode else "connected"
 
     def verify_connection(self) -> bool:
         if not (self.model_url and self.model_name):
@@ -127,17 +132,13 @@ class Engine:
         context_summary: list[str],
         conversation: list[dict[str, str]],
     ) -> list[dict[str, str]]:
-        system_lines = [
-            "You are the Phase 2 real voice companion.",
-            "Keep responses clear, brief, and grounded in readable truth.",
-            "Do not claim abilities beyond this session.",
-        ]
-
+        system_prompt = build_system_prompt()
         if context_summary:
-            system_lines.append("Prior context:")
-            system_lines.extend(context_summary)
+            system_prompt = f"{system_prompt}\n\nPrior context:\n" + "\n".join(
+                context_summary
+            )
 
-        messages = [{"role": "system", "content": "\n".join(system_lines)}]
+        messages = [{"role": "system", "content": system_prompt}]
         for event in conversation:
             messages.append(
                 {
@@ -179,7 +180,7 @@ class Engine:
         note: str | None = None,
     ) -> str:
         parts = [
-            "Phase 2 fallback mode is active.",
+            "Phase 3 fallback mode is active.",
             f"I heard: {latest_user}",
         ]
         if context_summary:
@@ -191,57 +192,3 @@ class Engine:
         if note:
             parts.append(note)
         return " ".join(parts)
-
-
-# Phase 2 policy: tests remain inside component modules until Phase 3 creates a
-# dedicated test layout.
-class SessionComponentTests(unittest.TestCase):
-    def test_session_persists_context_and_events(self) -> None:
-        with TemporaryDirectory() as temp_dir:
-            session_dir = Path(temp_dir)
-            session = Session.create(session_dir, ["memory line"])
-            session.add_event("user", "hello")
-            payload = json.loads(session.session_path.read_text(encoding="utf-8"))
-
-        self.assertEqual(payload["context_summary"], ["memory line"])
-        self.assertEqual(payload["events"][0]["role"], "user")
-        self.assertEqual(payload["events"][0]["content"], "hello")
-
-    def test_engine_fallback_responds_without_configuration(self) -> None:
-        engine = Engine()
-        reply = engine.respond(
-            context_summary=["old memory"],
-            conversation=[{"role": "user", "content": "Is anyone there?"}],
-        )
-
-        self.assertIn("Phase 2 fallback mode is active.", reply)
-        self.assertIn("Is anyone there?", reply)
-        self.assertIn("prior context", reply)
-
-    def test_verify_connection_enables_model_mode_on_success(self) -> None:
-        engine = Engine(
-            model_url="http://localhost:1234/v1",
-            model_name="local-model",
-        )
-
-        with patch.object(engine, "_call_openai_compatible", return_value="ok"):
-            connected = engine.verify_connection()
-
-        self.assertTrue(connected)
-        self.assertFalse(engine.fallback_mode)
-
-    def test_verify_connection_falls_back_when_model_is_unreachable(self) -> None:
-        engine = Engine(
-            model_url="http://localhost:1234/v1",
-            model_name="local-model",
-        )
-
-        with patch.object(engine, "_call_openai_compatible", side_effect=OSError("down")):
-            connected = engine.verify_connection()
-
-        self.assertFalse(connected)
-        self.assertTrue(engine.fallback_mode)
-
-
-if __name__ == "__main__":
-    unittest.main()

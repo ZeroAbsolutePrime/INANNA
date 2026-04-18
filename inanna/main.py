@@ -37,6 +37,26 @@ def print_startup_context(summary_lines: list[str]) -> None:
         print(f"  {index}. {line}")
 
 
+def build_diagnostics_report(
+    config: Config,
+    engine: Engine,
+    session: Session,
+) -> str:
+    model_url = config.model_url or "not set"
+    model_name = config.model_name or "not set"
+    api_key_state = "set" if config.api_key else "not set"
+    lines = [
+        f"Model URL: {model_url}",
+        f"Model name: {model_name}",
+        f"API key: {api_key_state}",
+        f"Mode: {engine.mode}",
+        f"Session file: {session.session_path}",
+        f"Memory directory: {MEMORY_DIR}",
+        f"Proposal directory: {PROPOSAL_DIR}",
+    ]
+    return "\n".join(lines)
+
+
 def main() -> None:
     ensure_directories()
 
@@ -53,7 +73,7 @@ def main() -> None:
     if engine.verify_connection():
         print(f"Model connected: {config.model_name} at {config.model_url}")
     else:
-        print("Model unreachable \u2014 fallback mode active. Set INANNA_MODEL_URL to connect.")
+        print("Model unreachable — fallback mode active. Set INANNA_MODEL_URL to connect.")
 
     startup_context = memory.load_startup_context()
     session = Session.create(
@@ -61,10 +81,10 @@ def main() -> None:
         context_summary=startup_context["summary_lines"],
     )
 
-    print("Phase 2 - The Real Voice")
+    print("Phase 3 - The Named Presence")
     print(f"Session ID: {session.session_id}")
     print_startup_context(startup_context["summary_lines"])
-    print("Commands: status, approve, reject, exit")
+    print("Commands: status, diagnostics, approve, reject, exit")
 
     while True:
         try:
@@ -90,10 +110,15 @@ def main() -> None:
             print(
                 state_report.render(
                     session_id=session.session_id,
+                    mode=engine.mode,
                     memory_count=memory.memory_count(),
                     pending_count=proposal.pending_count(),
                 )
             )
+            continue
+
+        if command == "diagnostics":
+            print(build_diagnostics_report(config=config, engine=engine, session=session))
             continue
 
         if command in {"approve", "reject"}:

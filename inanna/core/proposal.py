@@ -1,11 +1,9 @@
 from __future__ import annotations
 
 import json
-import unittest
 import uuid
 from datetime import datetime, timezone
 from pathlib import Path
-from tempfile import TemporaryDirectory
 from typing import Any
 
 
@@ -40,9 +38,8 @@ class Proposal:
         if not pending:
             return None
 
-        # DECISION POINT: The phase document does not specify which proposal
-        # `approve` or `reject` should target when several are pending, so the
-        # oldest pending proposal is resolved first.
+        # Phase 2 policy, still active in Phase 3: approve and reject always
+        # target the oldest pending proposal first.
         record = pending[0]
         record["status"] = "approved" if decision == "approve" else "rejected"
         record["resolved_at"] = utc_now()
@@ -72,37 +69,3 @@ class Proposal:
     def _read_record(self, path: Path) -> dict[str, Any]:
         lines = path.read_text(encoding="utf-8").splitlines()
         return json.loads("\n".join(lines[1:]))
-
-
-# DECISION POINT: CURRENT_PHASE.md requires unit tests to pass but only lists
-# component file locations, so the basic tests live inside the component module.
-class ProposalComponentTests(unittest.TestCase):
-    def test_create_and_resolve_proposal(self) -> None:
-        with TemporaryDirectory() as temp_dir:
-            proposal_dir = Path(temp_dir)
-            proposal = Proposal(proposal_dir)
-            created = proposal.create(
-                what="Update memory",
-                why="Keep context readable",
-                payload={"session_id": "session-1", "summary_lines": ["user: hello"]},
-            )
-            resolved = proposal.resolve_next("approve")
-            pending_count = proposal.pending_count()
-
-        self.assertEqual(created["status"], "pending")
-        self.assertEqual(resolved["status"], "approved")
-        self.assertEqual(pending_count, 0)
-
-    def test_pending_count_tracks_unresolved_records(self) -> None:
-        with TemporaryDirectory() as temp_dir:
-            proposal = Proposal(Path(temp_dir))
-            proposal.create("One", "why", {"session_id": "a", "summary_lines": []})
-            proposal.create("Two", "why", {"session_id": "b", "summary_lines": []})
-
-            count = proposal.pending_count()
-
-        self.assertEqual(count, 2)
-
-
-if __name__ == "__main__":
-    unittest.main()
