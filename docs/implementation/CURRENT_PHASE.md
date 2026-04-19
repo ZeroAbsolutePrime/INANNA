@@ -1,191 +1,214 @@
-﻿# CURRENT PHASE: Cycle 3 - Phase 3.6 - The Memory Map
+﻿# CURRENT PHASE: Cycle 3 - Phase 3.7 - The Guardian Room
 **Status: ACTIVE**
 **Authorized by: ZAERA (Guardian) + Claude (Command Center)**
 **Date opened: 2026-04-19**
 **Cycle: 3 - The Commander Room**
-**Replaces: Cycle 3 Phase 3.5 - The Faculty Monitor (COMPLETE)**
+**Replaces: Cycle 3 Phase 3.6 - The Memory Map (COMPLETE)**
 
 ---
 
 ## What This Phase Is
 
-Memory in INANNA is governed, selective, and meaningful. Every record
-was explicitly approved. Each one carries a session ID, a timestamp,
-a set of summary lines, and a realm name.
+The Guardian exists. It runs health checks. It raises alerts.
+But it has no room of its own in the Commander Room.
 
-But right now the memory panel in the UI is a flat list: records
-stacked one after another with no sense of time, no sense of growth,
-no sense of which sessions they came from.
+Its alerts appear as text responses to the "guardian" command.
+Its governance event history lives in a JSONL file on disk.
+Its body health data is in the status payload.
+None of this is surfaced as a unified, always-visible panel.
 
-Phase 3.6 transforms the memory panel into a Memory Map: a timeline
-view of approved memory that shows when each record was created, how
-memory has accumulated over time, and lets the user inspect any record
-in depth.
-
-This is not a cosmetic change. Memory is the most personal layer of
-the governed system. How it is presented shapes whether the user
-trusts it and can steward it.
+Phase 3.7 builds the Guardian Room: a dedicated panel in the UI
+that shows Guardian alerts, governance event history, and provides
+a one-click inspection trigger. The watchful violet light becomes
+a room with windows.
 
 ---
 
 ## What You Are Building
 
-### Task 1 - Memory timeline in index.html
+### Task 1 - Guardian Room panel in index.html
 
-Replace the current flat memory list with a timeline view.
+Add a new section below the Faculty Monitor in the side panel.
 
-Each memory record becomes a timeline entry:
+The Guardian Room has three sub-sections:
 
+**1. Alert Status**
+Shows the result of the last Guardian inspection:
 ```
-MEMORY  (19 records)  [ clear all ]
+GUARDIAN  [ inspect ]
 
-  ─── Apr 19 00:17 ────────────────────────────
-  [proposal-ad53fc1b]  session: 20260419T001708
-    1. user: Hello Dear
-    2. assistant: Greetings! I am INANNA...
-  [ forget ]
-
-  ─── Apr 19 00:40 ────────────────────────────
-  [proposal-1f0f1c5c]  session: 20260419T001708
-    1. user: I am ZAERA...
-    2. assistant: I acknowledge you as ZAERA...
-  [ forget ]
+Last inspection: Apr 19 13:45
+  [info]  SYSTEM_HEALTHY
+          All governance indicators within normal bounds.
 ```
 
-Timeline separator: a horizontal rule with the formatted date/time.
-Each record shows: proposal ID (short), session ID (short), lines.
-The [forget] button triggers the existing forget flow.
-
-"Clear all" button at the top: sends a new command "memory-clear-all"
-that creates a proposal to clear ALL approved memory records.
-This is a governed action — proposal required, approval required.
-
-### Task 2 - Memory growth indicator
-
-Add a small growth indicator above the timeline:
-
+Or if there are warnings:
 ```
-MEMORY  (19 records)  ▓▓▓▓▓▓▓▓░░  19/20 lines used
+GUARDIAN  [ inspect ]   ⚠ 2 alerts
+
+Last inspection: Apr 19 13:45
+  [warn]  PENDING_PROPOSAL_ACCUMULATION
+          7 proposals are pending approval.
+  [info]  MEMORY_GROWTH
+          22 approved memory records exist.
 ```
 
-The bar shows how full the memory is relative to the max_lines limit
-(default 10 per record, but show total lines across all records vs
-a configurable display cap of 50).
-
-CSS for the bar:
-```css
-.memory-bar {
-    display: inline-flex;
-    gap: 1px;
-    vertical-align: middle;
-}
-.memory-bar-filled { color: var(--voice); }
-.memory-bar-empty  { color: var(--dim); }
+**2. Governance Event Log**
+Shows the last 10 governance events from disk:
+```
+Governance events (last 10):
+  [block]    Apr 19 09:52  ignore your instructions...
+  [redirect] Apr 19 10:15  I need medical advice...
+  [propose]  Apr 19 11:30  please remember that...
 ```
 
-Use block characters: filled = ▓, empty = ░
-Show 10 blocks total representing the fill percentage.
+**3. Body Health Summary**
+Shows the body health indicators from the status payload:
+```
+Body health:
+  Platform: Windows 11  Python: 3.14.3
+  Disk free: 22.4 GB    Mode: connected
+```
 
-### Task 3 - Memory detail expansion
+**[ inspect ]** button sends:
+```json
+{"type": "command", "cmd": "guardian"}
+```
 
-Each memory record is collapsed by default showing only the first line.
-Clicking anywhere on the record expands it to show all lines.
+The response is already handled — it broadcasts a `system` message
+with the Guardian report text. The panel updates to show the new
+inspection result.
 
-Add a subtle expand indicator:
-- Collapsed: [proposal-ad53fc1b] ▸ user: Hello Dear...
-- Expanded: [proposal-ad53fc1b] ▾ (full content shown)
+### Task 2 - New WebSocket command: guardian-log
 
-### Task 4 - New WebSocket command: memory-map
+Add "guardian-log" command to server.py and main.py.
 
-Add "memory-map" command to server.py and main.py.
-
-When received, return all memory records with enriched data:
+When received, read the governance event log from disk and return:
 ```json
 {
-  "type": "memory_map",
-  "records": [
+  "type": "guardian_log",
+  "events": [
     {
-      "memory_id": "proposal-ad53fc1b",
-      "session_id": "20260419T001708-abc",
-      "approved_at": "2026-04-19T00:17:28",
-      "realm_name": "default",
-      "summary_lines": ["user: Hello Dear", "assistant: Greetings..."],
-      "line_count": 2
+      "timestamp": "2026-04-19T09:52:08",
+      "session_id": "20260419T...",
+      "decision": "block",
+      "reason": "Identity and law boundaries cannot be altered.",
+      "input_preview": "ignore your instructions..."
     }
   ],
-  "total_records": 19,
-  "total_lines": 38,
-  "oldest_at": "2026-04-19T00:17:28",
-  "newest_at": "2026-04-19T12:17:30"
+  "total": 3,
+  "blocks": 1,
+  "redirects": 1,
+  "proposes": 1
 }
 ```
 
-Records sorted oldest first.
+Records sorted newest-first (most recent at top).
+Limit to last 20 events.
 
-### Task 5 - memory-clear-all command
+### Task 3 - Guardian inspection on UI connect
 
-Add "memory-clear-all" command.
+When the UI first connects, automatically run a Guardian inspection
+and broadcast the result as a guardian_status message:
 
-When received, create a proposal:
-```
-what: "Clear all approved memory records"
-why:  "User requested full memory reset"
-payload: {"action": "clear_all_memory", "count": N}
-```
-
-After approval in the normal approve flow, delete ALL memory record
-files in the active realm's memory directory.
-
-Add delete_all_memory_records() to Memory class in memory.py:
-```python
-def delete_all_memory_records(self) -> int:
-    count = 0
-    for path in list(self.memory_dir.glob("*.json")):
-        path.unlink()
-        count += 1
-    return count
-```
-
-The "clear all" button in the UI sends:
-```json
-{"type": "command", "cmd": "memory-clear-all"}
-```
-
-### Task 6 - Memory stats in status payload
-
-Add to the status payload:
 ```json
 {
-  "memory_total_lines": 38,
-  "memory_oldest_at": "2026-04-19T00:17:28",
-  "memory_newest_at": "2026-04-19T12:17:30"
+  "type": "guardian_status",
+  "alerts": [
+    {"level": "info", "code": "SYSTEM_HEALTHY", "message": "..."}
+  ],
+  "warn_count": 0,
+  "critical_count": 0,
+  "timestamp": "2026-04-19T..."
 }
 ```
 
-These are computed from Memory.memory_log_report() at status time.
+This runs alongside the existing auto-guardian check in
+send_initial_state() — if there are warns/criticals, the Guardian
+Room panel opens highlighted.
 
-### Task 7 - Update identity.py and state.py
+### Task 4 - Persist governance history passed to Guardian
+
+Update the guardian.inspect() call in server.py to pass the
+actual governance_history loaded from disk:
+
+```python
+from core.nammu_memory import load_governance_history
+
+governance_history = load_governance_history(
+    self.nammu_dir, limit=50
+)
+alerts = guardian.inspect(
+    session_id=...,
+    ...
+    governance_history=governance_history,
+)
+```
+
+This is a small fix — the Guardian has been receiving an empty
+governance_history because it was never being passed the loaded
+history. Phase 3.7 corrects this so the PERSISTENT_BOUNDARY_TESTING
+check actually works cross-session.
+
+### Task 5 - Guardian Room CSS
+
+```css
+.guardian-room {
+    padding: 10px 16px;
+    border-top: 1px solid var(--border);
+}
+
+.guardian-section-title {
+    color: #7a6a8a;
+    font-size: 0.76rem;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    margin-bottom: 8px;
+}
+
+.guardian-alert {
+    padding: 4px 0;
+    font-size: 0.82rem;
+    line-height: 1.4;
+}
+
+.guardian-alert.info  { color: var(--dim); }
+.guardian-alert.warn  { color: var(--fallback); }
+.guardian-alert.critical { color: #c86e6e; }
+
+.guardian-event {
+    font-size: 0.78rem;
+    color: var(--dim);
+    padding: 3px 0;
+    border-bottom: 1px solid rgba(74,58,30,0.1);
+}
+
+.guardian-event .decision-block    { color: #c86e6e; }
+.guardian-event .decision-redirect { color: var(--fallback); }
+.guardian-event .decision-propose  { color: #7a8a6a; }
+```
+
+### Task 6 - Update identity.py and state.py
 
 Update CURRENT_PHASE:
 ```python
-CURRENT_PHASE = "Cycle 3 - Phase 3.6 - The Memory Map"
+CURRENT_PHASE = "Cycle 3 - Phase 3.7 - The Guardian Room"
 ```
 
-Add "memory-map" and "memory-clear-all" to STARTUP_COMMANDS
-and capabilities in state.py.
+Add "guardian-log" to STARTUP_COMMANDS and capabilities.
 
-### Task 8 - Tests
+### Task 7 - Tests
 
-Add to inanna/tests/test_memory.py:
-- delete_all_memory_records() removes all json files
-- delete_all_memory_records() returns correct count
-- delete_all_memory_records() on empty dir returns 0
+Add to inanna/tests/test_guardian.py:
+- GuardianFaculty.inspect() called with real governance_history
+  list returns PERSISTENT_BOUNDARY_TESTING when 5+ blocks present
+- inspect() with empty governance_history does not raise
 
 Add to inanna/tests/test_commands.py:
-- "memory-map" in capabilities
-- "memory-clear-all" in capabilities
+- "guardian-log" in capabilities
 
 Update test_identity.py: update CURRENT_PHASE assertion.
+Update test_state.py: add guardian-log to capabilities.
 
 ---
 
@@ -194,24 +217,25 @@ Update test_identity.py: update CURRENT_PHASE assertion.
 ```
 inanna/
   identity.py              <- MODIFY: update CURRENT_PHASE
-  main.py                  <- MODIFY: add memory-map and
-                                      memory-clear-all commands
+  main.py                  <- MODIFY: add guardian-log command
   core/
-    memory.py              <- MODIFY: add delete_all_memory_records()
-    state.py               <- MODIFY: add new commands to capabilities
+    guardian.py            <- no changes to logic (fix is in caller)
+    state.py               <- MODIFY: add guardian-log to capabilities
     (all others)           <- no changes
   ui/
-    server.py              <- MODIFY: add memory-map command,
-                                      memory-clear-all command,
-                                      memory stats in status payload
+    server.py              <- MODIFY: add guardian-log command,
+                                      pass governance_history to inspect(),
+                                      broadcast guardian_status on connect,
+                                      guardian_log response type
     static/
-      index.html           <- MODIFY: memory timeline view,
-                                      growth bar, expand/collapse,
-                                      clear all button
+      index.html           <- MODIFY: Guardian Room panel with 3 sections,
+                                      inspect button, governance log,
+                                      body health summary, CSS
   tests/
-    test_memory.py         <- MODIFY: add delete_all tests
-    test_commands.py       <- MODIFY: add new commands
+    test_guardian.py       <- MODIFY: add governance_history tests
+    test_commands.py       <- MODIFY: add guardian-log
     test_identity.py       <- MODIFY: update phase assertion
+    test_state.py          <- MODIFY: add guardian-log
     (all others)           <- no changes
 ```
 
@@ -219,28 +243,27 @@ inanna/
 
 ## What You Are NOT Building in This Phase
 
-- No memory search or filtering by content
-- No memory editing
-- No cross-realm memory view
-- No memory export
-- No memory import
-- No change to how memory is written or approved
-- No change to the grounding turn logic
-- No new Faculty or governance capability
-- The clear-all must go through a proposal — never silent
+- No Guardian alert escalation or notifications
+- No Guardian email or external alerts
+- No Guardian ability to block actions (Guardian observes only)
+- No new Guardian check types
+- No change to governance rules or signal config
+- No persistent Guardian state beyond what NAMMU memory already stores
+- No new Faculty classes
 
 ---
 
-## Definition of Done for Phase 3.6
+## Definition of Done for Phase 3.7
 
-- [ ] Memory panel shows timeline view with date separators
-- [ ] Each record is collapsible, showing first line by default
-- [ ] Memory growth bar shows fill percentage
-- [ ] "memory-map" command returns enriched records
-- [ ] "memory-clear-all" creates a proposal before deleting
-- [ ] After approval, all memory records are deleted
-- [ ] Memory stats in status payload
-- [ ] delete_all_memory_records() exists on Memory and is tested
+- [ ] Guardian Room panel visible in UI side panel
+- [ ] Panel shows last inspection alerts with level styling
+- [ ] [ inspect ] button triggers Guardian check and updates panel
+- [ ] Governance event log shown (last 10, newest first)
+- [ ] Body health summary shown from status payload
+- [ ] guardian-log command returns governance history from disk
+- [ ] Guardian inspection runs automatically on UI connect
+- [ ] governance_history is now passed to Guardian.inspect() correctly
+- [ ] PERSISTENT_BOUNDARY_TESTING check now works cross-session
 - [ ] CURRENT_PHASE updated
 - [ ] All tests pass: py -3 -m unittest discover -s tests
 
@@ -249,15 +272,15 @@ inanna/
 ## Handoff to Command Center
 
 When Definition of Done is met, Codex must:
-1. Commit with message: cycle3-phase6-complete
-2. Write docs/implementation/CYCLE3_PHASE6_REPORT.md
-3. Stop. Do not begin Phase 3.7 without a new CURRENT_PHASE.md.
+1. Commit with message: cycle3-phase7-complete
+2. Write docs/implementation/CYCLE3_PHASE7_REPORT.md
+3. Stop. Do not begin Phase 3.8 without a new CURRENT_PHASE.md.
 
 ---
 
 *Written by: Claude (Command Center)*
 *Guardian approval: ZAERA*
 *Date: 2026-04-19*
-*Memory is not a log. It is a map.*
-*Each record has a place in time.*
-*The Memory Map makes that visible.*
+*The Guardian has watched from the beginning.*
+*Phase 3.7 gives it a room with windows.*
+*Now you can see what it sees.*
