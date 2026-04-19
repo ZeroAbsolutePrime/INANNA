@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import os
 import threading
 from datetime import datetime, timezone
 from http.server import BaseHTTPRequestHandler, HTTPServer
@@ -28,10 +29,10 @@ from main import (
 APP_ROOT = Path(__file__).resolve().parent.parent
 STATIC_ROOT = Path(__file__).resolve().parent / "static"
 INDEX_PATH = STATIC_ROOT / "index.html"
-HTTP_PORT = 8080
-WS_PORT = 8081
 
 load_dotenv(APP_ROOT / ".env")
+HTTP_PORT = int(os.getenv("INANNA_HTTP_PORT", "8080"))
+WS_PORT = int(os.getenv("INANNA_WS_PORT", "8081"))
 
 
 def utc_now() -> str:
@@ -41,13 +42,16 @@ def utc_now() -> str:
 class StaticHandler(BaseHTTPRequestHandler):
     def do_GET(self) -> None:
         if self.path in {"/", "/index.html"}:
-            content = INDEX_PATH.read_bytes()
+            content = INDEX_PATH.read_text(encoding="utf-8").replace(
+                "__WS_PORT__", str(WS_PORT)
+            )
+            payload = content.encode("utf-8")
             self.send_response(200)
             self.send_header("Content-Type", "text/html; charset=utf-8")
-            self.send_header("Content-Length", str(len(content)))
+            self.send_header("Content-Length", str(len(payload)))
             self.send_header("Cache-Control", "no-store")
             self.end_headers()
-            self.wfile.write(content)
+            self.wfile.write(payload)
         else:
             self.send_response(404)
             self.end_headers()

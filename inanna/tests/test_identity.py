@@ -65,8 +65,11 @@ class IdentityTests(unittest.TestCase):
     def test_current_phase_constant_matches_phase_banner(self) -> None:
         self.assertEqual(CURRENT_PHASE, phase_banner())
 
-    def test_current_phase_names_complete_presence(self) -> None:
-        self.assertIn("Complete Presence", CURRENT_PHASE)
+    # DECISION POINT: Phase 2.2 requires the shared identity phase banner to
+    # move from legacy Phase 9 to the active Cycle 2 Phase 2 name, so the
+    # phase-aligned assertion must track that source of truth.
+    def test_current_phase_names_refined_interface(self) -> None:
+        self.assertIn("Refined Interface", CURRENT_PHASE)
 
 
 if __name__ == "__main__":

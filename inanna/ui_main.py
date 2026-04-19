@@ -1,30 +1,29 @@
 from __future__ import annotations
 
+import asyncio
+import os
 import threading
 import time
 import webbrowser
 
-from ui.server import run_http_server, InterfaceServer
-import asyncio
+from ui.server import InterfaceServer, run_http_server
 
 
 def main() -> None:
     print("Starting INANNA NYX interface...")
+    http_port = int(os.getenv("INANNA_HTTP_PORT", "8080"))
+    ws_port = int(os.getenv("INANNA_WS_PORT", "8081"))
 
-    # HTTP server on port 8080
     http_thread = threading.Thread(target=run_http_server, daemon=True)
     http_thread.start()
 
-    # Give HTTP server a moment to bind
     time.sleep(0.5)
 
-    # Open browser
-    webbrowser.open("http://localhost:8080")
-    print("INANNA NYX is running at http://localhost:8080")
-    print("WebSocket on ws://localhost:8081")
+    webbrowser.open(f"http://localhost:{http_port}")
+    print(f"INANNA NYX is running at http://localhost:{http_port}")
+    print(f"WebSocket on ws://localhost:{ws_port}")
     print("Press Ctrl+C to stop.")
 
-    # WebSocket server runs on main thread via asyncio
     server = InterfaceServer()
     try:
         asyncio.run(server.start())

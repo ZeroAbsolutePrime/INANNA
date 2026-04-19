@@ -268,6 +268,12 @@
       font-size: 0.88rem;
     }
 
+    .record-list li {
+      word-break: break-word;
+      white-space: pre-wrap;
+      line-height: 1.5;
+    }
+
     .record-actions,
     .proposal-actions,
     .forget-confirm {
@@ -370,7 +376,7 @@
     }
   </style>
 </head>
-<body>
+<body data-ws-port="__WS_PORT__">
   <div class="shell">
     <header class="header">
       <div class="brand">
@@ -423,6 +429,7 @@
       proposalRecords: [],
       forgetConfirmId: null,
       removingMemoryIds: new Set(),
+      startupContextShown: false,
     };
 
     const commandSet = new Set([
@@ -448,9 +455,23 @@
     const inputForm = document.getElementById("input-form");
     const textInput = document.getElementById("text-input");
 
+    function escapeHtml(text) {
+      return text
+        .replace(/&/g, "&amp;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;");
+    }
+
+    function renderMarkdown(text) {
+      return escapeHtml(text)
+        .replace(/\*\*(.*?)\*\*/g, "<strong>$1</strong>")
+        .replace(/\n/g, "<br>");
+    }
+
     function connect() {
       const protocol = window.location.protocol === "https:" ? "wss" : "ws";
-      state.ws = new WebSocket(`${protocol}://localhost:8081`);
+      const wsPort = document.body.dataset.wsPort || "8081";
+      state.ws = new WebSocket(`${protocol}://localhost:${wsPort}`);
       state.ws.addEventListener("message", (event) => {
         const payload = JSON.parse(event.data);
         handleServerMessage(payload);
@@ -481,6 +502,17 @@
 
       if (payload.type === "status") {
         state.status = payload.data;
+        if (!state.startupContextShown) {
+          if ((payload.data.memory_count || 0) > 0) {
+            addMessage(
+              "system",
+              `∴ Session started. INANNA is carrying ${payload.data.memory_count} approved memory record(s) into this conversation.`
+            );
+          } else {
+            addMessage("system", "∴ Session started. No prior approved memory yet.");
+          }
+          state.startupContextShown = true;
+        }
         renderHeader();
         return;
       }
@@ -507,6 +539,7 @@
         return;
       }
 
+      state.memoryRecords = state.memoryRecords.filter((record) => nextIds.has(record.memory_id));
       removedIds.forEach((memoryId) => state.removingMemoryIds.add(memoryId));
       renderMemory();
 
@@ -541,7 +574,11 @@
 
         const content = document.createElement("div");
         content.className = "message-content";
-        content.textContent = message.text;
+        if (message.role === "assistant") {
+          content.innerHTML = renderMarkdown(message.text);
+        } else {
+          content.textContent = message.text;
+        }
 
         article.append(prefix, content);
         conversationLog.appendChild(article);

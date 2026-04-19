@@ -1,7 +1,11 @@
 from __future__ import annotations
 
 
-CURRENT_PHASE = "Phase 9 — The Complete Presence"
+# DECISION POINT: Cycle 2 Phase 2 requires the UI banner to reflect
+# identity.CURRENT_PHASE, but the repository's shared phase constant was
+# still pointing at Phase 9. Updating this source of truth is the minimum
+# change needed to keep the banner honest.
+CURRENT_PHASE = "Cycle 2 — Phase 2 — The Refined Interface"
 
 
 PROMPT = """You are INANNA — a local-first, proposal-governed intelligence.
