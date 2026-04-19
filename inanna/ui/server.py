@@ -34,6 +34,7 @@ from main import (
     build_body_summary,
     build_history_report,
     build_memory_log_report,
+    build_proposal_history_payload,
     build_realm_context_report,
     build_nammu_log_report,
     build_realms_report,
@@ -420,6 +421,9 @@ class InterfaceServer:
             report = await asyncio.to_thread(self.proposal.history_report)
             await self.broadcast({"type": "system", "text": build_history_report(report)})
             await self.broadcast_state()
+        elif cmd == "proposal-history":
+            report = await asyncio.to_thread(self.proposal.history_report)
+            await self.broadcast(build_proposal_history_payload(report))
         elif cmd == "realms":
             report = await asyncio.to_thread(
                 build_realms_report,
@@ -653,7 +657,8 @@ class InterfaceServer:
 
     def build_status_payload(self) -> dict[str, Any]:
         mem = self.memory.memory_count()
-        pend = self.proposal.pending_count()
+        history = self.proposal.history_report()
+        pend = history["pending"]
         current_realm = load_current_realm(self.realm_manager, self.active_realm)
         realm_memory_count = len(list(self.memory_dir.glob("*.json")))
         realm_session_count = len(list(self.session_dir.glob("*.json")))
@@ -683,6 +688,10 @@ class InterfaceServer:
             "realm_memory_count": realm_memory_count,
             "realm_session_count": realm_session_count,
             "pending_count": pend,
+            "pending_proposals": history["pending"],
+            "total_proposals": history["total"],
+            "approved_proposals": history["approved"],
+            "rejected_proposals": history["rejected"],
             "body": build_body_summary(body_report),
             "capabilities": list(STARTUP_COMMANDS),
             "report": self.state_report.render(
@@ -690,6 +699,9 @@ class InterfaceServer:
                 mode=self.engine.mode,
                 memory_count=mem,
                 pending_count=pend,
+                total_proposals=history["total"],
+                approved_proposals=history["approved"],
+                rejected_proposals=history["rejected"],
                 realm_name=current_realm.name if current_realm else self.active_realm.name,
                 realm_memory_count=realm_memory_count,
                 realm_session_count=realm_session_count,

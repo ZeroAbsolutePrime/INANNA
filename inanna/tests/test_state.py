@@ -17,6 +17,9 @@ class StateTests(unittest.TestCase):
             mode="connected",
             memory_count=3,
             pending_count=1,
+            total_proposals=6,
+            approved_proposals=4,
+            rejected_proposals=1,
             realm_name="work",
             realm_memory_count=3,
             realm_session_count=2,
@@ -38,10 +41,13 @@ class StateTests(unittest.TestCase):
                     "Realm sessions: 2",
                     "Realm governance context: Focus on work memory boundaries.",
                     "Pending proposals: 1",
+                    "Total proposals: 6",
+                    "Approved proposals: 4",
+                    "Rejected proposals: 1",
                     (
                         "Capabilities: respond, reflect, analyse, audit, guardian, realms, "
-                        "realm-context, history, routing-log, nammu-log, memory-log, body, "
-                        "status, diagnostics, approve, reject, forget, exit"
+                        "realm-context, history, proposal-history, routing-log, nammu-log, "
+                        "memory-log, body, status, diagnostics, approve, reject, forget, exit"
                     ),
                 ]
             ),

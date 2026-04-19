@@ -43,6 +43,7 @@ STARTUP_COMMANDS = (
     "realms",
     "realm-context",
     "history",
+    "proposal-history",
     "routing-log",
     "nammu-log",
     "memory-log",
@@ -398,6 +399,29 @@ def build_memory_log_report(report: dict) -> str:
     return "\n".join(lines)
 
 
+def build_proposal_history_payload(report: dict) -> dict[str, object]:
+    records: list[dict[str, str]] = []
+    for record in report["records"]:
+        payload = {
+            "proposal_id": record["proposal_id"],
+            "timestamp": record["timestamp"],
+            "what": record["what"],
+            "status": record["status"],
+        }
+        if "resolved_at" in record:
+            payload["resolved_at"] = record["resolved_at"]
+        records.append(payload)
+
+    return {
+        "type": "proposal_history",
+        "records": records,
+        "total": report["total"],
+        "approved": report["approved"],
+        "rejected": report["rejected"],
+        "pending": report["pending"],
+    }
+
+
 def build_routing_log_report(routing_log: list[dict[str, str]]) -> str:
     total = len(routing_log)
     if total == 0:
@@ -722,11 +746,15 @@ def handle_command(
 
     if lowered == "status":
         current_realm = load_current_realm(realm_manager, active_realm)
+        history = proposal.history_report()
         return state_report.render(
             session_id=session.session_id,
             mode=engine.mode,
             memory_count=memory.memory_count(),
-            pending_count=proposal.pending_count(),
+            pending_count=history["pending"],
+            total_proposals=history["total"],
+            approved_proposals=history["approved"],
+            rejected_proposals=history["rejected"],
             realm_name=current_realm.name if current_realm else DEFAULT_REALM,
             realm_memory_count=count_records(memory.memory_dir, "*.json"),
             realm_session_count=count_records(memory.session_dir, "*.json"),
@@ -784,7 +812,7 @@ def handle_command(
             f"{created['line']}"
         )
 
-    if lowered == "history":
+    if lowered in {"history", "proposal-history"}:
         return build_history_report(proposal.history_report())
 
     if lowered == "routing-log":

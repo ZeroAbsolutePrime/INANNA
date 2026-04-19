@@ -179,6 +179,7 @@ class CommandTests(unittest.TestCase):
         self.assertIn("Session:", result)
         self.assertIn("Realm:", result)
         self.assertIn("Realm governance context:", result)
+        self.assertIn("Total proposals:", result)
         self.assertIn("routing-log", result)
 
     def test_diagnostics_returns_model_url_line(self) -> None:
@@ -275,6 +276,37 @@ class CommandTests(unittest.TestCase):
         )
 
         self.assertIn("0 total", result)
+        self.assertIn("No proposals recorded yet.", result)
+
+    def test_proposal_history_alias_returns_same_history_report(self) -> None:
+        (
+            session,
+            memory,
+            proposal,
+            state_report,
+            engine,
+            analyst,
+            classifier,
+            routing_log,
+            startup_context,
+            config,
+        ) = self.make_runtime()
+
+        result = handle_command(
+            "proposal-history",
+            session,
+            memory,
+            proposal,
+            state_report,
+            engine,
+            analyst,
+            classifier,
+            routing_log,
+            startup_context,
+            config,
+        )
+
+        self.assertIn("Proposal history (0 total):", result)
         self.assertIn("No proposals recorded yet.", result)
 
     def test_routing_log_with_no_decisions_returns_zero_total(self) -> None:
@@ -383,6 +415,7 @@ class CommandTests(unittest.TestCase):
                 "realms",
                 "realm-context",
                 "history",
+                "proposal-history",
                 "routing-log",
                 "nammu-log",
                 "memory-log",
@@ -399,8 +432,8 @@ class CommandTests(unittest.TestCase):
             startup_commands_line(),
             (
                 "Commands: reflect, analyse, audit, guardian, realms, realm-context, "
-                "history, routing-log, nammu-log, memory-log, body, status, "
-                "diagnostics, approve, reject, forget, exit"
+                "history, proposal-history, routing-log, nammu-log, memory-log, body, "
+                "status, diagnostics, approve, reject, forget, exit"
             ),
         )
 

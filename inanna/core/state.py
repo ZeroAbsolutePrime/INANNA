@@ -10,6 +10,9 @@ class StateReport:
         mode: str,
         memory_count: int,
         pending_count: int,
+        total_proposals: int | None = None,
+        approved_proposals: int | None = None,
+        rejected_proposals: int | None = None,
         realm_name: str = "default",
         realm_memory_count: int | None = None,
         realm_session_count: int | None = None,
@@ -37,9 +40,24 @@ class StateReport:
             ),
             f"Pending proposals: {pending_count}",
             (
+                f"Total proposals: {total_proposals}"
+                if total_proposals is not None
+                else "Total proposals: unknown"
+            ),
+            (
+                f"Approved proposals: {approved_proposals}"
+                if approved_proposals is not None
+                else "Approved proposals: unknown"
+            ),
+            (
+                f"Rejected proposals: {rejected_proposals}"
+                if rejected_proposals is not None
+                else "Rejected proposals: unknown"
+            ),
+            (
                 "Capabilities: respond, reflect, analyse, audit, guardian, realms, "
-                "realm-context, history, routing-log, nammu-log, memory-log, body, "
-                "status, diagnostics, approve, reject, forget, exit"
+                "realm-context, history, proposal-history, routing-log, nammu-log, "
+                "memory-log, body, status, diagnostics, approve, reject, forget, exit"
             ),
         ]
         return "\n".join(lines)

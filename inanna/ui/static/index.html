@@ -379,6 +379,70 @@
       line-height: 1.5;
     }
 
+    .proposal-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      flex-wrap: wrap;
+    }
+
+    .proposal-title-row {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      min-width: 0;
+    }
+
+    .proposal-count-badge {
+      color: var(--voice);
+      font-size: 0.72rem;
+      letter-spacing: 0.12em;
+      white-space: nowrap;
+    }
+
+    .proposal-tools {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      flex-wrap: wrap;
+    }
+
+    .filter-tabs {
+      display: flex;
+      gap: 8px;
+      flex-wrap: wrap;
+    }
+
+    .filter-tab.active {
+      border-color: var(--voice);
+      color: var(--voice);
+    }
+
+    .proposal-status {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      padding: 2px 8px;
+      border: 1px solid currentColor;
+      border-radius: 999px;
+      font-size: 0.7rem;
+      letter-spacing: 0.12em;
+      text-transform: uppercase;
+    }
+
+    .proposal-status.pending {
+      color: var(--voice);
+    }
+
+    .proposal-status.approved {
+      color: var(--connected);
+    }
+
+    .proposal-status.rejected {
+      color: var(--dim);
+    }
+
     .input-bar {
       border-top: 1px solid var(--border);
       display: grid;
@@ -461,7 +525,23 @@
           <div class="records" id="memory-panel"></div>
         </section>
         <section class="section">
-          <div class="panel-title">Proposals</div>
+          <div class="panel-title">
+            <div class="proposal-header">
+              <div class="proposal-title-row">
+                <span>Proposals</span>
+                <span class="proposal-count-badge" id="proposal-count-badge">(0 pending)</span>
+              </div>
+              <div class="proposal-tools">
+                <div class="filter-tabs" id="proposal-filter-tabs">
+                  <button class="filter-tab active" type="button" data-filter="all">[ all ]</button>
+                  <button class="filter-tab" type="button" data-filter="pending">[ pending ]</button>
+                  <button class="filter-tab" type="button" data-filter="approved">[ approved ]</button>
+                  <button class="filter-tab" type="button" data-filter="rejected">[ rejected ]</button>
+                </div>
+                <button type="button" id="load-history-button">[ load full history ]</button>
+              </div>
+            </div>
+          </div>
           <div class="proposals" id="proposal-panel"></div>
         </section>
       </aside>
@@ -486,6 +566,9 @@
       messages: [],
       memoryRecords: [],
       proposalRecords: [],
+      proposalHistoryRecords: [],
+      proposalFilter: "all",
+      fullHistoryLoaded: false,
       forgetConfirmId: null,
       removingMemoryIds: new Set(),
       startupContextShown: false,
@@ -498,6 +581,7 @@
       "realms",
       "realm-context",
       "history",
+      "proposal-history",
       "routing-log",
       "memory-log",
       "body",
@@ -518,6 +602,9 @@
     const conversationLog = document.getElementById("conversation-log");
     const memoryPanel = document.getElementById("memory-panel");
     const proposalPanel = document.getElementById("proposal-panel");
+    const proposalCountBadge = document.getElementById("proposal-count-badge");
+    const proposalFilterTabs = document.getElementById("proposal-filter-tabs");
+    const loadHistoryButton = document.getElementById("load-history-button");
     const inputForm = document.getElementById("input-form");
     const textInput = document.getElementById("text-input");
 
@@ -532,6 +619,26 @@
       return escapeHtml(text)
         .replace(/\*\*(.*?)\*\*/g, "<strong>$1</strong>")
         .replace(/\n/g, "<br>");
+    }
+
+    function formatTimestamp(iso) {
+      try {
+        const d = new Date(iso);
+        if (Number.isNaN(d.getTime())) {
+          return iso;
+        }
+        const months = ["Jan", "Feb", "Mar", "Apr", "May", "Jun",
+                        "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+        const h = String(d.getHours()).padStart(2, "0");
+        const m = String(d.getMinutes()).padStart(2, "0");
+        return `${months[d.getMonth()]} ${d.getDate()} ${h}:${m}`;
+      } catch {
+        return iso;
+      }
+    }
+
+    function shortProposalId(proposalId) {
+      return proposalId.replace(/^proposal-/, "").slice(0, 8) || proposalId.slice(0, 8);
     }
 
     function connect() {
@@ -615,6 +722,16 @@
 
       if (payload.type === "proposal") {
         state.proposalRecords = payload.records || [];
+        if (state.fullHistoryLoaded) {
+          requestProposalHistory();
+        }
+        renderProposals();
+        return;
+      }
+
+      if (payload.type === "proposal_history") {
+        state.proposalHistoryRecords = payload.records || [];
+        state.fullHistoryLoaded = true;
         renderProposals();
       }
     }
@@ -650,6 +767,7 @@
       phaseText.textContent = state.status.phase || "loading phase";
       realmIndicator.textContent = `realm: ${state.status.realm || "default"}`;
       realmIndicator.title = state.status.realm_purpose || "";
+      updateProposalCountBadge();
       const body = state.status.body || {};
       const isFallback = (body.model_mode || state.status.mode) === "fallback";
       const isWarn =
@@ -750,7 +868,7 @@
         meta.innerHTML = `
           <div>
             <div class="record-id">[${record.memory_id}]</div>
-            <div>${record.approved_at || "removing"}</div>
+            <div>${record.approved_at ? formatTimestamp(record.approved_at) : "removing"}</div>
           </div>
           <button class="forget-button" type="button" ${record.removing ? "disabled" : ""}>[forget]</button>
         `;
@@ -802,48 +920,83 @@
       });
     }
 
+    function visibleProposals() {
+      const source = state.fullHistoryLoaded ? state.proposalHistoryRecords : state.proposalRecords;
+      if (state.proposalFilter === "all") {
+        return source;
+      }
+      return source.filter((record) => record.status === state.proposalFilter);
+    }
+
+    function updateProposalCountBadge() {
+      const pending = state.status.pending_proposals ?? state.status.pending_count ?? 0;
+      proposalCountBadge.textContent = `(${pending} pending)`;
+    }
+
+    function renderProposalFilters() {
+      const buttons = proposalFilterTabs.querySelectorAll(".filter-tab");
+      buttons.forEach((button) => {
+        button.classList.toggle("active", button.dataset.filter === state.proposalFilter);
+      });
+    }
+
     function renderProposals() {
-      if (state.proposalRecords.length === 0) {
-        proposalPanel.innerHTML = '<div class="empty-state">No pending proposals.</div>';
+      updateProposalCountBadge();
+      renderProposalFilters();
+
+      const records = visibleProposals();
+      if (records.length === 0) {
+        proposalPanel.innerHTML = `<div class="empty-state">${
+          state.proposalFilter === "all"
+            ? "No proposals available."
+            : `No ${state.proposalFilter} proposals.`
+        }</div>`;
         return;
       }
 
       proposalPanel.innerHTML = "";
-      state.proposalRecords.forEach((record) => {
+      records.forEach((record) => {
         const wrapper = document.createElement("div");
         wrapper.className = "proposal-record";
         wrapper.innerHTML = `
           <div class="record-meta">
             <div>
-              <div class="record-id">[${record.proposal_id}]</div>
-              <div>${record.timestamp}</div>
+              <div class="record-id">[${shortProposalId(record.proposal_id)}]</div>
+              <div>${formatTimestamp(record.timestamp)}</div>
             </div>
-            <div>${record.status}</div>
+            <div class="proposal-status ${record.status}">${record.status}</div>
           </div>
           <div class="record-block">${record.what}</div>
         `;
 
-        const actions = document.createElement("div");
-        actions.className = "proposal-actions";
+        if (record.status === "pending") {
+          const actions = document.createElement("div");
+          actions.className = "proposal-actions";
 
-        const approveButton = document.createElement("button");
-        approveButton.type = "button";
-        approveButton.textContent = "[approve]";
-        approveButton.addEventListener("click", () => {
-          sendCommand("approve", { proposal_id: record.proposal_id });
-        });
+          const approveButton = document.createElement("button");
+          approveButton.type = "button";
+          approveButton.textContent = "[approve]";
+          approveButton.addEventListener("click", () => {
+            sendCommand("approve", { proposal_id: record.proposal_id });
+          });
 
-        const rejectButton = document.createElement("button");
-        rejectButton.type = "button";
-        rejectButton.textContent = "[reject]";
-        rejectButton.addEventListener("click", () => {
-          sendCommand("reject", { proposal_id: record.proposal_id });
-        });
+          const rejectButton = document.createElement("button");
+          rejectButton.type = "button";
+          rejectButton.textContent = "[reject]";
+          rejectButton.addEventListener("click", () => {
+            sendCommand("reject", { proposal_id: record.proposal_id });
+          });
 
-        actions.append(approveButton, rejectButton);
-        wrapper.appendChild(actions);
+          actions.append(approveButton, rejectButton);
+          wrapper.appendChild(actions);
+        }
+
         proposalPanel.appendChild(wrapper);
       });
+    }
+
+    function requestProposalHistory() {
+      sendCommand("proposal-history");
     }
 
     function sendCommand(cmd, extra = {}) {
@@ -869,6 +1022,17 @@
       }
 
       textInput.value = "";
+    });
+
+    proposalFilterTabs.querySelectorAll(".filter-tab").forEach((button) => {
+      button.addEventListener("click", () => {
+        state.proposalFilter = button.dataset.filter || "all";
+        renderProposals();
+      });
+    });
+
+    loadHistoryButton.addEventListener("click", () => {
+      requestProposalHistory();
     });
 
     connect();

@@ -69,6 +69,22 @@ class ProposalTests(unittest.TestCase):
             ["approved", "rejected", "pending"],
         )
 
+    def test_history_report_returns_expected_structure(self) -> None:
+        with TemporaryDirectory() as temp_dir:
+            proposal = Proposal(Path(temp_dir))
+            proposal.create(
+                what="Update memory",
+                why="Keep context readable",
+                payload={"session_id": "session-1", "summary_lines": ["user: hello"]},
+            )
+
+            report = proposal.history_report()
+
+        self.assertEqual(
+            set(report.keys()),
+            {"total", "approved", "rejected", "pending", "records"},
+        )
+
 
 if __name__ == "__main__":
     unittest.main()
