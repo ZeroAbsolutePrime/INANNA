@@ -1,273 +1,191 @@
-﻿# CURRENT PHASE: Cycle 3 - Phase 3.5 - The Faculty Monitor
+﻿# CURRENT PHASE: Cycle 3 - Phase 3.6 - The Memory Map
 **Status: ACTIVE**
 **Authorized by: ZAERA (Guardian) + Claude (Command Center)**
 **Date opened: 2026-04-19**
 **Cycle: 3 - The Commander Room**
-**Replaces: Cycle 3 Phase 3.4 - The Proposal Dashboard (COMPLETE)**
+**Replaces: Cycle 3 Phase 3.5 - The Faculty Monitor (COMPLETE)**
 
 ---
 
 ## What This Phase Is
 
-The Commander Room now has three pillars: Realm (where), Body (what
-substrate), and Proposal Dashboard (governance history). Phase 3.5
-adds the fourth: Faculty Monitor.
+Memory in INANNA is governed, selective, and meaningful. Every record
+was explicitly approved. Each one carries a session ID, a timestamp,
+a set of summary lines, and a realm name.
 
-The system currently has four active Faculties:
-- CROWN — primary conversational voice (Engine)
-- ANALYST — structured reasoning (AnalystFaculty)
-- OPERATOR — bounded tool execution (OperatorFaculty)
-- GUARDIAN — system observation (GuardianFaculty)
+But right now the memory panel in the UI is a flat list: records
+stacked one after another with no sense of time, no sense of growth,
+no sense of which sessions they came from.
 
-None of these are visible as entities in the UI. They exist in code
-but have no presence in the Commander Room. You cannot see at a glance
-which Faculty last spoke, how long it took, whether it is available.
+Phase 3.6 transforms the memory panel into a Memory Map: a timeline
+view of approved memory that shows when each record was created, how
+memory has accumulated over time, and lets the user inspect any record
+in depth.
 
-Phase 3.5 gives each Faculty a health record and surfaces them as
-named entities in a Faculty Monitor panel.
+This is not a cosmetic change. Memory is the most personal layer of
+the governed system. How it is presented shapes whether the user
+trusts it and can steward it.
 
 ---
 
 ## What You Are Building
 
-### Task 1 - inanna/core/faculty_monitor.py
+### Task 1 - Memory timeline in index.html
 
-Create a new file: inanna/core/faculty_monitor.py
+Replace the current flat memory list with a timeline view.
 
-```python
-from __future__ import annotations
-from dataclasses import dataclass, field
-from datetime import datetime, timezone
-from typing import Any
+Each memory record becomes a timeline entry:
 
+```
+MEMORY  (19 records)  [ clear all ]
 
-@dataclass
-class FacultyRecord:
-    name: str           # "crown" | "analyst" | "operator" | "guardian"
-    display_name: str   # "CROWN" | "ANALYST" | "OPERATOR" | "GUARDIAN"
-    role: str           # one-line description
-    mode: str           # "connected" | "fallback" | "ready" | "unavailable"
-    last_called_at: str | None = None
-    last_response_ms: float | None = None
-    call_count: int = 0
-    error_count: int = 0
+  ─── Apr 19 00:17 ────────────────────────────
+  [proposal-ad53fc1b]  session: 20260419T001708
+    1. user: Hello Dear
+    2. assistant: Greetings! I am INANNA...
+  [ forget ]
 
-
-class FacultyMonitor:
-    def __init__(self) -> None:
-        self._records: dict[str, FacultyRecord] = {
-            "crown": FacultyRecord(
-                name="crown",
-                display_name="CROWN",
-                role="Primary conversational voice and relational presence",
-                mode="unavailable",
-            ),
-            "analyst": FacultyRecord(
-                name="analyst",
-                display_name="ANALYST",
-                role="Structured reasoning and comparative analysis",
-                mode="unavailable",
-            ),
-            "operator": FacultyRecord(
-                name="operator",
-                display_name="OPERATOR",
-                role="Bounded tool execution (web_search)",
-                mode="ready",
-            ),
-            "guardian": FacultyRecord(
-                name="guardian",
-                display_name="GUARDIAN",
-                role="System observation and governance health",
-                mode="ready",
-            ),
-        }
-
-    def update_model_mode(self, mode: str) -> None:
-        for name in ("crown", "analyst"):
-            self._records[name].mode = mode
-
-    def record_call(
-        self,
-        faculty: str,
-        response_ms: float,
-        success: bool,
-    ) -> None:
-        if faculty not in self._records:
-            return
-        rec = self._records[faculty]
-        rec.last_called_at = datetime.now(timezone.utc).isoformat()
-        rec.last_response_ms = response_ms
-        rec.call_count += 1
-        if not success:
-            rec.error_count += 1
-
-    def get_record(self, faculty: str) -> FacultyRecord | None:
-        return self._records.get(faculty)
-
-    def all_records(self) -> list[FacultyRecord]:
-        return list(self._records.values())
-
-    def summary(self) -> list[dict[str, Any]]:
-        return [
-            {
-                "name": r.name,
-                "display_name": r.display_name,
-                "role": r.role,
-                "mode": r.mode,
-                "last_called_at": r.last_called_at,
-                "last_response_ms": r.last_response_ms,
-                "call_count": r.call_count,
-                "error_count": r.error_count,
-            }
-            for r in self._records.values()
-        ]
-
-    def format_report(self) -> str:
-        lines = ["Faculty Monitor:"]
-        for r in self._records.values():
-            mode_marker = {
-                "connected": "[connected]",
-                "fallback":  "[fallback] ",
-                "ready":     "[ready]    ",
-                "unavailable": "[unavail]  ",
-            }.get(r.mode, "[unknown]  ")
-            last = "never"
-            if r.last_called_at:
-                last = r.last_called_at[:19].replace("T", " ")
-            ms = f"{r.last_response_ms:.0f}ms" if r.last_response_ms else "-"
-            lines.append(
-                f"  {mode_marker} {r.display_name:<10} "
-                f"calls:{r.call_count:>4}  last:{last}  {ms}"
-            )
-            lines.append(f"               {r.role}")
-        return "\n".join(lines)
+  ─── Apr 19 00:40 ────────────────────────────
+  [proposal-1f0f1c5c]  session: 20260419T001708
+    1. user: I am ZAERA...
+    2. assistant: I acknowledge you as ZAERA...
+  [ forget ]
 ```
 
-### Task 2 - Instrument Faculty calls in main.py and server.py
+Timeline separator: a horizontal rule with the formatted date/time.
+Each record shows: proposal ID (short), session ID (short), lines.
+The [forget] button triggers the existing forget flow.
 
-Instantiate FacultyMonitor at startup alongside the other components.
+"Clear all" button at the top: sends a new command "memory-clear-all"
+that creates a proposal to clear ALL approved memory records.
+This is a governed action — proposal required, approval required.
 
-After engine.verify_connection(), call:
-```python
-monitor.update_model_mode(engine.mode)
+### Task 2 - Memory growth indicator
+
+Add a small growth indicator above the timeline:
+
+```
+MEMORY  (19 records)  ▓▓▓▓▓▓▓▓░░  19/20 lines used
 ```
 
-Wrap every Faculty call with timing:
-```python
-import time
-t0 = time.monotonic()
-result = engine.respond(...)
-monitor.record_call("crown", (time.monotonic() - t0) * 1000, True)
+The bar shows how full the memory is relative to the max_lines limit
+(default 10 per record, but show total lines across all records vs
+a configurable display cap of 50).
+
+CSS for the bar:
+```css
+.memory-bar {
+    display: inline-flex;
+    gap: 1px;
+    vertical-align: middle;
+}
+.memory-bar-filled { color: var(--voice); }
+.memory-bar-empty  { color: var(--dim); }
 ```
 
-Do this for:
-- Engine.respond() -> record_call("crown", ...)
-- AnalystFaculty.analyse() -> record_call("analyst", ...)
-- OperatorFaculty.execute() -> record_call("operator", ...)
-- GuardianFaculty.inspect() -> record_call("guardian", ...)
+Use block characters: filled = ▓, empty = ░
+Show 10 blocks total representing the fill percentage.
 
-For fallback responses (model not connected), still record the call
-with success=True and a realistic fallback timing.
+### Task 3 - Memory detail expansion
 
-### Task 3 - The "faculties" command
+Each memory record is collapsed by default showing only the first line.
+Clicking anywhere on the record expands it to show all lines.
 
-Add a new command: "faculties"
+Add a subtle expand indicator:
+- Collapsed: [proposal-ad53fc1b] ▸ user: Hello Dear...
+- Expanded: [proposal-ad53fc1b] ▾ (full content shown)
 
-When the user types "faculties", call monitor.format_report()
-and display the result.
+### Task 4 - New WebSocket command: memory-map
 
-CLI prefix: none (plain system output)
-UI message type: {"type": "system", "text": "..."}
+Add "memory-map" command to server.py and main.py.
 
-Add "faculties" to STARTUP_COMMANDS and capabilities in state.py.
-
-### Task 4 - Faculty summary in the status payload
-
-Add to the WebSocket status payload:
+When received, return all memory records with enriched data:
 ```json
 {
-  "faculties": [
+  "type": "memory_map",
+  "records": [
     {
-      "name": "crown",
-      "display_name": "CROWN",
-      "mode": "connected",
-      "call_count": 5,
-      "last_called_at": "2026-04-19T..."
-    },
-    ...
-  ]
+      "memory_id": "proposal-ad53fc1b",
+      "session_id": "20260419T001708-abc",
+      "approved_at": "2026-04-19T00:17:28",
+      "realm_name": "default",
+      "summary_lines": ["user: Hello Dear", "assistant: Greetings..."],
+      "line_count": 2
+    }
+  ],
+  "total_records": 19,
+  "total_lines": 38,
+  "oldest_at": "2026-04-19T00:17:28",
+  "newest_at": "2026-04-19T12:17:30"
 }
 ```
 
-Updated on every status broadcast.
+Records sorted oldest first.
 
-### Task 5 - Faculty Monitor panel in index.html
+### Task 5 - memory-clear-all command
 
-Add a new collapsible section below the PROPOSALS section
-in the side panel:
+Add "memory-clear-all" command.
 
+When received, create a proposal:
 ```
-FACULTIES
-  CROWN      [connected]  calls: 5   last: Apr 19 07:25
-    Primary conversational voice
-  ANALYST    [connected]  calls: 2   last: Apr 19 07:18
-    Structured reasoning
-  OPERATOR   [ready]      calls: 1   last: Apr 19 07:20
-    Bounded tool execution
-  GUARDIAN   [ready]      calls: 3   last: Apr 19 07:25
-    System observation
+what: "Clear all approved memory records"
+why:  "User requested full memory reset"
+payload: {"action": "clear_all_memory", "count": N}
 ```
 
-CSS for faculty entries:
-```css
-.faculty-entry {
-    padding: 6px 0;
-    border-bottom: 1px solid rgba(74, 58, 30, 0.12);
-}
-.faculty-name {
-    color: var(--voice);
-    font-size: 0.82rem;
-    letter-spacing: 0.1em;
-}
-.faculty-mode {
-    font-size: 0.76rem;
-    letter-spacing: 0.06em;
-}
-.faculty-mode.connected { color: var(--connected); }
-.faculty-mode.fallback  { color: var(--fallback); }
-.faculty-mode.ready     { color: #7a8a7a; }
-.faculty-mode.unavailable { color: var(--dim); }
-.faculty-role {
-    color: var(--dim);
-    font-size: 0.76rem;
-    margin-top: 2px;
+After approval in the normal approve flow, delete ALL memory record
+files in the active realm's memory directory.
+
+Add delete_all_memory_records() to Memory class in memory.py:
+```python
+def delete_all_memory_records(self) -> int:
+    count = 0
+    for path in list(self.memory_dir.glob("*.json")):
+        path.unlink()
+        count += 1
+    return count
+```
+
+The "clear all" button in the UI sends:
+```json
+{"type": "command", "cmd": "memory-clear-all"}
+```
+
+### Task 6 - Memory stats in status payload
+
+Add to the status payload:
+```json
+{
+  "memory_total_lines": 38,
+  "memory_oldest_at": "2026-04-19T00:17:28",
+  "memory_newest_at": "2026-04-19T12:17:30"
 }
 ```
 
-The panel updates when the status payload includes faculties data.
+These are computed from Memory.memory_log_report() at status time.
 
-### Task 6 - Update identity.py and state.py
+### Task 7 - Update identity.py and state.py
 
 Update CURRENT_PHASE:
 ```python
-CURRENT_PHASE = "Cycle 3 - Phase 3.5 - The Faculty Monitor"
+CURRENT_PHASE = "Cycle 3 - Phase 3.6 - The Memory Map"
 ```
 
-Add "faculties" to STARTUP_COMMANDS and capabilities.
+Add "memory-map" and "memory-clear-all" to STARTUP_COMMANDS
+and capabilities in state.py.
 
-### Task 7 - Tests
+### Task 8 - Tests
 
-Create inanna/tests/test_faculty_monitor.py:
-- FacultyMonitor can be instantiated
-- all_records() returns 4 FacultyRecord entries
-- update_model_mode("connected") updates crown and analyst mode
-- record_call() increments call_count correctly
-- record_call() updates last_called_at
-- record_call() increments error_count on failure
-- format_report() contains "CROWN", "ANALYST", "OPERATOR", "GUARDIAN"
-- summary() returns list of 4 dicts with required keys
+Add to inanna/tests/test_memory.py:
+- delete_all_memory_records() removes all json files
+- delete_all_memory_records() returns correct count
+- delete_all_memory_records() on empty dir returns 0
 
-Update test_identity.py, test_state.py, test_commands.py for Phase 3.5.
+Add to inanna/tests/test_commands.py:
+- "memory-map" in capabilities
+- "memory-clear-all" in capabilities
+
+Update test_identity.py: update CURRENT_PHASE assertion.
 
 ---
 
@@ -275,52 +193,54 @@ Update test_identity.py, test_state.py, test_commands.py for Phase 3.5.
 
 ```
 inanna/
-  identity.py                  <- MODIFY: update CURRENT_PHASE
-  main.py                      <- MODIFY: instantiate FacultyMonitor,
-                                          instrument Faculty calls,
-                                          add faculties command
+  identity.py              <- MODIFY: update CURRENT_PHASE
+  main.py                  <- MODIFY: add memory-map and
+                                      memory-clear-all commands
   core/
-    faculty_monitor.py         <- NEW
-    state.py                   <- MODIFY: add faculties to capabilities
-    (all others)               <- no changes
+    memory.py              <- MODIFY: add delete_all_memory_records()
+    state.py               <- MODIFY: add new commands to capabilities
+    (all others)           <- no changes
   ui/
-    server.py                  <- MODIFY: instantiate FacultyMonitor,
-                                          instrument calls,
-                                          faculties in status payload,
-                                          faculties command
+    server.py              <- MODIFY: add memory-map command,
+                                      memory-clear-all command,
+                                      memory stats in status payload
     static/
-      index.html               <- MODIFY: Faculty Monitor panel,
-                                          update status handler
+      index.html           <- MODIFY: memory timeline view,
+                                      growth bar, expand/collapse,
+                                      clear all button
   tests/
-    test_faculty_monitor.py    <- NEW
-    test_identity.py           <- MODIFY: update phase assertion
-    test_state.py              <- MODIFY: add faculties capability
-    test_commands.py           <- MODIFY: add faculties capability
-    (all others)               <- no changes
+    test_memory.py         <- MODIFY: add delete_all tests
+    test_commands.py       <- MODIFY: add new commands
+    test_identity.py       <- MODIFY: update phase assertion
+    (all others)           <- no changes
 ```
 
 ---
 
 ## What You Are NOT Building in This Phase
 
-- No Faculty configuration via UI
-- No Faculty enable/disable
-- No Faculty-specific memory or governance rules
-- No new Faculty classes
-- No change to Faculty routing or governance logic
-- No persistent Faculty metrics across sessions (in-memory only)
-- No alerts from Faculty metrics (that is Guardian's role)
+- No memory search or filtering by content
+- No memory editing
+- No cross-realm memory view
+- No memory export
+- No memory import
+- No change to how memory is written or approved
+- No change to the grounding turn logic
+- No new Faculty or governance capability
+- The clear-all must go through a proposal — never silent
 
 ---
 
-## Definition of Done for Phase 3.5
+## Definition of Done for Phase 3.6
 
-- [ ] core/faculty_monitor.py exists with FacultyMonitor and FacultyRecord
-- [ ] All four Faculties instrumented with call timing
-- [ ] "faculties" command shows formatted report in CLI and UI
-- [ ] Status payload includes faculties summary array
-- [ ] Faculty Monitor panel visible in UI side panel
-- [ ] Faculty mode updates correctly after connection check
+- [ ] Memory panel shows timeline view with date separators
+- [ ] Each record is collapsible, showing first line by default
+- [ ] Memory growth bar shows fill percentage
+- [ ] "memory-map" command returns enriched records
+- [ ] "memory-clear-all" creates a proposal before deleting
+- [ ] After approval, all memory records are deleted
+- [ ] Memory stats in status payload
+- [ ] delete_all_memory_records() exists on Memory and is tested
 - [ ] CURRENT_PHASE updated
 - [ ] All tests pass: py -3 -m unittest discover -s tests
 
@@ -329,14 +249,15 @@ inanna/
 ## Handoff to Command Center
 
 When Definition of Done is met, Codex must:
-1. Commit with message: cycle3-phase5-complete
-2. Write docs/implementation/CYCLE3_PHASE5_REPORT.md
-3. Stop. Do not begin Phase 3.6 without a new CURRENT_PHASE.md.
+1. Commit with message: cycle3-phase6-complete
+2. Write docs/implementation/CYCLE3_PHASE6_REPORT.md
+3. Stop. Do not begin Phase 3.7 without a new CURRENT_PHASE.md.
 
 ---
 
 *Written by: Claude (Command Center)*
 *Guardian approval: ZAERA*
 *Date: 2026-04-19*
-*CROWN speaks. ANALYST reasons. OPERATOR acts. GUARDIAN watches.*
-*Phase 3.5 makes all four visible at once.*
+*Memory is not a log. It is a map.*
+*Each record has a place in time.*
+*The Memory Map makes that visible.*
