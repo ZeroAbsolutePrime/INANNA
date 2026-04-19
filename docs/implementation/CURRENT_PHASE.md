@@ -1,213 +1,223 @@
-﻿# CURRENT PHASE: Cycle 4 - Phase 4.1 - The User Identity
+﻿# CURRENT PHASE: Cycle 4 - Phase 4.2 - The Access Gate
 **Status: ACTIVE**
 **Authorized by: ZAERA (Guardian) + Claude (Command Center)**
 **Date opened: 2026-04-19**
 **Cycle: 4 - The Civic Layer**
-**Prerequisite: Cycle 3 complete - verify_cycle3.py passed 46 checks**
+**Replaces: Cycle 4 Phase 4.1 - The User Identity (COMPLETE)**
 
 ---
 
 ## What This Phase Is
 
-INANNA has served one person until now: the Guardian.
-One session. One realm. One memory store. One voice.
+Phase 4.1 gave users existence — records on disk with roles
+and config-driven privileges.
 
-Phase 4.1 introduces the foundation of the Civic Layer:
-user records with roles, a user manager, and the config
-file that defines what each role can do.
+Phase 4.2 gives sessions identity. When the server starts,
+it no longer assumes the single Guardian is the only operator.
+A session is now bound to a user. That binding is explicit,
+lightweight, and governed.
 
-No login yet. No session binding yet. No access control yet.
-Those come in Phases 4.2 and 4.3.
+In this phase: session tokens.
 
-Phase 4.1 is purely: the data model, the manager, the config,
-and the Guardian command to create and list users.
-This is the identity foundation everything else will build on.
+A session token is a short-lived string generated at login.
+It is stored in the session state and used to identify which
+user is active in the current session. The token is not
+cryptographically secure yet — that is Phase 4.3. For now
+it is a governed identity binding: a UUID tied to a user_id,
+valid for the duration of one server session.
+
+No passwords. No OAuth. No external identity. The access gate
+in Phase 4.2 is: you state who you are, a token is issued,
+and all subsequent actions in that session are associated
+with that user_id. The Guardian can always see who is active.
 
 ---
 
 ## What You Are Building
 
-### Task 1 - inanna/config/roles.json
+### Task 1 - inanna/core/session_token.py
 
-Create: inanna/config/roles.json
+Create: inanna/core/session_token.py
 
-This is the single source of truth for roles and privileges.
-Python code NEVER hardcodes role names or privilege lists.
+Two classes: SessionToken (dataclass) and TokenStore.
 
-Content:
-{
-  "roles": {
-    "guardian": {
-      "description": "Full system access - assigned directly only",
-      "privileges": ["all"]
-    },
-    "operator": {
-      "description": "Realm-scoped admin",
-      "privileges": [
-        "manage_users_in_realm",
-        "approve_proposals_in_realm",
-        "read_realm_audit_log",
-        "invite_users"
-      ]
-    },
-    "user": {
-      "description": "Standard interaction",
-      "privileges": [
-        "converse",
-        "approve_own_memory",
-        "read_own_log",
-        "forget_own_memory"
-      ]
-    }
-  }
-}
-
-### Task 2 - inanna/core/user.py
-
-Create: inanna/core/user.py
-
-Two classes: UserRecord (dataclass) and UserManager.
-
-UserRecord fields:
-  user_id: str          (generated: "user_" + 8 hex chars)
+SessionToken fields:
+  token: str          (UUID4, generated at login)
+  user_id: str
   display_name: str
-  role: str             ("guardian" | "operator" | "user")
-  assigned_realms: list[str]  (realm names this user can access)
-  created_at: str       (ISO timestamp)
-  created_by: str       (user_id of creator, or "system")
-  status: str           ("active" | "suspended")
+  role: str
+  issued_at: str      (ISO timestamp)
+  expires_at: str     (ISO timestamp, issued_at + SESSION_HOURS)
+  active: bool        (True until logout or expiry)
 
-UserManager:
-  __init__(data_root: Path, roles_config_path: Path)
-  - users_dir = data_root / "users"
-  - loads roles.json at init
+SESSION_HOURS = 8  (configurable constant)
 
-  Methods:
-  create_user(display_name, role, assigned_realms, created_by) -> UserRecord
-  get_user(user_id) -> UserRecord | None
-  list_users() -> list[UserRecord]
-  list_users_by_realm(realm) -> list[UserRecord]
-  suspend_user(user_id) -> bool
-  activate_user(user_id) -> bool
-  has_privilege(user_id, privilege) -> bool
-  get_role_privileges(role) -> list[str]
+TokenStore:
+  __init__()
+  - in-memory only: dict[str, SessionToken]
+  - no disk persistence (tokens are session-scoped)
 
-has_privilege() logic:
-  - Load user record
-  - Get role from record
-  - Load role privileges from roles.json
-  - If role privileges contains "all": return True
-  - Return privilege in role privileges
+  issue(user_id, display_name, role) -> SessionToken
+  validate(token) -> SessionToken | None
+    - Returns None if token not found, inactive, or expired
+  revoke(token) -> bool
+  active_tokens() -> list[SessionToken]
+  revoke_all_for_user(user_id) -> int
 
-All user records stored as JSON:
-  inanna/data/users/{user_id}.json
+### Task 2 - The "login" command
 
-ensure_guardian_exists(): called at startup.
-  If no user with role "guardian" exists, create one:
-  display_name="ZAERA", role="guardian",
-  assigned_realms=["all"], created_by="system"
-  Print: "Guardian user created: {user_id}"
+Add "login [display_name]" command to main.py and server.py.
 
-### Task 3 - The "users" command
+Flow:
+1. User types: login ZAERA
+2. System looks up user by display_name in UserManager
+3. If not found: "No user found with name: ZAERA"
+4. If found: issue a SessionToken, store in TokenStore
+5. Print:
+   login > session started for ZAERA (guardian)
+   login > token: {first 8 chars}... valid for 8 hours
+   login > session bound to user_id: {user_id}
 
-Add "users" command to main.py and server.py.
+The active token is stored in server/CLI state:
+  self.active_token: SessionToken | None = None
+
+The phase banner in the UI header updates to show the
+active user after login:
+  CYCLE 4 - PHASE 4.2   REALM: DEFAULT   USER: ZAERA   BODY: OK
+
+### Task 3 - The "logout" command
+
+Add "logout" command.
+
+Flow:
+1. If no active token: "No active session."
+2. If active token: revoke it, clear self.active_token
+3. Print: "logout > session ended for {display_name}"
+
+### Task 4 - The "whoami" command
+
+Add "whoami" command.
 
 Output:
-Users (N total):
-  [guardian]  ZAERA           active   realms: all
-  [operator]  ThyArcanum      active   realms: default, arcanum
-  [user]      Alice            active   realms: default
+  whoami > ZAERA (guardian)
+  whoami > user_id: user_6e250a89
+  whoami > session token: {first 8 chars}... (active)
+  whoami > session expires: Apr 19 20:30
+  whoami > privileges: all
 
-Only accessible by users with "all" privilege (guardian).
-For now in CLI and UI, no auth check yet — that is Phase 4.2.
-Show a note: "(access control active in Phase 4.2)"
+If no active session:
+  whoami > No active session. Type "login [name]" to identify.
 
-### Task 4 - The "create-user" command
+### Task 5 - Active user in status payload
 
-Add "create-user [display_name] [role] [realm]" command.
+Add to the WebSocket status payload:
+  "active_user": {
+    "user_id": "user_6e250a89",
+    "display_name": "ZAERA",
+    "role": "guardian",
+    "token_preview": "a3f7b2c1...",
+    "expires_at": "2026-04-19T20:30:00"
+  }
 
-This is a GOVERNED action — it creates a proposal:
-[USER PROPOSAL] | Create user: {name} with role {role} | status: pending
+Or null if no active session.
 
-After approval, UserManager.create_user() is called.
-Print: "User created: {display_name} ({user_id}) role: {role}"
+The UI header shows the active user name when present.
 
-Only guardian can create users with operator or guardian role.
-For Phase 4.1 no auth check — proposal is the gate.
+### Task 6 - Auto-login as Guardian on startup
 
-### Task 5 - Update identity.py and state.py
+For Phase 4.2, on server/CLI startup:
+  1. Call ensure_guardian_exists()
+  2. Auto-issue a session token for the Guardian user
+  3. Set self.active_token = the issued token
+  4. Print: "Auto-login: ZAERA (guardian) | session active"
 
-CURRENT_PHASE = "Cycle 4 - Phase 4.1 - The User Identity"
+This means existing workflows are not disrupted.
+The Guardian is always the active user unless someone logs in
+as a different user. Phase 4.3 will enforce access control.
+For now, the binding is informational and auditable.
 
-Add "users" and "create-user" to STARTUP_COMMANDS and capabilities.
+### Task 7 - Session token in audit log
 
-### Task 6 - Tests
+When a login or logout event occurs, append to session_audit:
+  {"event_type": "login", "summary": "ZAERA (guardian) logged in"}
+  {"event_type": "logout", "summary": "ZAERA (guardian) logged out"}
 
-Create inanna/tests/test_user.py:
-  - UserRecord can be instantiated with required fields
-  - UserManager can be instantiated with temp directory
-  - create_user() creates a JSON file in users_dir
-  - get_user() returns correct UserRecord
-  - list_users() returns all users
-  - has_privilege("all") returns True for guardian role
-  - has_privilege("converse") returns True for user role
-  - has_privilege("manage_users_in_realm") returns False for user role
-  - suspend_user() changes status to "suspended"
-  - ensure_guardian_exists() creates guardian if none exists
-  - ensure_guardian_exists() does not duplicate if already exists
+### Task 8 - Update identity.py and state.py
+
+CURRENT_PHASE = "Cycle 4 - Phase 4.2 - The Access Gate"
+
+Add "login", "logout", "whoami" to STARTUP_COMMANDS and capabilities.
+
+### Task 9 - Tests
+
+Create inanna/tests/test_session_token.py:
+  - SessionToken can be instantiated with required fields
+  - TokenStore.issue() returns a SessionToken with a UUID token
+  - TokenStore.validate() returns token for valid token string
+  - TokenStore.validate() returns None for unknown token
+  - TokenStore.validate() returns None for revoked token
+  - TokenStore.validate() returns None for expired token
+    (set SESSION_HOURS=0 and issue a token to test expiry)
+  - TokenStore.revoke() deactivates the token
+  - TokenStore.active_tokens() returns only active tokens
+  - TokenStore.revoke_all_for_user() revokes all user tokens
 
 Update test_identity.py: update CURRENT_PHASE assertion.
-Update test_state.py and test_commands.py: add users, create-user.
+Update test_state.py and test_commands.py: add new commands.
 
 ---
 
 ## Permitted file changes
 
-inanna/identity.py              <- MODIFY: update CURRENT_PHASE
-inanna/config/roles.json        <- NEW: role and privilege definitions
-inanna/main.py                  <- MODIFY: users and create-user commands,
-                                           instantiate UserManager,
-                                           ensure_guardian_exists()
+inanna/identity.py                <- MODIFY: update CURRENT_PHASE
+inanna/main.py                    <- MODIFY: login/logout/whoami commands,
+                                             TokenStore instantiation,
+                                             auto-login at startup,
+                                             active_token state,
+                                             active_user in status
 inanna/core/
-  user.py                       <- NEW: UserRecord, UserManager
-  state.py                      <- MODIFY: add users, create-user
+  session_token.py                <- NEW: SessionToken, TokenStore
+  state.py                        <- MODIFY: add new commands
+  user.py                         <- no changes
 inanna/ui/
-  server.py                     <- MODIFY: users command,
-                                           create-user command,
-                                           UserManager instantiation
-  static/index.html             <- no changes (Phase 4.2 adds UI)
+  server.py                       <- MODIFY: login/logout/whoami commands,
+                                             TokenStore instantiation,
+                                             auto-login at startup,
+                                             active_user in status payload,
+                                             user name in header update
+  static/index.html               <- MODIFY: show active user in header,
+                                             handle active_user in status
 inanna/tests/
-  test_user.py                  <- NEW
-  test_identity.py              <- MODIFY: update phase assertion
-  test_state.py                 <- MODIFY: add capabilities
-  test_commands.py              <- MODIFY: add capabilities
+  test_session_token.py           <- NEW
+  test_identity.py                <- MODIFY: update phase assertion
+  test_state.py                   <- MODIFY: add capabilities
+  test_commands.py                <- MODIFY: add capabilities
 
 ---
 
 ## What You Are NOT Building
 
-- No login or session token (Phase 4.2)
+- No password hashing or verification
+- No OAuth or external identity provider
 - No access control enforcement (Phase 4.3)
 - No per-user memory scoping (Phase 4.4)
-- No per-user interaction log (Phase 4.5)
-- No UI user management panel (Phase 4.8)
-- No password or OAuth
-- No email or external identity
-- Do not hardcode role names or privilege lists in Python
+- No per-user log (Phase 4.5)
+- No token persistence across server restarts
+- No multi-session support per user (one active token per user)
+- Do not change the UserManager or roles.json
 
 ---
 
-## Definition of Done for Phase 4.1
+## Definition of Done for Phase 4.2
 
-- [ ] inanna/config/roles.json exists with 3 roles and privilege lists
-- [ ] inanna/core/user.py exists with UserRecord and UserManager
-- [ ] UserManager reads privileges from roles.json (not hardcoded)
-- [ ] has_privilege() works correctly for all three roles
-- [ ] ensure_guardian_exists() creates ZAERA on first startup
-- [ ] "users" command lists all users in CLI and UI
-- [ ] "create-user" command creates user via proposal flow
-- [ ] User records persisted as JSON in data/users/
-- [ ] CURRENT_PHASE updated to Phase 4.1
+- [ ] core/session_token.py with SessionToken and TokenStore
+- [ ] "login [name]" issues a token and binds the session
+- [ ] "logout" revokes the token and clears the binding
+- [ ] "whoami" shows the active user and session state
+- [ ] Auto-login as Guardian at startup
+- [ ] Active user shown in UI header and status payload
+- [ ] Login/logout events appear in audit log
+- [ ] CURRENT_PHASE updated
 - [ ] All tests pass: py -3 -m unittest discover -s tests
 
 ---
@@ -215,16 +225,15 @@ inanna/tests/
 ## Handoff to Command Center
 
 When Definition of Done is met, Codex must:
-1. Commit with message: cycle4-phase1-complete
-2. Write docs/implementation/CYCLE4_PHASE1_REPORT.md
-3. Stop. Do not begin Phase 4.2 without a new CURRENT_PHASE.md.
+1. Commit with message: cycle4-phase2-complete
+2. Write docs/implementation/CYCLE4_PHASE2_REPORT.md
+3. Stop. Do not begin Phase 4.3 without a new CURRENT_PHASE.md.
 
 ---
 
 *Written by: Claude (Command Center)*
 *Guardian approval: ZAERA*
 *Date: 2026-04-19*
-*The civic layer begins with a name.*
-*Before roles, before permissions, before access:*
-*a person must exist in the system.*
-*Phase 4.1 gives them existence.*
+*A session knows who it belongs to.*
+*That is the access gate.*
+*Not a wall — a binding.*
