@@ -247,3 +247,39 @@ That is what all of this is for.
 *Written by: Claude (Command Center)*
 *Confirmed by: ZAERA (Guardian)*
 *Date: 2026-04-19*
+
+
+---
+
+## The MCP Integration Layer
+
+*Added 2026-04-19 — informed by "The Future of MCP", David Soria Parra, Anthropic*
+
+INANNA NYX does not sit outside the MCP ecosystem.
+INANNA NYX is a governed node within it.
+
+Three roles simultaneously:
+
+**As MCP Server:** INANNA exposes its Faculties, tools, and governance
+capabilities as MCP tools — discoverable by any compatible client.
+An external agent can invoke INANNA as a constitutional intelligence service.
+
+**As MCP Client (NAMMU):** When the Faculty Network arrives in Cycle 5,
+NAMMU becomes an MCP client using "progressive discovery" — it does not
+load all Faculties into context at once. It queries the Faculty Registry
+on demand, loads the right Faculty for the right domain, and routes
+the request. Context stays lean. Routing stays intelligent.
+
+**As Governed MCP Gateway:** External MCP servers connect to INANNA.
+INANNA's governance wraps every external tool call.
+The proposal engine gates execution. The audit surface records everything.
+The ecosystem's connectivity with INANNA's law.
+
+The constitutional principle that makes this distinct:
+  Standard MCP:  discover -> call -> result
+  INANNA MCP:    discover -> propose -> approve -> call -> result -> audit
+
+No MCP tool executes without passing through Law 1.
+This is not a constraint on connectivity. It is the shape of responsible connectivity.
+
+Full MCP integration architecture: see docs/mcp_integration_architecture.md
