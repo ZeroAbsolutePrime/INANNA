@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import unittest
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from tempfile import TemporaryDirectory
 
@@ -152,6 +153,105 @@ class UserTests(unittest.TestCase):
         self.assertIn("No active session", reason)
         self.assertTrue(guardian_allowed)
         self.assertEqual(guardian_reason, "")
+
+    def test_create_invite_creates_invite_record_with_inanna_code(self) -> None:
+        _, _, manager = self.make_user_manager()
+
+        invite = manager.create_invite(
+            role="user",
+            assigned_realms=["default"],
+            created_by="user_guardian",
+        )
+
+        self.assertTrue(invite.invite_code.startswith("INANNA-"))
+        self.assertEqual(invite.role, "user")
+        self.assertEqual(invite.assigned_realms, ["default"])
+        self.assertEqual(invite.status, "pending")
+
+    def test_get_invite_returns_record_for_valid_code(self) -> None:
+        _, _, manager = self.make_user_manager()
+        invite = manager.create_invite("user", ["default"], "user_guardian")
+
+        loaded = manager.get_invite(invite.invite_code)
+
+        self.assertIsNotNone(loaded)
+        self.assertEqual(loaded.invite_code, invite.invite_code)
+
+    def test_get_invite_returns_none_for_unknown_code(self) -> None:
+        _, _, manager = self.make_user_manager()
+
+        self.assertIsNone(manager.get_invite("INANNA-XXXX-XXXX"))
+
+    def test_accept_invite_creates_user_and_updates_invite_status(self) -> None:
+        _, _, manager = self.make_user_manager()
+        invite = manager.create_invite("user", ["default"], "user_guardian")
+
+        created = manager.accept_invite(invite.invite_code, "Alice")
+        updated = manager.get_invite(invite.invite_code)
+
+        self.assertIsNotNone(created)
+        self.assertEqual(created.display_name, "Alice")
+        self.assertEqual(created.role, "user")
+        self.assertIsNotNone(updated)
+        self.assertEqual(updated.status, "accepted")
+        self.assertEqual(updated.accepted_by, created.user_id)
+
+    def test_accept_invite_returns_none_for_expired_invite(self) -> None:
+        _, root, manager = self.make_user_manager()
+        invite = manager.create_invite("user", ["default"], "user_guardian")
+        invite_path = root / "invites" / f"{invite.invite_code}.json"
+        payload = json.loads(invite_path.read_text(encoding="utf-8"))
+        payload["expires_at"] = (datetime.now(timezone.utc) - timedelta(hours=1)).isoformat()
+        invite_path.write_text(json.dumps(payload, indent=2), encoding="utf-8")
+
+        created = manager.accept_invite(invite.invite_code, "Alice")
+        updated = manager.get_invite(invite.invite_code)
+
+        self.assertIsNone(created)
+        self.assertEqual(updated.status, "expired")
+
+    def test_accept_invite_returns_none_for_already_accepted_invite(self) -> None:
+        _, _, manager = self.make_user_manager()
+        invite = manager.create_invite("user", ["default"], "user_guardian")
+        first = manager.accept_invite(invite.invite_code, "Alice")
+        second = manager.accept_invite(invite.invite_code, "Bob")
+
+        self.assertIsNotNone(first)
+        self.assertIsNone(second)
+
+    def test_list_invites_returns_all_records(self) -> None:
+        _, _, manager = self.make_user_manager()
+        manager.create_invite("user", ["default"], "user_guardian")
+        manager.create_invite("operator", ["work"], "user_guardian")
+
+        invites = manager.list_invites()
+
+        self.assertEqual(len(invites), 2)
+
+    def test_list_invites_filters_by_status(self) -> None:
+        _, _, manager = self.make_user_manager()
+        pending = manager.create_invite("user", ["default"], "user_guardian")
+        accepted = manager.create_invite("user", ["default"], "user_guardian")
+        manager.accept_invite(accepted.invite_code, "Alice")
+
+        invites = manager.list_invites(status="pending")
+
+        self.assertEqual(len(invites), 1)
+        self.assertEqual(invites[0].invite_code, pending.invite_code)
+
+    def test_expire_old_invites_marks_past_expiry_records(self) -> None:
+        _, root, manager = self.make_user_manager()
+        invite = manager.create_invite("user", ["default"], "user_guardian")
+        invite_path = root / "invites" / f"{invite.invite_code}.json"
+        payload = json.loads(invite_path.read_text(encoding="utf-8"))
+        payload["expires_at"] = (datetime.now(timezone.utc) - timedelta(hours=1)).isoformat()
+        invite_path.write_text(json.dumps(payload, indent=2), encoding="utf-8")
+
+        count = manager.expire_old_invites()
+        updated = manager.get_invite(invite.invite_code)
+
+        self.assertEqual(count, 1)
+        self.assertEqual(updated.status, "expired")
 
 
 if __name__ == "__main__":

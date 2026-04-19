@@ -9,14 +9,17 @@ from tempfile import TemporaryDirectory
 from unittest.mock import patch
 
 from config import Config
+from core.faculty_monitor import FacultyMonitor
 from core.memory import Memory
 from core.nammu import IntentClassifier
 from core.operator import ToolResult
 from core.proposal import Proposal
 from core.realm import RealmManager
 from core.session import AnalystFaculty, Engine, Session
+from core.session_token import TokenStore
 from core.state import StateReport
 from core.user import UserManager, ensure_guardian_exists
+from core.user_log import UserLog
 from main import STARTUP_COMMANDS, handle_command, startup_commands_line
 
 
@@ -175,23 +178,44 @@ class CommandTests(unittest.TestCase):
                 routing_log,
                 startup_context,
                 config,
-        )
+            )
         return result, output.getvalue(), prompts
 
     def make_user_context(
         self,
         root: Path,
-    ) -> tuple[UserManager, dict[str, object | None]]:
+    ) -> tuple[
+        UserManager,
+        dict[str, object | None],
+        TokenStore,
+        UserLog,
+        FacultyMonitor,
+    ]:
         roles_path = root / "roles.json"
         roles_path.write_text(json.dumps(ROLES_PAYLOAD, indent=2), encoding="utf-8")
         user_manager = UserManager(data_root=root, roles_config_path=roles_path)
         guardian_user = ensure_guardian_exists(user_manager)
+        token_store = TokenStore()
+        guardian_token = token_store.issue(
+            guardian_user.user_id,
+            guardian_user.display_name,
+            guardian_user.role,
+        )
         session_state: dict[str, object | None] = {
             "active_user": guardian_user,
             "original_user": None,
             "guardian_user": guardian_user,
+            "active_token": guardian_token,
+            "original_token": None,
+            "guardian_token": guardian_token,
         }
-        return user_manager, session_state
+        return (
+            user_manager,
+            session_state,
+            token_store,
+            UserLog(root / "user_logs"),
+            FacultyMonitor(),
+        )
 
     def test_status_returns_session_line(self) -> None:
         (
@@ -455,15 +479,26 @@ class CommandTests(unittest.TestCase):
         self.assertEqual(
             STARTUP_COMMANDS,
             (
+                "users",
+                "create-user",
+                "login",
+                "logout",
+                "whoami",
                 "reflect",
                 "analyse",
                 "audit",
                 "guardian",
+                "faculties",
                 "realms",
                 "realm-context",
                 "switch-user",
                 "assign-realm",
                 "unassign-realm",
+                "my-log",
+                "user-log",
+                "invite",
+                "join",
+                "invites",
                 "history",
                 "proposal-history",
                 "routing-log",
@@ -481,12 +516,433 @@ class CommandTests(unittest.TestCase):
         self.assertEqual(
             startup_commands_line(),
             (
-                "Commands: reflect, analyse, audit, guardian, realms, realm-context, "
-                "switch-user, assign-realm, unassign-realm, history, proposal-history, "
-                "routing-log, nammu-log, memory-log, body, status, diagnostics, "
-                "approve, reject, forget, exit"
+                "Commands: users, create-user, login, logout, whoami, reflect, analyse, "
+                "audit, guardian, faculties, realms, realm-context, switch-user, "
+                "assign-realm, unassign-realm, my-log, user-log, invite, join, invites, "
+                "history, proposal-history, routing-log, nammu-log, memory-log, body, "
+                "status, diagnostics, approve, reject, forget, exit"
             ),
         )
+
+    def test_users_command_lists_guardian_user(self) -> None:
+        (
+            session,
+            memory,
+            proposal,
+            state_report,
+            engine,
+            analyst,
+            classifier,
+            routing_log,
+            startup_context,
+            config,
+        ) = self.make_runtime()
+        root = session.session_path.parent.parent
+        user_manager, session_state, _, _, _ = self.make_user_context(root)
+
+        result = handle_command(
+            "users",
+            session,
+            memory,
+            proposal,
+            state_report,
+            engine,
+            analyst,
+            classifier,
+            routing_log,
+            startup_context,
+            config,
+            user_manager=user_manager,
+            session_state=session_state,  # type: ignore[arg-type]
+        )
+
+        self.assertIn("Users (1 total):", result)
+        self.assertIn("ZAERA", result)
+
+    def test_create_user_proposal_uses_active_token_user_id_as_created_by(self) -> None:
+        (
+            session,
+            memory,
+            proposal,
+            state_report,
+            engine,
+            analyst,
+            classifier,
+            routing_log,
+            startup_context,
+            config,
+        ) = self.make_runtime()
+        root = session.session_path.parent.parent
+        user_manager, session_state, token_store, user_log, faculty_monitor = self.make_user_context(
+            root
+        )
+
+        result = handle_command(
+            "create-user Alice user default",
+            session,
+            memory,
+            proposal,
+            state_report,
+            engine,
+            analyst,
+            classifier,
+            routing_log,
+            startup_context,
+            config,
+            user_manager=user_manager,
+            session_state=session_state,  # type: ignore[arg-type]
+            token_store=token_store,
+            user_log=user_log,
+            faculty_monitor=faculty_monitor,
+            session_audit=[],
+        )
+        approval = handle_command(
+            "approve",
+            session,
+            memory,
+            proposal,
+            state_report,
+            engine,
+            analyst,
+            classifier,
+            routing_log,
+            startup_context,
+            config,
+            user_manager=user_manager,
+            session_state=session_state,  # type: ignore[arg-type]
+            token_store=token_store,
+            user_log=user_log,
+            faculty_monitor=faculty_monitor,
+            session_audit=[],
+        )
+        created = user_manager.get_user_by_display_name("Alice")
+
+        self.assertIn("[USER PROPOSAL]", result)
+        self.assertIsNotNone(created)
+        self.assertEqual(created.created_by, session_state["active_token"].user_id)
+        self.assertIn("User created: Alice", approval)
+
+    def test_login_whoami_and_logout_commands_manage_session_identity(self) -> None:
+        (
+            session,
+            memory,
+            proposal,
+            state_report,
+            engine,
+            analyst,
+            classifier,
+            routing_log,
+            startup_context,
+            config,
+        ) = self.make_runtime()
+        root = session.session_path.parent.parent
+        user_manager, session_state, token_store, user_log, faculty_monitor = self.make_user_context(
+            root
+        )
+        user_manager.create_user("Alice", "user", ["default"], "system")
+
+        login_result = handle_command(
+            "login Alice",
+            session,
+            memory,
+            proposal,
+            state_report,
+            engine,
+            analyst,
+            classifier,
+            routing_log,
+            startup_context,
+            config,
+            user_manager=user_manager,
+            session_state=session_state,  # type: ignore[arg-type]
+            token_store=token_store,
+            user_log=user_log,
+            faculty_monitor=faculty_monitor,
+            session_audit=[],
+        )
+        whoami_result = handle_command(
+            "whoami",
+            session,
+            memory,
+            proposal,
+            state_report,
+            engine,
+            analyst,
+            classifier,
+            routing_log,
+            startup_context,
+            config,
+            user_manager=user_manager,
+            session_state=session_state,  # type: ignore[arg-type]
+            token_store=token_store,
+            user_log=user_log,
+            faculty_monitor=faculty_monitor,
+            session_audit=[],
+        )
+        logout_result = handle_command(
+            "logout",
+            session,
+            memory,
+            proposal,
+            state_report,
+            engine,
+            analyst,
+            classifier,
+            routing_log,
+            startup_context,
+            config,
+            user_manager=user_manager,
+            session_state=session_state,  # type: ignore[arg-type]
+            token_store=token_store,
+            user_log=user_log,
+            faculty_monitor=faculty_monitor,
+            session_audit=[],
+        )
+
+        self.assertIn("login > session started for Alice (user)", login_result)
+        self.assertIn("whoami > Alice (user)", whoami_result)
+        self.assertIn("whoami > session token:", whoami_result)
+        self.assertEqual(logout_result, "logout > session ended for Alice")
+
+    def test_faculties_command_returns_faculty_monitor_report(self) -> None:
+        (
+            session,
+            memory,
+            proposal,
+            state_report,
+            engine,
+            analyst,
+            classifier,
+            routing_log,
+            startup_context,
+            config,
+        ) = self.make_runtime()
+        faculty_monitor = FacultyMonitor()
+        faculty_monitor.record_call("crown", 123.0, True)
+
+        result = handle_command(
+            "faculties",
+            session,
+            memory,
+            proposal,
+            state_report,
+            engine,
+            analyst,
+            classifier,
+            routing_log,
+            startup_context,
+            config,
+            faculty_monitor=faculty_monitor,
+        )
+
+        self.assertIn("Faculty Monitor:", result)
+        self.assertIn("CROWN", result)
+        self.assertIn("GUARDIAN", result)
+
+    def test_my_log_reads_active_user_log(self) -> None:
+        (
+            session,
+            memory,
+            proposal,
+            state_report,
+            engine,
+            analyst,
+            classifier,
+            routing_log,
+            startup_context,
+            config,
+        ) = self.make_runtime()
+        root = session.session_path.parent.parent
+        user_manager, session_state, token_store, user_log, faculty_monitor = self.make_user_context(
+            root
+        )
+        active_token = session_state["active_token"]
+        user_log.append(
+            active_token.user_id,
+            session.session_id,
+            "user",
+            "Hello, I am ZAERA",
+            "Hello ZAERA! It is wonderful to have you here...",
+        )
+
+        result = handle_command(
+            "my-log",
+            session,
+            memory,
+            proposal,
+            state_report,
+            engine,
+            analyst,
+            classifier,
+            routing_log,
+            startup_context,
+            config,
+            user_manager=user_manager,
+            session_state=session_state,  # type: ignore[arg-type]
+            token_store=token_store,
+            user_log=user_log,
+            faculty_monitor=faculty_monitor,
+            session_audit=[],
+        )
+
+        self.assertIn("Your interaction log (1 entries):", result)
+        self.assertIn("Hello, I am ZAERA", result)
+
+    def test_user_log_reads_named_user_history_for_guardian(self) -> None:
+        (
+            session,
+            memory,
+            proposal,
+            state_report,
+            engine,
+            analyst,
+            classifier,
+            routing_log,
+            startup_context,
+            config,
+        ) = self.make_runtime()
+        root = session.session_path.parent.parent
+        user_manager, session_state, token_store, user_log, faculty_monitor = self.make_user_context(
+            root
+        )
+        alice = user_manager.create_user("Alice", "user", ["default"], "system")
+        user_log.append(
+            alice.user_id,
+            session.session_id,
+            "user",
+            "What is the nature of consciousness?",
+            "That is one of the deepest questions in philosophy...",
+        )
+
+        result = handle_command(
+            "user-log Alice",
+            session,
+            memory,
+            proposal,
+            state_report,
+            engine,
+            analyst,
+            classifier,
+            routing_log,
+            startup_context,
+            config,
+            user_manager=user_manager,
+            session_state=session_state,  # type: ignore[arg-type]
+            token_store=token_store,
+            user_log=user_log,
+            faculty_monitor=faculty_monitor,
+            session_audit=[],
+        )
+
+        self.assertIn(f"Interaction log for Alice ({alice.user_id}) (1 entries):", result)
+        self.assertIn("What is the nature of consciousness?", result)
+
+    def test_invite_join_and_invites_commands_recover_governed_invite_flow(self) -> None:
+        (
+            session,
+            memory,
+            proposal,
+            state_report,
+            engine,
+            analyst,
+            classifier,
+            routing_log,
+            startup_context,
+            config,
+        ) = self.make_runtime()
+        root = session.session_path.parent.parent
+        user_manager, session_state, token_store, user_log, faculty_monitor = self.make_user_context(
+            root
+        )
+        audit: list[dict[str, str]] = []
+
+        proposal_result = handle_command(
+            "invite user default",
+            session,
+            memory,
+            proposal,
+            state_report,
+            engine,
+            analyst,
+            classifier,
+            routing_log,
+            startup_context,
+            config,
+            user_manager=user_manager,
+            session_state=session_state,  # type: ignore[arg-type]
+            token_store=token_store,
+            user_log=user_log,
+            faculty_monitor=faculty_monitor,
+            session_audit=audit,
+        )
+        approval_result = handle_command(
+            "approve",
+            session,
+            memory,
+            proposal,
+            state_report,
+            engine,
+            analyst,
+            classifier,
+            routing_log,
+            startup_context,
+            config,
+            user_manager=user_manager,
+            session_state=session_state,  # type: ignore[arg-type]
+            token_store=token_store,
+            user_log=user_log,
+            faculty_monitor=faculty_monitor,
+            session_audit=audit,
+        )
+        invite_code = next(
+            line.split(": ", 1)[1]
+            for line in approval_result.splitlines()
+            if line.startswith("invite > Code:")
+        )
+        invites_result = handle_command(
+            "invites",
+            session,
+            memory,
+            proposal,
+            state_report,
+            engine,
+            analyst,
+            classifier,
+            routing_log,
+            startup_context,
+            config,
+            user_manager=user_manager,
+            session_state=session_state,  # type: ignore[arg-type]
+            token_store=token_store,
+            user_log=user_log,
+            faculty_monitor=faculty_monitor,
+            session_audit=audit,
+        )
+        join_result = handle_command(
+            f"join {invite_code} Alice",
+            session,
+            memory,
+            proposal,
+            state_report,
+            engine,
+            analyst,
+            classifier,
+            routing_log,
+            startup_context,
+            config,
+            user_manager=user_manager,
+            session_state=session_state,  # type: ignore[arg-type]
+            token_store=token_store,
+            user_log=user_log,
+            faculty_monitor=faculty_monitor,
+            session_audit=audit,
+        )
+
+        self.assertIn("[INVITE PROPOSAL]", proposal_result)
+        self.assertIn("invite > Invite created.", approval_result)
+        self.assertIn(invite_code, invites_result)
+        self.assertIn("join > Welcome, Alice.", join_result)
+        self.assertEqual(session_state["active_user"].display_name, "Alice")
 
     def test_realms_command_lists_available_realms(self) -> None:
         (
@@ -641,7 +1097,7 @@ class CommandTests(unittest.TestCase):
             config,
         ) = self.make_runtime()
         root = session.session_path.parent.parent
-        user_manager, session_state = self.make_user_context(root)
+        user_manager, session_state, _, _, _ = self.make_user_context(root)
         alice = user_manager.create_user(
             display_name="Alice",
             role="user",
@@ -700,7 +1156,7 @@ class CommandTests(unittest.TestCase):
             config,
         ) = self.make_runtime()
         root = session.session_path.parent.parent
-        user_manager, session_state = self.make_user_context(root)
+        user_manager, session_state, _, _, _ = self.make_user_context(root)
         user_manager.create_user(
             display_name="Alice",
             role="user",
@@ -756,7 +1212,7 @@ class CommandTests(unittest.TestCase):
             config,
         ) = self.make_runtime()
         root = session.session_path.parent.parent
-        user_manager, session_state = self.make_user_context(root)
+        user_manager, session_state, _, _, _ = self.make_user_context(root)
         user_manager.create_user(
             display_name="Alice",
             role="user",

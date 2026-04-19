@@ -1,10 +1,13 @@
 from __future__ import annotations
 
 import json
+import random
+import string
 import uuid
 from dataclasses import asdict, dataclass, field
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
+from typing import Any
 
 
 def utc_now() -> str:
@@ -20,6 +23,18 @@ class UserRecord:
     created_at: str = field(default_factory=utc_now)
     created_by: str = "system"
     status: str = "active"
+
+
+@dataclass
+class InviteRecord:
+    invite_code: str
+    role: str
+    assigned_realms: list[str]
+    created_by: str
+    created_at: str
+    expires_at: str
+    status: str
+    accepted_by: str = ""
 
 
 def can_access_realm(user_record: UserRecord | None, realm_name: str) -> bool:
@@ -66,6 +81,8 @@ class UserManager:
         self.data_root = data_root
         self.users_dir = data_root / "users"
         self.users_dir.mkdir(parents=True, exist_ok=True)
+        self.invites_dir = data_root / "invites"
+        self.invites_dir.mkdir(parents=True, exist_ok=True)
         self.roles_config_path = roles_config_path
         self.roles = self._load_roles()
 
@@ -172,11 +189,90 @@ class UserManager:
         self._write_user(record)
         return True
 
+    def create_invite(
+        self,
+        role: str,
+        assigned_realms: list[str],
+        created_by: str,
+    ) -> InviteRecord:
+        normalized_role = role.strip().lower()
+        if normalized_role not in self.roles:
+            raise ValueError(f"Unknown role: {role}")
+        created_at = datetime.now(timezone.utc)
+        invite = InviteRecord(
+            invite_code=self._generate_invite_code(),
+            role=normalized_role,
+            assigned_realms=self._normalize_realms(assigned_realms),
+            created_by=created_by,
+            created_at=created_at.isoformat(),
+            expires_at=(created_at + timedelta(hours=48)).isoformat(),
+            status="pending",
+            accepted_by="",
+        )
+        self._write_invite(invite)
+        return invite
+
+    def get_invite(self, invite_code: str) -> InviteRecord | None:
+        path = self._invite_path_for(invite_code)
+        if not path.exists():
+            return None
+        return self._read_invite(path)
+
+    def accept_invite(self, invite_code: str, display_name: str) -> UserRecord | None:
+        invite = self.get_invite(invite_code)
+        if invite is None:
+            return None
+        if invite.status != "pending":
+            return None
+        if datetime.fromisoformat(invite.expires_at) <= datetime.now(timezone.utc):
+            invite.status = "expired"
+            self._write_invite(invite)
+            return None
+        created = self.create_user(
+            display_name=display_name,
+            role=invite.role,
+            assigned_realms=invite.assigned_realms,
+            created_by=invite.created_by,
+        )
+        invite.status = "accepted"
+        invite.accepted_by = created.user_id
+        self._write_invite(invite)
+        return created
+
+    def list_invites(self, status: str | None = None) -> list[InviteRecord]:
+        invites = [self._read_invite(path) for path in sorted(self.invites_dir.glob("*.json"))]
+        if status is None:
+            return invites
+        target = status.strip().lower()
+        return [invite for invite in invites if invite.status.lower() == target]
+
+    def expire_old_invites(self) -> int:
+        count = 0
+        now = datetime.now(timezone.utc)
+        for invite in self.list_invites():
+            if invite.status != "pending":
+                continue
+            if datetime.fromisoformat(invite.expires_at) <= now:
+                invite.status = "expired"
+                self._write_invite(invite)
+                count += 1
+        return count
+
     def _generate_user_id(self) -> str:
         while True:
             user_id = f"user_{uuid.uuid4().hex[:8]}"
             if not self._user_path_for(user_id).exists():
                 return user_id
+
+    def _generate_invite_code(self) -> str:
+        alphabet = string.ascii_uppercase
+        chooser = random.SystemRandom()
+        while True:
+            left = "".join(chooser.choice(alphabet) for _ in range(4))
+            right = "".join(chooser.choice(alphabet) for _ in range(4))
+            invite_code = f"INANNA-{left}-{right}"
+            if not self._invite_path_for(invite_code).exists():
+                return invite_code
 
     def _normalize_realms(self, assigned_realms: list[str]) -> list[str]:
         cleaned: list[str] = []
@@ -198,6 +294,19 @@ class UserManager:
     def _read_user(self, path: Path) -> UserRecord:
         payload = json.loads(path.read_text(encoding="utf-8"))
         return UserRecord(**payload)
+
+    def _invite_path_for(self, invite_code: str) -> Path:
+        return self.invites_dir / f"{invite_code}.json"
+
+    def _write_invite(self, invite: InviteRecord) -> None:
+        self._invite_path_for(invite.invite_code).write_text(
+            json.dumps(asdict(invite), indent=2),
+            encoding="utf-8",
+        )
+
+    def _read_invite(self, path: Path) -> InviteRecord:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+        return InviteRecord(**payload)
 
     def _load_roles(self) -> dict[str, dict]:
         payload = json.loads(self.roles_config_path.read_text(encoding="utf-8"))

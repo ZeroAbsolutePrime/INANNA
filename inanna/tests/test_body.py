@@ -146,6 +146,9 @@ class BodyStatusPayloadTests(unittest.TestCase):
                 payload = server.build_status_payload()
 
                 self.assertIn("body", payload)
+                self.assertIn("active_user", payload)
+                self.assertIn("user_log_count", payload)
+                self.assertIn("faculties", payload)
                 self.assertEqual(
                     set(payload["body"].keys()),
                     {
@@ -157,6 +160,10 @@ class BodyStatusPayloadTests(unittest.TestCase):
                         "disk_free_gb",
                     },
                 )
+                self.assertEqual(payload["active_user"]["display_name"], "ZAERA")
+                self.assertTrue(payload["active_user"]["token_preview"].endswith("..."))
+                self.assertEqual(payload["user_log_count"], 0)
+                self.assertEqual(len(payload["faculties"]), 4)
             finally:
                 ui_server.APP_ROOT = original_app_root
 

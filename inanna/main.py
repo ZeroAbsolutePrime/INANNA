@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+import time
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -8,6 +9,7 @@ from dotenv import load_dotenv
 
 from config import Config
 from core.body import BodyInspector, BodyReport
+from core.faculty_monitor import FacultyMonitor
 from core.governance import GovernanceLayer
 from core.guardian import GuardianFaculty
 from core.memory import Memory
@@ -23,14 +25,17 @@ from core.operator import OperatorFaculty, ToolResult
 from core.proposal import Proposal
 from core.realm import DEFAULT_REALM, RealmConfig, RealmManager
 from core.session import AnalystFaculty, Engine, Session
+from core.session_token import SessionToken, TokenStore
 from core.state import StateReport
 from core.user import (
+    InviteRecord,
     UserManager,
     UserRecord,
     can_access_realm,
     check_privilege,
     ensure_guardian_exists,
 )
+from core.user_log import UserLog
 from identity import phase_banner
 
 
@@ -39,20 +44,32 @@ load_dotenv(APP_ROOT / ".env")
 
 DATA_ROOT = APP_ROOT / "data"
 ROLES_CONFIG_PATH = APP_ROOT / "config" / "roles.json"
+USER_LOG_DIR = DATA_ROOT / "user_logs"
 SESSION_DIR = DATA_ROOT / "sessions"
 MEMORY_DIR = DATA_ROOT / "memory"
 PROPOSAL_DIR = DATA_ROOT / "proposals"
 NAMMU_DIR = DATA_ROOT / "nammu"
 STARTUP_COMMANDS = (
+    "users",
+    "create-user",
+    "login",
+    "logout",
+    "whoami",
     "reflect",
     "analyse",
     "audit",
     "guardian",
+    "faculties",
     "realms",
     "realm-context",
     "switch-user",
     "assign-realm",
     "unassign-realm",
+    "my-log",
+    "user-log",
+    "invite",
+    "join",
+    "invites",
     "history",
     "proposal-history",
     "routing-log",
@@ -261,6 +278,173 @@ def refresh_session_state_user(
         record = session_state.get(key)
         if record is not None and record.user_id == user_id:
             session_state[key] = refreshed
+
+
+def token_preview(active_token: SessionToken | None) -> str:
+    if active_token is None:
+        return "none"
+    return f"{active_token.token[:8]}..."
+
+
+def append_audit_event(
+    session_audit: list[dict[str, str]] | None,
+    event_type: str,
+    summary: str,
+) -> None:
+    if session_audit is None:
+        return
+    session_audit.append(
+        {
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+            "event_type": event_type,
+            "summary": summary,
+        }
+    )
+
+
+def build_users_report(user_manager: UserManager) -> str:
+    records = user_manager.list_users()
+    lines = [f"Users ({len(records)} total):"]
+    for record in records:
+        realms = ", ".join(record.assigned_realms) or "(none)"
+        lines.append(
+            f"  [{record.role}]  {record.display_name:<15} {record.status:<8} realms: {realms}"
+        )
+    lines.append("(access control active in Phase 4.2)")
+    return "\n".join(lines)
+
+
+def create_user_proposal(
+    proposal: Proposal,
+    display_name: str,
+    role: str,
+    realm_name: str,
+    created_by: str,
+) -> dict[str, object]:
+    created = proposal.create(
+        what=f"Create user: {display_name} with role {role}",
+        why="User creation requires visible approval before it takes effect.",
+        payload={
+            "action": "create_user",
+            "display_name": display_name,
+            "role": role,
+            "assigned_realms": [realm_name],
+            "created_by": created_by,
+        },
+    )
+    return {
+        **created,
+        "line": (
+            f"[USER PROPOSAL] {created['timestamp']} | "
+            f"Create user: {display_name} with role {role} | status: {created['status']}"
+        ),
+    }
+
+
+def create_invite_proposal(
+    proposal: Proposal,
+    role: str,
+    realm_name: str,
+    created_by: str,
+) -> dict[str, object]:
+    created = proposal.create(
+        what=f"Create invite: role={role} realm={realm_name}",
+        why="Invites require visible approval before they are issued.",
+        payload={
+            "action": "create_invite",
+            "role": role,
+            "assigned_realms": [realm_name],
+            "created_by": created_by,
+        },
+    )
+    return {
+        **created,
+        "line": (
+            f"[INVITE PROPOSAL] {created['timestamp']} | "
+            f"Create invite: role={role} realm={realm_name} | status: {created['status']}"
+        ),
+    }
+
+
+def build_whoami_report(
+    active_token: SessionToken | None,
+    user_manager: UserManager | None,
+) -> str:
+    if active_token is None or user_manager is None:
+        return 'whoami > No active session. Type "login [name]" to identify.'
+    privileges = user_manager.get_role_privileges(active_token.role)
+    lines = [f"whoami > {active_token.display_name} ({active_token.role})"]
+    lines.append(f"whoami > user_id: {active_token.user_id}")
+    lines.append(f"whoami > session token: {token_preview(active_token)} (active)")
+    expires = datetime.fromisoformat(active_token.expires_at)
+    lines.append(f"whoami > session expires: {expires.strftime('%b %d %H:%M')}")
+    lines.append(f"whoami > privileges: {', '.join(privileges)}")
+    if privileges == ["all"]:
+        lines.append("whoami > can do: everything")
+    return "\n".join(lines)
+
+
+def format_user_log_report(
+    heading: str,
+    entries: list[dict],
+) -> str:
+    if not entries:
+        return f"{heading} (0 entries):\n  No interaction log entries yet."
+    lines = [f"{heading} ({len(entries)} entries):", ""]
+    for entry in reversed(entries):
+        timestamp = entry.get("timestamp", "")
+        label = timestamp
+        if timestamp:
+            label = datetime.fromisoformat(timestamp).strftime("%b %d %H:%M")
+        lines.append(f"  {label}  {entry.get('content', '')}")
+        lines.append(f"    inanna > {entry.get('response_preview', '')}")
+        lines.append("")
+    return "\n".join(lines).rstrip()
+
+
+def build_invites_report(
+    invites: list[InviteRecord],
+    active_user: UserRecord | None,
+) -> str:
+    if active_user is not None and active_user.role == "guardian":
+        visible = invites
+    elif active_user is not None:
+        visible = [invite for invite in invites if invite.created_by == active_user.user_id]
+    else:
+        visible = []
+    if not visible:
+        return "Invites (0 total):\n  No invites recorded yet."
+    lines = [f"Invites ({len(visible)} total):"]
+    for invite in visible:
+        realm_text = ",".join(invite.assigned_realms)
+        if invite.status == "accepted":
+            suffix = f"accepted by {invite.accepted_by}"
+        elif invite.status == "expired":
+            suffix = "expired"
+        else:
+            suffix = "pending"
+        lines.append(
+            f"  [{invite.status}]   {invite.invite_code}  {invite.role}/{realm_text}  {suffix}"
+        )
+    return "\n".join(lines)
+
+
+def append_user_log_entry(
+    user_log: UserLog | None,
+    active_token: SessionToken | None,
+    session_id: str,
+    content: str,
+    response_preview: str,
+) -> None:
+    if user_log is None or active_token is None:
+        return
+    user_log.append(
+        user_id=active_token.user_id,
+        session_id=session_id,
+        role="user",
+        content=content,
+        response_preview=response_preview,
+    )
 
 
 def create_realm_context_proposal(
@@ -680,6 +864,9 @@ def complete_tool_resolution(
     startup_context: dict,
     operator: OperatorFaculty,
     guardian_metrics: dict[str, int],
+    active_token: SessionToken | None = None,
+    user_log: UserLog | None = None,
+    faculty_monitor: FacultyMonitor | None = None,
 ) -> str:
     payload = resolved["payload"]
     original_input = payload.get("original_input", "")
@@ -690,14 +877,20 @@ def complete_tool_resolution(
 
     if decision == "approve":
         guardian_metrics["tool_executions"] += 1
+        t0 = time.monotonic()
         result = operator.execute(tool, {"query": query})
+        if faculty_monitor is not None:
+            faculty_monitor.record_call("operator", (time.monotonic() - t0) * 1000, result.success)
         operator_text = build_tool_result_text(result)
         model_connected = engine._connected
+        t0 = time.monotonic()
         assistant_text = engine.respond(
             context_summary=startup_context_items(startup_context)
             + build_tool_context_lines(result),
             conversation=session.events,
         )
+        if faculty_monitor is not None:
+            faculty_monitor.record_call("crown", (time.monotonic() - t0) * 1000, True)
         if result.success and model_connected and engine.mode == "fallback":
             created = proposal.create(
                 what="Update the memory store from the latest session turn",
@@ -714,12 +907,16 @@ def complete_tool_resolution(
             )
     else:
         operator_text = "tool use rejected. Proceeding without search."
+        t0 = time.monotonic()
         assistant_text = engine.respond(
             context_summary=startup_context_items(startup_context),
             conversation=session.events,
         )
+        if faculty_monitor is not None:
+            faculty_monitor.record_call("crown", (time.monotonic() - t0) * 1000, True)
 
     session.add_event("assistant", assistant_text)
+    append_user_log_entry(user_log, active_token, session.session_id, original_input, assistant_text)
     created = proposal.create(
         what="Update the memory store from the latest session turn",
         why="Keep the next session grounded in readable, user-approved context.",
@@ -808,7 +1005,11 @@ def handle_command(
     realm_manager: RealmManager | None = None,
     active_realm: RealmConfig | None = None,
     user_manager: UserManager | None = None,
-    session_state: dict[str, UserRecord | None] | None = None,
+    session_state: dict[str, object | None] | None = None,
+    token_store: TokenStore | None = None,
+    user_log: UserLog | None = None,
+    faculty_monitor: FacultyMonitor | None = None,
+    session_audit: list[dict[str, str]] | None = None,
 ) -> str | None:
     normalized = command.strip()
     if not normalized:
@@ -818,6 +1019,9 @@ def handle_command(
     current_user = session_state.get("active_user") if session_state else None
     original_user = session_state.get("original_user") if session_state else None
     guardian_user = session_state.get("guardian_user") if session_state else None
+    active_token = session_state.get("active_token") if session_state else None
+    original_token = session_state.get("original_token") if session_state else None
+    guardian_token = session_state.get("guardian_token") if session_state else None
     active_realm_name = active_realm.name if active_realm else DEFAULT_REALM
     current_realm = load_current_realm(realm_manager, active_realm)
     if current_realm is not None:
@@ -826,6 +1030,195 @@ def handle_command(
     lowered = normalized.lower()
     if lowered in {"exit", "quit"}:
         return None
+
+    if lowered == "users":
+        if user_manager is None:
+            return "users > user management is unavailable."
+        allowed, reason = check_privilege(current_user, user_manager, "all")
+        if not allowed:
+            return f"access > {reason}"
+        return build_users_report(user_manager)
+
+    if lowered.startswith("create-user "):
+        if user_manager is None:
+            return "create-user > user management is unavailable."
+        allowed, reason = check_privilege(current_user, user_manager, "all")
+        if not allowed:
+            return f"access > {reason}"
+        parts = normalized.split(maxsplit=3)
+        if len(parts) != 4:
+            return "create-user > usage: create-user [display_name] [role] [realm]"
+        _, display_name, role, realm_name = parts
+        if role.strip().lower() not in user_manager.roles:
+            return f"create-user > Unknown role: {role}"
+        created = create_user_proposal(
+            proposal=proposal,
+            display_name=display_name,
+            role=role.strip().lower(),
+            realm_name=realm_name,
+            created_by=active_token.user_id if active_token is not None else "system",
+        )
+        return "create-user > proposal required to create a new user.\n" + str(created["line"])
+
+    if lowered.startswith("login"):
+        if user_manager is None or token_store is None or session_state is None:
+            return "login > session identity is unavailable."
+        display_name = normalized[len("login") :].strip()
+        if not display_name:
+            return "login > usage: login [display_name]"
+        target = user_manager.get_user_by_display_name(display_name)
+        if target is None:
+            return f"No user found with name: {display_name}"
+        token_store.revoke_all_for_user(target.user_id)
+        token = token_store.issue(target.user_id, target.display_name, target.role)
+        session_state["active_token"] = token
+        session_state["active_user"] = target
+        if guardian_user is not None and target.user_id == guardian_user.user_id:
+            session_state["guardian_token"] = token
+            session_state["original_token"] = None
+            session_state["original_user"] = None
+        else:
+            session_state["original_token"] = None
+            session_state["original_user"] = None
+        append_audit_event(
+            session_audit,
+            "login",
+            f"{target.display_name} ({target.role}) logged in",
+        )
+        return "\n".join(
+            [
+                f"login > session started for {target.display_name} ({target.role})",
+                f"login > token: {token_preview(token)} valid for 8 hours",
+                f"login > session bound to user_id: {target.user_id}",
+            ]
+        )
+
+    if lowered == "logout":
+        if token_store is None or session_state is None or active_token is None:
+            return "No active session."
+        token_store.revoke(active_token.token)
+        append_audit_event(
+            session_audit,
+            "logout",
+            f"{active_token.display_name} ({active_token.role}) logged out",
+        )
+        session_state["active_token"] = None
+        session_state["active_user"] = None
+        session_state["original_token"] = None
+        session_state["original_user"] = None
+        return f"logout > session ended for {active_token.display_name}"
+
+    if lowered == "whoami":
+        return build_whoami_report(active_token, user_manager)
+
+    if lowered == "faculties":
+        if faculty_monitor is None:
+            return "faculties > faculty monitor is unavailable."
+        return faculty_monitor.format_report()
+
+    if lowered == "my-log":
+        if user_manager is None or user_log is None or active_token is None:
+            return 'my-log > No active session. Type "login [name]" to identify.'
+        allowed, reason = check_privilege(current_user, user_manager, "read_own_log")
+        if not allowed:
+            return f"access > {reason}"
+        return format_user_log_report(
+            "Your interaction log",
+            user_log.load(active_token.user_id, limit=20),
+        )
+
+    if lowered.startswith("user-log"):
+        if user_manager is None or user_log is None:
+            return "user-log > user log is unavailable."
+        allowed, reason = check_privilege(current_user, user_manager, "all")
+        if not allowed:
+            return f"access > {reason}"
+        display_name = normalized[len("user-log") :].strip()
+        if not display_name:
+            return "user-log > usage: user-log [display_name]"
+        target = user_manager.get_user_by_display_name(display_name)
+        if target is None:
+            return f"user-log > No user found: {display_name}"
+        return format_user_log_report(
+            f"Interaction log for {target.display_name} ({target.user_id})",
+            user_log.load(target.user_id, limit=20),
+        )
+
+    if lowered.startswith("invite "):
+        if user_manager is None or current_user is None or active_token is None:
+            return "invite > invite flow is unavailable."
+        allowed = user_manager.has_privilege(current_user.user_id, "invite_users")
+        if not allowed:
+            return f"access > Insufficient privileges. {current_user.display_name} ({current_user.role}) does not have: invite_users"
+        parts = normalized.split(maxsplit=2)
+        if len(parts) != 3:
+            return "invite > usage: invite [role] [realm]"
+        _, role, realm_name = parts
+        if role.strip().lower() not in user_manager.roles:
+            return f"invite > Unknown role: {role}"
+        created = create_invite_proposal(
+            proposal=proposal,
+            role=role.strip().lower(),
+            realm_name=realm_name,
+            created_by=active_token.user_id,
+        )
+        return "invite > proposal required to create an invite.\n" + str(created["line"])
+
+    if lowered.startswith("join "):
+        if user_manager is None or token_store is None or session_state is None:
+            return "join > invite flow is unavailable."
+        parts = normalized.split(maxsplit=2)
+        if len(parts) != 3:
+            return "join > usage: join [invite_code] [display_name]"
+        _, invite_code, display_name = parts
+        invite = user_manager.get_invite(invite_code)
+        if invite is None:
+            return "join > Invalid invite code."
+        if invite.status == "expired":
+            return "join > This invite has expired."
+        if invite.status == "accepted":
+            return "join > This invite has already been used."
+        created = user_manager.accept_invite(invite_code, display_name)
+        if created is None:
+            refreshed = user_manager.get_invite(invite_code)
+            if refreshed is not None and refreshed.status == "expired":
+                return "join > This invite has expired."
+            return "join > This invite could not be accepted."
+        token_store.revoke_all_for_user(created.user_id)
+        token = token_store.issue(created.user_id, created.display_name, created.role)
+        session_state["active_token"] = token
+        session_state["active_user"] = created
+        session_state["original_token"] = None
+        session_state["original_user"] = None
+        append_audit_event(
+            session_audit,
+            "join",
+            f"{created.display_name} joined via invite {invite_code}",
+        )
+        return "\n".join(
+            [
+                f"join > Welcome, {created.display_name}.",
+                "join > Your account has been created.",
+                f"join > Role: {created.role}  Realm: {', '.join(created.assigned_realms)}",
+                "join > You are now logged in.",
+                'join > Type "whoami" to see your session details.',
+            ]
+        )
+
+    if lowered == "invites":
+        if user_manager is None:
+            return "invites > invite flow is unavailable."
+        if current_user is None:
+            return "access > No active session."
+        if not (
+            user_manager.has_privilege(current_user.user_id, "all")
+            or user_manager.has_privilege(current_user.user_id, "invite_users")
+        ):
+            return (
+                f"access > Insufficient privileges. "
+                f"{current_user.display_name} ({current_user.role}) does not have: invite_users"
+            )
+        return build_invites_report(user_manager.list_invites(), current_user)
 
     if lowered == "status":
         history = proposal.history_report()
@@ -1005,15 +1398,19 @@ def handle_command(
 
     if lowered == "analyse" or lowered.startswith("analyse "):
         question = normalized[len("analyse") :].strip()
+        t0 = time.monotonic()
         analysis_mode, analysis_text = analyst.analyse(
             question=question,
             context=startup_context_items(startup_context),
         )
+        if faculty_monitor is not None:
+            faculty_monitor.record_call("analyst", (time.monotonic() - t0) * 1000, True)
         if not question:
             return f"analyst > [analysis fallback] {analysis_text}"
 
         session.add_event("user", normalized)
         session.add_event("analyst", analysis_text)
+        append_user_log_entry(user_log, active_token, session.session_id, normalized, analysis_text)
         created = proposal.create(
             what="Update the memory store from the latest session turn",
             why="Keep the next session grounded in readable, user-approved context.",
@@ -1038,6 +1435,7 @@ def handle_command(
 
     if lowered == "guardian":
         guardian = guardian or GuardianFaculty()
+        t0 = time.monotonic()
         report = guardian.format_report(
             guardian.inspect(
                 session_id=session.session_id,
@@ -1049,6 +1447,8 @@ def handle_command(
                 governance_history=load_governance_history(resolve_nammu_dir(session, nammu_dir)),
             )
         )
+        if faculty_monitor is not None:
+            faculty_monitor.record_call("guardian", (time.monotonic() - t0) * 1000, True)
         return f"guardian > {report}"
 
     if lowered == "reflect":
@@ -1078,6 +1478,9 @@ def handle_command(
                 startup_context=startup_context,
                 operator=operator,
                 guardian_metrics=guardian_metrics,
+                active_token=active_token,
+                user_log=user_log,
+                faculty_monitor=faculty_monitor,
             )
 
         if payload.get("action") == "realm_context_update":
@@ -1098,6 +1501,52 @@ def handle_command(
                     f"for realm {realm_name}."
                 )
             return f"Rejected {resolved['proposal_id']}."
+
+        if payload.get("action") == "create_user":
+            if user_manager is None:
+                return f"Approved {resolved['proposal_id']} but user management was unavailable."
+            created_by = str(payload.get("created_by", "system"))
+            try:
+                created_user = user_manager.create_user(
+                    display_name=str(payload.get("display_name", "")).strip(),
+                    role=str(payload.get("role", "")).strip(),
+                    assigned_realms=list(payload.get("assigned_realms", ["default"])),
+                    created_by=created_by,
+                )
+            except ValueError as exc:
+                return f"Approved {resolved['proposal_id']} but user creation failed: {exc}"
+            return (
+                f"User created: {created_user.display_name} ({created_user.user_id}) "
+                f"role: {created_user.role}"
+            )
+
+        if payload.get("action") == "create_invite":
+            if user_manager is None:
+                return f"Approved {resolved['proposal_id']} but invite management was unavailable."
+            invite = user_manager.create_invite(
+                role=str(payload.get("role", "")).strip(),
+                assigned_realms=list(payload.get("assigned_realms", ["default"])),
+                created_by=str(payload.get("created_by", "system")),
+            )
+            append_audit_event(
+                session_audit,
+                "invite",
+                (
+                    f"invite {invite.invite_code} created for "
+                    f"{invite.role}/{','.join(invite.assigned_realms)}"
+                ),
+            )
+            expires = datetime.fromisoformat(invite.expires_at).strftime("%b %d %H:%M")
+            return "\n".join(
+                [
+                    "invite > Invite created.",
+                    f"invite > Code: {invite.invite_code}",
+                    f"invite > Role: {invite.role}  Realm: {', '.join(invite.assigned_realms)}",
+                    f"invite > Expires: {expires}  (48 hours)",
+                    "invite > Share this code with the person you are inviting.",
+                    f"invite > They join with: join {invite.invite_code} [their name]",
+                ]
+            )
 
         if payload.get("action") in {"assign_realm", "unassign_realm"}:
             if user_manager is None:
@@ -1178,12 +1627,16 @@ def handle_command(
         )
 
     if governance_result.faculty == "analyst":
+        t0 = time.monotonic()
         analysis_mode, analysis_text = analyst.analyse(
             question=normalized,
             context=startup_context_items(startup_context),
         )
+        if faculty_monitor is not None:
+            faculty_monitor.record_call("analyst", (time.monotonic() - t0) * 1000, True)
         session.add_event("user", normalized)
         session.add_event("analyst", analysis_text)
+        append_user_log_entry(user_log, active_token, session.session_id, normalized, analysis_text)
         created = proposal.create(
             what="Update the memory store from the latest session turn",
             why="Keep the next session grounded in readable, user-approved context.",
@@ -1203,11 +1656,15 @@ def handle_command(
         )
 
     session.add_event("user", normalized)
+    t0 = time.monotonic()
     assistant_text = engine.respond(
         context_summary=startup_context_items(startup_context),
         conversation=session.events,
     )
+    if faculty_monitor is not None:
+        faculty_monitor.record_call("crown", (time.monotonic() - t0) * 1000, True)
     session.add_event("assistant", assistant_text)
+    append_user_log_entry(user_log, active_token, session.session_id, normalized, assistant_text)
 
     created = proposal.create(
         what="Update the memory store from the latest session turn",
@@ -1241,10 +1698,28 @@ def main() -> None:
     state_report = StateReport()
     user_manager = UserManager(data_root=DATA_ROOT, roles_config_path=ROLES_CONFIG_PATH)
     guardian_user = ensure_guardian_exists(user_manager)
-    session_state: dict[str, UserRecord | None] = {
+    expired_invites = user_manager.expire_old_invites()
+    token_store = TokenStore()
+    guardian_token = token_store.issue(
+        guardian_user.user_id,
+        guardian_user.display_name,
+        guardian_user.role,
+    )
+    user_log = UserLog(USER_LOG_DIR)
+    faculty_monitor = FacultyMonitor()
+    session_audit: list[dict[str, str]] = []
+    append_audit_event(
+        session_audit,
+        "login",
+        f"{guardian_user.display_name} ({guardian_user.role}) logged in",
+    )
+    session_state: dict[str, object | None] = {
         "active_user": guardian_user,
         "original_user": None,
         "guardian_user": guardian_user,
+        "active_token": guardian_token,
+        "original_token": None,
+        "guardian_token": guardian_token,
     }
     engine = Engine(
         model_url=config.model_url,
@@ -1267,6 +1742,8 @@ def main() -> None:
 
     if migrated:
         print(f"Migrated {migrated} files to default realm.")
+    if expired_invites:
+        print(f"Expired {expired_invites} invite(s).")
 
     if engine.verify_connection():
         print(f"Model connected: {config.model_name} at {config.model_url}")
@@ -1275,6 +1752,7 @@ def main() -> None:
 
     analyst.fallback_mode = engine.fallback_mode
     analyst._connected = engine._connected
+    faculty_monitor.update_model_mode(engine.mode)
 
     startup_context = memory.load_startup_context()
     session = Session.create(
@@ -1285,6 +1763,7 @@ def main() -> None:
     print(f"Phase: {phase_banner()}")
     print(f"Realm: {active_realm.name}")
     print(f"User: {guardian_user.display_name} ({guardian_user.role})")
+    print(f"Auto-login: {guardian_user.display_name} ({guardian_user.role}) | session active")
     print(f"Session ID: {session.session_id}")
     print_startup_context(startup_context["summary_lines"])
     print(startup_commands_line())
@@ -1326,6 +1805,10 @@ def main() -> None:
             active_realm=active_realm,
             user_manager=user_manager,
             session_state=session_state,
+            token_store=token_store,
+            user_log=user_log,
+            faculty_monitor=faculty_monitor,
+            session_audit=session_audit,
         )
         if result is None:
             print("Session closed.")

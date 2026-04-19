@@ -49,10 +49,11 @@ class StateTests(unittest.TestCase):
                     "Approved proposals: 4",
                     "Rejected proposals: 1",
                     (
-                        "Capabilities: respond, reflect, analyse, audit, guardian, realms, "
-                        "realm-context, switch-user, assign-realm, unassign-realm, history, "
-                        "proposal-history, routing-log, nammu-log, memory-log, body, status, "
-                        "diagnostics, approve, reject, forget, exit"
+                        "Capabilities: respond, users, create-user, login, logout, whoami, "
+                        "reflect, analyse, audit, guardian, faculties, realms, realm-context, "
+                        "switch-user, assign-realm, unassign-realm, my-log, user-log, invite, "
+                        "join, invites, history, proposal-history, routing-log, nammu-log, "
+                        "memory-log, body, status, diagnostics, approve, reject, forget, exit"
                     ),
                 ]
             ),

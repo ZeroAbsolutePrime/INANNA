@@ -4,6 +4,7 @@ import asyncio
 import json
 import os
 import threading
+import time
 from datetime import datetime, timezone
 from http.server import BaseHTTPRequestHandler, HTTPServer
 from pathlib import Path
@@ -16,6 +17,7 @@ from websockets.exceptions import ConnectionClosed
 from config import Config
 from core.governance import GovernanceLayer
 from core.guardian import GuardianFaculty
+from core.faculty_monitor import FacultyMonitor
 from core.memory import Memory
 from core.nammu import IntentClassifier
 from core.nammu_memory import (
@@ -26,20 +28,26 @@ from core.nammu_memory import (
 from core.operator import OperatorFaculty
 from core.proposal import Proposal
 from core.session import AnalystFaculty, Engine, Session
+from core.session_token import TokenStore
 from core.state import StateReport
 from core.user import (
+    InviteRecord,
     UserManager,
     UserRecord,
     can_access_realm,
     check_privilege,
     ensure_guardian_exists,
 )
+from core.user_log import UserLog
 from identity import phase_banner
 from main import (
     STARTUP_COMMANDS,
+    append_audit_event,
+    append_user_log_entry,
     build_body_report,
     build_body_summary,
     build_history_report,
+    build_invites_report,
     build_memory_log_report,
     build_proposal_history_payload,
     build_realm_access_warning_lines,
@@ -48,16 +56,22 @@ from main import (
     build_realms_report,
     build_routing_log_report,
     build_tool_result_text,
+    build_users_report,
+    build_whoami_report,
     build_tool_context_lines,
+    create_invite_proposal,
+    create_user_proposal,
     create_realm_assignment_proposal,
     create_memory_request_proposal,
     create_realm_context_proposal,
     create_tool_use_proposal,
+    format_user_log_report,
     initialize_realm_context,
     inspect_body_report,
     load_current_realm,
     parse_user_realm_command,
     startup_context_items,
+    token_preview,
 )
 
 APP_ROOT = Path(__file__).resolve().parent.parent
@@ -111,10 +125,10 @@ class InterfaceServer:
         self.session_dir = realm_dirs["sessions"]
         self.memory_dir = realm_dirs["memory"]
         self.proposal_dir = realm_dirs["proposals"]
-        self.startup_notice = ""
+        self.startup_messages: list[str] = []
         if migrated:
-            self.startup_notice = f"Migrated {migrated} files to default realm."
-            print(self.startup_notice)
+            self.startup_messages.append(f"Migrated {migrated} files to default realm.")
+            print(self.startup_messages[-1])
 
         self.config = Config.from_env()
         self.memory = Memory(session_dir=self.session_dir, memory_dir=self.memory_dir)
@@ -125,6 +139,26 @@ class InterfaceServer:
             roles_config_path=APP_ROOT / "config" / "roles.json",
         )
         self.guardian_user = ensure_guardian_exists(self.user_manager)
+        expired_invites = self.user_manager.expire_old_invites()
+        if expired_invites:
+            self.startup_messages.append(f"Expired {expired_invites} invite(s).")
+            print(self.startup_messages[-1])
+        self.token_store = TokenStore()
+        self.guardian_token = self.token_store.issue(
+            self.guardian_user.user_id,
+            self.guardian_user.display_name,
+            self.guardian_user.role,
+        )
+        self.active_token = self.guardian_token
+        self.original_token = None
+        self.user_log = UserLog(self.data_root / "user_logs")
+        self.faculty_monitor = FacultyMonitor()
+        self.session_audit: list[dict[str, str]] = []
+        append_audit_event(
+            self.session_audit,
+            "login",
+            f"{self.guardian_user.display_name} ({self.guardian_user.role}) logged in",
+        )
         self.active_user: UserRecord | None = self.guardian_user
         self.original_user: UserRecord | None = None
         self.engine = Engine(
@@ -150,7 +184,11 @@ class InterfaceServer:
         self.engine.verify_connection()
         self.analyst.fallback_mode = self.engine.fallback_mode
         self.analyst._connected = self.engine._connected
+        self.faculty_monitor.update_model_mode(self.engine.mode)
         print(f"Model mode: {self.engine.mode}")
+        print(
+            f"Auto-login: {self.guardian_user.display_name} ({self.guardian_user.role}) | session active"
+        )
         self.startup_context = self.memory.load_startup_context()
         self.session = Session.create(
             session_dir=self.session_dir,
@@ -229,11 +267,20 @@ class InterfaceServer:
 
     def _run_user_turn(self, text: str) -> tuple[str, dict[str, Any]]:
         self.session.add_event("user", text)
+        t0 = time.monotonic()
         assistant_text = self.engine.respond(
             context_summary=startup_context_items(self.startup_context),
             conversation=self.session.events,
         )
+        self.faculty_monitor.record_call("crown", (time.monotonic() - t0) * 1000, True)
         self.session.add_event("assistant", assistant_text)
+        append_user_log_entry(
+            self.user_log,
+            self.active_token,
+            self.session.session_id,
+            text,
+            assistant_text,
+        )
         created = self.proposal.create(
             what="Update the memory store from the latest session turn",
             why="Keep the next session grounded in readable, user-approved context.",
@@ -243,6 +290,35 @@ class InterfaceServer:
             ),
         )
         return assistant_text, created
+
+    def _refresh_session_users(self) -> None:
+        if self.active_user is not None:
+            self.active_user = self.user_manager.get_user(self.active_user.user_id) or self.active_user
+        if self.original_user is not None:
+            self.original_user = (
+                self.user_manager.get_user(self.original_user.user_id) or self.original_user
+            )
+        if self.guardian_user is not None:
+            self.guardian_user = (
+                self.user_manager.get_user(self.guardian_user.user_id) or self.guardian_user
+            )
+
+    def _active_user_payload(self) -> dict[str, Any] | None:
+        if self.active_user is None:
+            return None
+        payload = {
+            "user_id": self.active_user.user_id,
+            "display_name": self.active_user.display_name,
+            "role": self.active_user.role,
+            "assigned_realms": list(self.active_user.assigned_realms),
+        }
+        if self.active_token is not None and self.active_token.user_id == self.active_user.user_id:
+            payload["token_preview"] = token_preview(self.active_token)
+            payload["expires_at"] = self.active_token.expires_at
+        else:
+            payload["token_preview"] = "none"
+            payload["expires_at"] = ""
+        return payload
 
     def _record_routing_decision(self, route: str, text: str) -> None:
         record = {
@@ -353,12 +429,21 @@ class InterfaceServer:
             }
 
         if governance_result.faculty == "analyst":
+            t0 = time.monotonic()
             mode, analysis_text = self.analyst.analyse(
                 question=text,
                 context=startup_context_items(self.startup_context),
             )
+            self.faculty_monitor.record_call("analyst", (time.monotonic() - t0) * 1000, True)
             self.session.add_event("user", text)
             self.session.add_event("analyst", analysis_text)
+            append_user_log_entry(
+                self.user_log,
+                self.active_token,
+                self.session.session_id,
+                text,
+                analysis_text,
+            )
             created = self.proposal.create(
                 what="Update the memory store from the latest session turn",
                 why="Keep the next session grounded in readable, user-approved context.",
@@ -388,15 +473,24 @@ class InterfaceServer:
         text: str,
     ) -> tuple[str, dict[str, Any] | None, str]:
         question = text[len("analyse") :].strip()
+        t0 = time.monotonic()
         mode, analysis_text = self.analyst.analyse(
             question=question,
             context=startup_context_items(self.startup_context),
         )
+        self.faculty_monitor.record_call("analyst", (time.monotonic() - t0) * 1000, True)
         if not question:
             return analysis_text, None, mode
 
         self.session.add_event("user", text)
         self.session.add_event("analyst", analysis_text)
+        append_user_log_entry(
+            self.user_log,
+            self.active_token,
+            self.session.session_id,
+            text,
+            analysis_text,
+        )
         created = self.proposal.create(
             what="Update the memory store from the latest session turn",
             why="Keep the next session grounded in readable, user-approved context.",
@@ -425,7 +519,308 @@ class InterfaceServer:
         command_name = lowered.split(" ", 1)[0]
         command_args = raw_cmd[len(command_name) :].strip()
 
-        if command_name == "reflect":
+        if command_name == "users":
+            allowed, reason = check_privilege(self.active_user, self.user_manager, "all")
+            if not allowed:
+                await self.broadcast({"type": "system", "text": f"access > {reason}"})
+            else:
+                await self.broadcast(
+                    {
+                        "type": "system",
+                        "text": await asyncio.to_thread(build_users_report, self.user_manager),
+                    }
+                )
+            await self.broadcast_state()
+        elif command_name == "create-user":
+            allowed, reason = check_privilege(self.active_user, self.user_manager, "all")
+            if not allowed:
+                await self.broadcast({"type": "system", "text": f"access > {reason}"})
+                await self.broadcast_state()
+                return
+            parts = raw_cmd.split(maxsplit=3)
+            if len(parts) != 4:
+                await self.broadcast(
+                    {
+                        "type": "system",
+                        "text": "create-user > usage: create-user [display_name] [role] [realm]",
+                    }
+                )
+                await self.broadcast_state()
+                return
+            _, display_name, role, realm_name = parts
+            if role.strip().lower() not in self.user_manager.roles:
+                await self.broadcast(
+                    {"type": "system", "text": f"create-user > Unknown role: {role}"}
+                )
+                await self.broadcast_state()
+                return
+            created = await asyncio.to_thread(
+                create_user_proposal,
+                self.proposal,
+                display_name,
+                role.strip().lower(),
+                realm_name,
+                self.active_token.user_id if self.active_token is not None else "system",
+            )
+            await self.broadcast(
+                {
+                    "type": "system",
+                    "text": "create-user > proposal required to create a new user.",
+                }
+            )
+            await self.broadcast({"type": "system", "text": str(created["line"])})
+            await self.broadcast_state()
+        elif command_name == "login":
+            display_name = command_args.strip()
+            if not display_name and " " in cmd:
+                display_name = cmd.split(" ", 1)[1].strip()
+            if not display_name:
+                await self.broadcast(
+                    {"type": "system", "text": "login > usage: login [display_name]"}
+                )
+                await self.broadcast_state()
+                return
+            try:
+                target = self.user_manager.get_user_by_display_name(display_name)
+                if target is None:
+                    await self.broadcast(
+                        {"type": "system", "text": f"No user found with name: {display_name}"}
+                    )
+                    await self.broadcast_state()
+                    return
+                self.token_store.revoke_all_for_user(target.user_id)
+                token = self.token_store.issue(target.user_id, target.display_name, target.role)
+                self.active_user = target
+                self.active_token = token
+                self.original_user = None
+                self.original_token = None
+                if self.guardian_user is not None and target.user_id == self.guardian_user.user_id:
+                    self.guardian_token = token
+                append_audit_event(
+                    self.session_audit,
+                    "login",
+                    f"{target.display_name} ({target.role}) logged in",
+                )
+                for line in (
+                    f"login > session started for {target.display_name} ({target.role})",
+                    f"login > token: {token_preview(token)} valid for 8 hours",
+                    f"login > session bound to user_id: {target.user_id}",
+                ):
+                    await self.broadcast({"type": "system", "text": line})
+            except Exception as exc:
+                await self.broadcast({"type": "system", "text": f"login > {exc}"})
+            await self.broadcast_state()
+        elif command_name == "logout":
+            if self.active_token is None:
+                await self.broadcast({"type": "system", "text": "No active session."})
+            else:
+                ended = self.active_token
+                self.token_store.revoke(ended.token)
+                append_audit_event(
+                    self.session_audit,
+                    "logout",
+                    f"{ended.display_name} ({ended.role}) logged out",
+                )
+                self.active_token = None
+                self.active_user = None
+                self.original_token = None
+                self.original_user = None
+                await self.broadcast(
+                    {
+                        "type": "system",
+                        "text": f"logout > session ended for {ended.display_name}",
+                    }
+                )
+            await self.broadcast_state()
+        elif command_name == "whoami":
+            await self.broadcast(
+                {
+                    "type": "system",
+                    "text": await asyncio.to_thread(
+                        build_whoami_report, self.active_token, self.user_manager
+                    ),
+                }
+            )
+            await self.broadcast_state()
+        elif command_name == "faculties":
+            await self.broadcast(
+                {
+                    "type": "system",
+                    "text": await asyncio.to_thread(self.faculty_monitor.format_report),
+                }
+            )
+            await self.broadcast_state()
+        elif command_name == "my-log":
+            allowed, reason = check_privilege(self.active_user, self.user_manager, "read_own_log")
+            if not allowed or self.active_token is None:
+                text = f"access > {reason}" if not allowed else 'my-log > No active session. Type "login [name]" to identify.'
+                await self.broadcast({"type": "system", "text": text})
+            else:
+                text = await asyncio.to_thread(
+                    format_user_log_report,
+                    "Your interaction log",
+                    self.user_log.load(self.active_token.user_id, limit=20),
+                )
+                await self.broadcast({"type": "system", "text": text})
+            await self.broadcast_state()
+        elif command_name == "user-log":
+            allowed, reason = check_privilege(self.active_user, self.user_manager, "all")
+            if not allowed:
+                await self.broadcast({"type": "system", "text": f"access > {reason}"})
+                await self.broadcast_state()
+                return
+            display_name = command_args.strip()
+            if not display_name:
+                await self.broadcast(
+                    {"type": "system", "text": "user-log > usage: user-log [display_name]"}
+                )
+                await self.broadcast_state()
+                return
+            target = self.user_manager.get_user_by_display_name(display_name)
+            if target is None:
+                await self.broadcast(
+                    {"type": "system", "text": f"user-log > No user found: {display_name}"}
+                )
+                await self.broadcast_state()
+                return
+            text = await asyncio.to_thread(
+                format_user_log_report,
+                f"Interaction log for {target.display_name} ({target.user_id})",
+                self.user_log.load(target.user_id, limit=20),
+            )
+            await self.broadcast({"type": "system", "text": text})
+            await self.broadcast_state()
+        elif command_name == "invite":
+            if self.active_user is None or self.active_token is None:
+                await self.broadcast({"type": "system", "text": "invite > invite flow is unavailable."})
+                await self.broadcast_state()
+                return
+            if not self.user_manager.has_privilege(self.active_user.user_id, "invite_users"):
+                await self.broadcast(
+                    {
+                        "type": "system",
+                        "text": (
+                            f"access > Insufficient privileges. "
+                            f"{self.active_user.display_name} ({self.active_user.role}) "
+                            "does not have: invite_users"
+                        ),
+                    }
+                )
+                await self.broadcast_state()
+                return
+            parts = raw_cmd.split(maxsplit=2)
+            if len(parts) != 3:
+                await self.broadcast(
+                    {"type": "system", "text": "invite > usage: invite [role] [realm]"}
+                )
+                await self.broadcast_state()
+                return
+            _, role, realm_name = parts
+            if role.strip().lower() not in self.user_manager.roles:
+                await self.broadcast({"type": "system", "text": f"invite > Unknown role: {role}"})
+                await self.broadcast_state()
+                return
+            created = await asyncio.to_thread(
+                create_invite_proposal,
+                self.proposal,
+                role.strip().lower(),
+                realm_name,
+                self.active_token.user_id,
+            )
+            await self.broadcast(
+                {
+                    "type": "system",
+                    "text": "invite > proposal required to create an invite.",
+                }
+            )
+            await self.broadcast({"type": "system", "text": str(created["line"])})
+            await self.broadcast_state()
+        elif command_name == "join":
+            parts = raw_cmd.split(maxsplit=2)
+            if len(parts) != 3:
+                await self.broadcast(
+                    {"type": "system", "text": "join > usage: join [invite_code] [display_name]"}
+                )
+                await self.broadcast_state()
+                return
+            _, invite_code, display_name = parts
+            invite = self.user_manager.get_invite(invite_code)
+            if invite is None:
+                await self.broadcast({"type": "system", "text": "join > Invalid invite code."})
+                await self.broadcast_state()
+                return
+            if invite.status == "expired":
+                await self.broadcast({"type": "system", "text": "join > This invite has expired."})
+                await self.broadcast_state()
+                return
+            if invite.status == "accepted":
+                await self.broadcast(
+                    {"type": "system", "text": "join > This invite has already been used."}
+                )
+                await self.broadcast_state()
+                return
+            created = self.user_manager.accept_invite(invite_code, display_name)
+            if created is None:
+                refreshed = self.user_manager.get_invite(invite_code)
+                text = "join > This invite has expired."
+                if refreshed is None or refreshed.status != "expired":
+                    text = "join > This invite could not be accepted."
+                await self.broadcast({"type": "system", "text": text})
+                await self.broadcast_state()
+                return
+            self.token_store.revoke_all_for_user(created.user_id)
+            token = self.token_store.issue(created.user_id, created.display_name, created.role)
+            self.active_user = created
+            self.active_token = token
+            self.original_user = None
+            self.original_token = None
+            append_audit_event(
+                self.session_audit,
+                "join",
+                f"{created.display_name} joined via invite {invite_code}",
+            )
+            for line in (
+                f"join > Welcome, {created.display_name}.",
+                "join > Your account has been created.",
+                f"join > Role: {created.role}  Realm: {', '.join(created.assigned_realms)}",
+                "join > You are now logged in.",
+                'join > Type "whoami" to see your session details.',
+            ):
+                await self.broadcast({"type": "system", "text": line})
+            await self.broadcast_state()
+        elif command_name == "invites":
+            if self.active_user is None:
+                await self.broadcast({"type": "system", "text": "access > No active session."})
+                await self.broadcast_state()
+                return
+            if not (
+                self.user_manager.has_privilege(self.active_user.user_id, "all")
+                or self.user_manager.has_privilege(self.active_user.user_id, "invite_users")
+            ):
+                await self.broadcast(
+                    {
+                        "type": "system",
+                        "text": (
+                            f"access > Insufficient privileges. "
+                            f"{self.active_user.display_name} ({self.active_user.role}) "
+                            "does not have: invite_users"
+                        ),
+                    }
+                )
+                await self.broadcast_state()
+                return
+            await self.broadcast(
+                {
+                    "type": "system",
+                    "text": await asyncio.to_thread(
+                        build_invites_report,
+                        self.user_manager.list_invites(),
+                        self.active_user,
+                    ),
+                }
+            )
+            await self.broadcast_state()
+        elif command_name == "reflect":
             await self.run_reflect()
         elif command_name == "audit":
             await self.run_audit()
@@ -755,21 +1150,7 @@ class InterfaceServer:
                 if target is None:
                     return f"Approved {resolved['proposal_id']} but user {display_name or user_id} was not found."
                 if self.user_manager.assign_realm(user_id, realm_name):
-                    self.active_user = (
-                        self.user_manager.get_user(self.active_user.user_id)
-                        if self.active_user is not None
-                        else None
-                    ) or self.active_user
-                    self.original_user = (
-                        self.user_manager.get_user(self.original_user.user_id)
-                        if self.original_user is not None
-                        else None
-                    ) or self.original_user
-                    self.guardian_user = (
-                        self.user_manager.get_user(self.guardian_user.user_id)
-                        if self.guardian_user is not None
-                        else None
-                    ) or self.guardian_user
+                    self._refresh_session_users()
                     return f"assign-realm > Realm {realm_name} assigned to {target.display_name}."
                 return f"assign-realm > {target.display_name} already has access to realm {realm_name}."
             if payload.get("action") == "unassign_realm":
@@ -782,23 +1163,49 @@ class InterfaceServer:
                 if len(target.assigned_realms) <= 1 and realm_name in target.assigned_realms:
                     return f"unassign-realm > Cannot remove last realm for {target.display_name}."
                 if self.user_manager.unassign_realm(user_id, realm_name):
-                    self.active_user = (
-                        self.user_manager.get_user(self.active_user.user_id)
-                        if self.active_user is not None
-                        else None
-                    ) or self.active_user
-                    self.original_user = (
-                        self.user_manager.get_user(self.original_user.user_id)
-                        if self.original_user is not None
-                        else None
-                    ) or self.original_user
-                    self.guardian_user = (
-                        self.user_manager.get_user(self.guardian_user.user_id)
-                        if self.guardian_user is not None
-                        else None
-                    ) or self.guardian_user
+                    self._refresh_session_users()
                     return f"unassign-realm > Realm {realm_name} removed from {target.display_name}."
                 return f"unassign-realm > {target.display_name} does not have realm {realm_name}."
+            if payload.get("action") == "create_user":
+                created_by = str(payload.get("created_by", "system"))
+                try:
+                    created_user = self.user_manager.create_user(
+                        display_name=str(payload.get("display_name", "")).strip(),
+                        role=str(payload.get("role", "")).strip(),
+                        assigned_realms=list(payload.get("assigned_realms", ["default"])),
+                        created_by=created_by,
+                    )
+                except ValueError as exc:
+                    return f"Approved {resolved['proposal_id']} but user creation failed: {exc}"
+                return (
+                    f"User created: {created_user.display_name} ({created_user.user_id}) "
+                    f"role: {created_user.role}"
+                )
+            if payload.get("action") == "create_invite":
+                invite = self.user_manager.create_invite(
+                    role=str(payload.get("role", "")).strip(),
+                    assigned_realms=list(payload.get("assigned_realms", ["default"])),
+                    created_by=str(payload.get("created_by", "system")),
+                )
+                append_audit_event(
+                    self.session_audit,
+                    "invite",
+                    (
+                        f"invite {invite.invite_code} created for "
+                        f"{invite.role}/{','.join(invite.assigned_realms)}"
+                    ),
+                )
+                expires = datetime.fromisoformat(invite.expires_at).strftime("%b %d %H:%M")
+                return "\n".join(
+                    [
+                        "invite > Invite created.",
+                        f"invite > Code: {invite.invite_code}",
+                        f"invite > Role: {invite.role}  Realm: {', '.join(invite.assigned_realms)}",
+                        f"invite > Expires: {expires}  (48 hours)",
+                        "invite > Share this code with the person you are inviting.",
+                        f"invite > They join with: join {invite.invite_code} [their name]",
+                    ]
+                )
             self.memory.write_memory(
                 proposal_id=resolved["proposal_id"],
                 session_id=payload["session_id"],
@@ -811,7 +1218,12 @@ class InterfaceServer:
             return f"Rejected {resolved['proposal_id']}."
         if payload.get("action") == "forget":
             return "Memory record retained."
-        if payload.get("action") in {"assign_realm", "unassign_realm"}:
+        if payload.get("action") in {
+            "assign_realm",
+            "unassign_realm",
+            "create_user",
+            "create_invite",
+        }:
             return f"Rejected {resolved['proposal_id']}."
         return f"Rejected {resolved['proposal_id']}."
 
@@ -825,26 +1237,43 @@ class InterfaceServer:
 
         if decision == "approve":
             self.tool_executions += 1
+            t0 = time.monotonic()
             result = self.operator.execute(tool, {"query": query})
+            self.faculty_monitor.record_call(
+                "operator",
+                (time.monotonic() - t0) * 1000,
+                result.success,
+            )
             operator_messages = [build_tool_result_text(result)]
             model_connected = self.engine._connected
+            t0 = time.monotonic()
             assistant_text = self.engine.respond(
                 context_summary=startup_context_items(self.startup_context)
                 + build_tool_context_lines(result),
                 conversation=self.session.events,
             )
+            self.faculty_monitor.record_call("crown", (time.monotonic() - t0) * 1000, True)
             if result.success and model_connected and self.engine.mode == "fallback":
                 assistant_text = ""
                 operator_messages.append("model unavailable to summarize. Raw results shown above.")
         else:
             operator_messages = ["tool use rejected. Proceeding without search."]
+            t0 = time.monotonic()
             assistant_text = self.engine.respond(
                 context_summary=startup_context_items(self.startup_context),
                 conversation=self.session.events,
             )
+            self.faculty_monitor.record_call("crown", (time.monotonic() - t0) * 1000, True)
 
         if assistant_text:
             self.session.add_event("assistant", assistant_text)
+            append_user_log_entry(
+                self.user_log,
+                self.active_token,
+                self.session.session_id,
+                original_input,
+                assistant_text,
+            )
         created = self.proposal.create(
             what="Update the memory store from the latest session turn",
             why="Keep the next session grounded in readable, user-approved context.",
@@ -860,6 +1289,7 @@ class InterfaceServer:
         }
 
     def inspect_guardian(self) -> tuple[list[Any], str]:
+        t0 = time.monotonic()
         alerts = self.guardian.inspect(
             session_id=self.session.session_id,
             memory_count=self.memory.memory_count(),
@@ -869,6 +1299,7 @@ class InterfaceServer:
             tool_executions=self.tool_executions,
             governance_history=load_governance_history(self.nammu_dir),
         )
+        self.faculty_monitor.record_call("guardian", (time.monotonic() - t0) * 1000, True)
         return alerts, self.guardian.format_report(alerts)
 
     def build_guardian_report(self) -> str:
@@ -876,16 +1307,7 @@ class InterfaceServer:
         return report
 
     def build_status_payload(self) -> dict[str, Any]:
-        if self.active_user is not None:
-            self.active_user = self.user_manager.get_user(self.active_user.user_id) or self.active_user
-        if self.original_user is not None:
-            self.original_user = (
-                self.user_manager.get_user(self.original_user.user_id) or self.original_user
-            )
-        if self.guardian_user is not None:
-            self.guardian_user = (
-                self.user_manager.get_user(self.guardian_user.user_id) or self.guardian_user
-            )
+        self._refresh_session_users()
         mem = self.memory.memory_count()
         history = self.proposal.history_report()
         pend = history["pending"]
@@ -920,16 +1342,7 @@ class InterfaceServer:
             ),
             "mode": self.engine.mode,
             "session_id": self.session.session_id,
-            "active_user": (
-                {
-                    "user_id": self.active_user.user_id,
-                    "display_name": self.active_user.display_name,
-                    "role": self.active_user.role,
-                    "assigned_realms": list(self.active_user.assigned_realms),
-                }
-                if self.active_user is not None
-                else None
-            ),
+            "active_user": self._active_user_payload(),
             "acting_as": (
                 {
                     "display_name": self.active_user.display_name,
@@ -955,6 +1368,12 @@ class InterfaceServer:
             "total_proposals": history["total"],
             "approved_proposals": history["approved"],
             "rejected_proposals": history["rejected"],
+            "user_log_count": (
+                self.user_log.entry_count(self.active_token.user_id)
+                if self.active_token is not None
+                else 0
+            ),
+            "faculties": self.faculty_monitor.summary(),
             "body": build_body_summary(body_report),
             "capabilities": list(STARTUP_COMMANDS),
             "report": self.state_report.render(
@@ -995,8 +1414,9 @@ class InterfaceServer:
 
     async def send_initial_state(self, connection: ServerConnection) -> None:
         payloads = [{"type": "status", "data": self.build_status_payload()}]
-        if self.startup_notice:
-            payloads.append({"type": "system", "text": self.startup_notice})
+        payloads.extend(
+            {"type": "system", "text": message} for message in self.startup_messages
+        )
         payloads.extend(
             {"type": "system", "text": line}
             for line in build_realm_access_warning_lines(self.active_user, self.active_realm.name)
