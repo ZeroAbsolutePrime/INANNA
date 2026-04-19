@@ -1,212 +1,273 @@
-﻿# CURRENT PHASE: Cycle 2 - Phase 9 - The Multi-Faculty Proof
+﻿# CURRENT PHASE: Cycle 3 - Phase 1 - The Realm Boundary
 **Status: ACTIVE**
 **Authorized by: ZAERA (Guardian) + Claude (Command Center)**
 **Date opened: 2026-04-19**
-**Cycle: 2 - The NAMMU Kernel**
-**Replaces: Cycle 2 Phase 8 - The NAMMU Memory (COMPLETE)**
+**Cycle: 3 - The Commander Room**
+**Replaces: Cycle 2 - Phase 9 - The Multi-Faculty Proof (COMPLETE)**
+
+---
+
+## What Cycle 3 Is
+
+Cycle 2 built the NAMMU Kernel: routing, governance, two Faculties,
+bounded tool use, Guardian monitoring, and persistent NAMMU memory.
+
+Cycle 3 builds the Commander Room: the constitutional observability
+surface where the full system becomes visible and stewardable.
+
+The Master Cycle Plan describes Cycle 3 as nine phases:
+3.1 The Realm Boundary
+3.2 The Realm Memory
+3.3 The Body Report
+3.4 The Proposal Dashboard
+3.5 The Faculty Monitor
+3.6 The Memory Map
+3.7 The Guardian Room
+3.8 The Audit Surface
+3.9 The Commander Room
+
+Phase 3.1 begins with the foundation: Realms.
 
 ---
 
 ## What This Phase Is
 
-Eight phases have built the NAMMU Kernel:
+The system ontology defines a Realm as:
+"A bounded operational domain with its own governance context,
+memory scope, and embodied meaning. A realm is more than a folder
+or namespace. It is a meaningful domain of life or operation."
 
-- A local web interface (Phases 2.1-2.2)
-- Two Faculties: CROWN and ANALYST (Phase 2.3)
-- NAMMU automatic intent routing (Phase 2.4)
-- Governance layer above routing (Phase 2.5)
-- Bounded tool use via Operator Faculty (Phase 2.6)
-- Guardian Faculty monitoring (Phase 2.7)
-- NAMMU memory persistence, config-driven signals (Phase 2.8)
+Currently INANNA has one implicit realm: the default session.
+Everything that happens — conversations, memories, proposals,
+routing decisions — flows into one undifferentiated space.
 
-Phase 2.9 is the completion phase.
+Phase 3.1 makes Realms explicit. The user can name a realm,
+switch between realms, and INANNA carries different memory and
+context depending on which realm is active. Proposals, memory
+records, and NAMMU history are scoped to their realm.
 
-Its purpose is not to add new capabilities. Its purpose is to verify
-that everything built in Cycle 2 works together as a coherent whole,
-write the Cycle 2 Code Doctrine update, write the Cycle 2 Completion
-Record, and declare Cycle 2 complete.
+This is the first step toward the Commander Room: you cannot
+observe a system that has no structure to observe.
 
-This is the integration phase. Build almost nothing. Verify everything.
-Document what was learned.
+---
+
+## What a Realm Is in This Phase
+
+A Realm in Phase 3.1 is:
+- A named operational context with its own data directory
+- Its own session files, memory files, and proposal files
+- Its own NAMMU routing and governance log
+- A governance context file that names the realm and its purpose
+- Switchable at session start — not mid-session
+
+A Realm is NOT in this phase:
+- Not a separate model endpoint
+- Not a separate Faculty configuration
+- Not a separate user account
+- Not a network-distributed context
+- Not a security boundary — that is a later phase
 
 ---
 
 ## What You Are Building
 
-### Task 1 - Integration verification script
+### Task 1 - inanna/core/realm.py
 
-Create: inanna/verify_cycle2.py
+Create a new file: inanna/core/realm.py
 
-This script runs a complete automated verification of the full
-Cycle 2 architecture without requiring a live model or browser.
-It must be runnable standalone: py -3 verify_cycle2.py
-
-The script verifies:
-
-```
-1. CONFIG
-   - governance_signals.json exists and has 5 signal categories
-   - Each category has at least one signal phrase
-   - No signal phrases exist as hardcoded lists in governance.py or nammu.py
-
-2. FACULTIES
-   - Engine can be instantiated
-   - AnalystFaculty can be instantiated
-   - AnalystFaculty inherits from Engine
-   - Both have the required methods
-
-3. NAMMU
-   - IntentClassifier can be instantiated with a mock engine
-   - Heuristic classify returns "crown" or "analyst"
-   - route() returns a GovernanceResult
-   - GovernanceLayer loads from config correctly
-
-4. GOVERNANCE
-   - All four rules work via signal matching (model offline)
-   - GovernanceResult has all required fields
-   - No hardcoded signal lists in Python source
-
-5. OPERATOR
-   - OperatorFaculty can be instantiated
-   - PERMITTED_TOOLS contains "web_search"
-   - Unknown tool returns success=False
-
-6. GUARDIAN
-   - GuardianFaculty can be instantiated
-   - inspect() returns list of GuardianAlert
-   - SYSTEM_HEALTHY returned for clean state
-
-7. NAMMU MEMORY
-   - append_routing_event writes to disk
-   - load_routing_history reads back correctly
-   - append_governance_event writes to disk
-   - load_governance_history reads back correctly
-   - Temp directory used - no permanent data written
-
-8. IDENTITY
-   - CURRENT_PHASE is "Cycle 2 - Phase 9 - The Multi-Faculty Proof"
-   - build_system_prompt() non-empty, contains "INANNA"
-   - build_analyst_prompt() non-empty, contains "Analyst Faculty"
-   - build_nammu_prompt() non-empty
-   - list_governance_rules() returns 4 items
-   - list_permitted_tools() returns list with "web_search"
-   - list_guardian_codes() returns list with "SYSTEM_HEALTHY"
-```
-
-The script prints a clear pass/fail for each check and exits with
-code 0 if all pass, 1 if any fail.
-
-Format:
-```
-INANNA NYX - Cycle 2 Integration Verification
-==============================================
-[PASS] Config: governance_signals.json exists
-[PASS] Config: 5 signal categories present
-[PASS] Config: no hardcoded signals in governance.py
-...
-[PASS] Identity: CURRENT_PHASE is Phase 2.9
-----------------------------------------------
-All 24 checks passed. Cycle 2 architecture verified.
-```
-
-### Task 2 - Update CURRENT_PHASE and Code Doctrine entry
-
-Update identity.py:
 ```python
-CURRENT_PHASE = "Cycle 2 - Phase 9 - The Multi-Faculty Proof"
+from __future__ import annotations
+import json
+from dataclasses import dataclass
+from pathlib import Path
+from datetime import datetime, timezone
+
+
+DEFAULT_REALM = "default"
+
+
+@dataclass
+class RealmConfig:
+    name: str
+    purpose: str
+    created_at: str
+    governance_context: str = ""
+
+
+class RealmManager:
+    def __init__(self, data_root: Path) -> None:
+        self.data_root = data_root
+        self.realms_root = data_root / "realms"
+        self.realms_root.mkdir(parents=True, exist_ok=True)
+
+    def list_realms(self) -> list[str]:
+        return sorted([
+            d.name for d in self.realms_root.iterdir()
+            if d.is_dir() and (d / "realm.json").exists()
+        ])
+
+    def realm_exists(self, name: str) -> bool:
+        return (self.realms_root / name / "realm.json").exists()
+
+    def create_realm(self, name: str, purpose: str = "",
+                     governance_context: str = "") -> RealmConfig:
+        realm_dir = self.realms_root / name
+        realm_dir.mkdir(parents=True, exist_ok=True)
+        for sub in ("sessions", "memory", "proposals", "nammu"):
+            (realm_dir / sub).mkdir(exist_ok=True)
+        config = RealmConfig(
+            name=name,
+            purpose=purpose,
+            created_at=datetime.now(timezone.utc).isoformat(),
+            governance_context=governance_context,
+        )
+        (realm_dir / "realm.json").write_text(
+            json.dumps(config.__dict__, indent=2), encoding="utf-8"
+        )
+        return config
+
+    def load_realm(self, name: str) -> RealmConfig | None:
+        path = self.realms_root / name / "realm.json"
+        if not path.exists():
+            return None
+        data = json.loads(path.read_text(encoding="utf-8"))
+        return RealmConfig(**data)
+
+    def realm_data_dirs(self, name: str) -> dict[str, Path]:
+        base = self.realms_root / name
+        return {
+            "sessions": base / "sessions",
+            "memory": base / "memory",
+            "proposals": base / "proposals",
+            "nammu": base / "nammu",
+        }
+
+    def ensure_default_realm(self) -> RealmConfig:
+        if not self.realm_exists(DEFAULT_REALM):
+            return self.create_realm(
+                name=DEFAULT_REALM,
+                purpose="The default operational context.",
+                governance_context="Standard governance applies.",
+            )
+        return self.load_realm(DEFAULT_REALM)
 ```
 
-Add a CYCLE2_SUMMARY constant to identity.py:
+### Task 2 - Realm-scoped data directories in main.py
+
+Update main.py to:
+1. Instantiate RealmManager at startup
+2. Call ensure_default_realm() to create default realm if absent
+3. Read active realm from env var INANNA_REALM (default: "default")
+4. Use realm data directories for SESSION_DIR, MEMORY_DIR,
+   PROPOSAL_DIR, and NAMMU_DIR instead of the flat data/ paths
+
+The startup banner must show the active realm:
+```
+Phase: Cycle 3 - Phase 1 - The Realm Boundary
+Realm: default
+Session ID: ...
+```
+
+Add a "realms" command that lists available realms:
+```
+realms > Available realms (2):
+  [default]  The default operational context.
+  [work]     Work-related conversations and analysis.
+  Active: default
+```
+
+### Task 3 - Realm-scoped data in server.py
+
+Same as main.py — InterfaceServer uses realm data directories.
+INANNA_REALM env var determines active realm at server startup.
+
+Add "realms" command to the WebSocket protocol.
+Broadcast realm info in the initial status payload:
+```json
+{"type": "status", "data": {"realm": "default", "realm_purpose": "...", ...}}
+```
+
+### Task 4 - Realm display in index.html
+
+Add a realm indicator to the header bar, between the phase name
+and the mode indicator:
+
+```
+INANNA NYX    [phase name]  [realm: default]  [mode dot] CONNECTED
+```
+
+CSS for realm indicator:
+```css
+.realm-indicator {
+    color: #7a6a5a;  /* warm dim — earthy, grounded */
+    font-size: 0.78rem;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+}
+```
+
+The realm name updates when the status payload includes realm data.
+
+### Task 5 - Migrate existing flat data to default realm
+
+On first startup after Phase 3.1, if flat data directories
+(inanna/data/sessions/, inanna/data/memory/, etc.) contain files
+AND the default realm is empty, migrate those files into the
+default realm automatically.
+
+This preserves all existing session history, memory, and proposals.
+
+Migration logic in main.py and server.py:
 ```python
-CYCLE2_SUMMARY = (
-    "Cycle 2 built the NAMMU Kernel: web interface, two Faculties, "
-    "automatic intent routing, governance above routing, bounded tool use, "
-    "Guardian monitoring, config-driven signal classification, "
-    "and NAMMU memory persistence across sessions."
-)
+def migrate_flat_data_to_default_realm(
+    data_root: Path,
+    realm_dirs: dict[str, Path],
+) -> int:
+    migrated = 0
+    for key in ("sessions", "memory", "proposals"):
+        flat_dir = data_root / key
+        realm_dir = realm_dirs[key]
+        if flat_dir.exists():
+            for f in flat_dir.iterdir():
+                if f.is_file():
+                    dest = realm_dir / f.name
+                    if not dest.exists():
+                        f.rename(dest)
+                        migrated += 1
+    return migrated
 ```
 
-### Task 3 - Fix any integration gaps found
+If migration occurs, print:
+```
+Migrated N files to default realm.
+```
 
-When running verify_cycle2.py, if any check fails, fix the gap
-before writing the completion record. Document every gap found
-and fixed in the phase report.
+### Task 6 - Update identity.py
 
-This is the honest purpose of an integration phase: find what
-does not fit and fix it before declaring victory.
+Update CURRENT_PHASE:
+```python
+CURRENT_PHASE = "Cycle 3 - Phase 1 - The Realm Boundary"
+```
 
-### Task 4 - Docs: Cycle 2 Completion Record
+Add to STARTUP_COMMANDS in main.py: "realms"
+Add to capabilities line in state.py: "realms"
 
-Create: docs/cycle2_completion.md
+### Task 7 - Tests
 
-This document must contain:
+Create inanna/tests/test_realm.py:
+- RealmManager can be instantiated with a temp directory
+- ensure_default_realm() creates default realm if absent
+- create_realm() creates all required subdirectories
+- list_realms() returns correct realm names
+- realm_exists() returns True/False correctly
+- load_realm() returns RealmConfig with correct fields
+- realm_data_dirs() returns dict with all four keys
 
-**What Cycle 2 set out to build** (from master_cycle_plan.md)
+Update test_identity.py:
+- Update CURRENT_PHASE assertion
 
-**What was actually built** - one paragraph per phase, honest
-about what was planned vs what was delivered.
-
-**The architectural correction made in Phase 2.8** - named
-explicitly as a lesson learned. Hardcoded signals are a
-constitutional violation. Config-driven signals are the right
-architecture. This must be documented so future cycles never
-repeat the mistake.
-
-**What verify_cycle2.py confirmed** - the verification results.
-
-**What Cycle 2 did not build** - honest about what remains:
-- NAMMU is a kernel, not a full mediation layer
-- GovernanceLayer rules are still simple deterministic checks
-- The Commander Room does not yet exist as a visual surface
-- Realms are not yet implemented
-- The Guardian raises alerts but has no escalation path
-
-**The bridge to Cycle 3** - what comes next, based on real
-experience from Cycle 2.
-
-**Stage 3 progress assessment** - where we are in the four-stage
-Architecture Horizon.
-
-### Task 5 - Docs: Cycle 2 Code Doctrine update
-
-Update: docs/code_doctrine.md
-
-Add a new section at the end: "Lessons from Cycle 2"
-
-This section must include:
-
-1. **Never hardcode signal lists in Python.** All configurable
-   classification signals belong in JSON config files. Python code
-   reads them. The Guardian updates them. This was corrected in
-   Phase 2.8 and must never regress.
-
-2. **Model-first, config-fallback.** Classification decisions
-   (routing, governance) should use the model as the primary
-   path and config-backed heuristics as the fallback. The model
-   understands context. Keywords do not.
-
-3. **The protocol works.** Codex refused to build Phase 8 code
-   against a Phase 7 document. That refusal was correct. The
-   ABSOLUTE_PROTOCOL held under real conditions. This was not
-   a failure - it was the system protecting itself.
-
-4. **Integration phases are not optional.** Phase 2.9 exists
-   because eight phases of building need one phase of verification.
-   Future cycles must always end with an integration phase.
-
-5. **The UI and the CLI must stay in sync.** Every new command
-   added to main.py must be added to server.py and index.html.
-   Every capability in the CLI must be reachable in the UI.
-
-### Task 6 - Final test suite run
-
-Run: py -3 -m unittest discover -s tests
-
-All tests must pass. Report the final test count in the phase report.
-
-Run: py -3 verify_cycle2.py
-
-All checks must pass. Report the results in the phase report.
+Update test_state.py and test_commands.py:
+- Add "realms" to capabilities assertions
 
 ---
 
@@ -214,61 +275,79 @@ All checks must pass. Report the results in the phase report.
 
 ```
 inanna/
-  identity.py              <- MODIFY: update CURRENT_PHASE,
-                                      add CYCLE2_SUMMARY
-  verify_cycle2.py         <- NEW: integration verification script
-  core/                    <- MODIFY only to fix integration gaps found
-  ui/                      <- MODIFY only to fix integration gaps found
-  main.py                  <- MODIFY only to fix integration gaps found
+  identity.py              <- MODIFY: update CURRENT_PHASE
+  config/                  <- no changes
+  main.py                  <- MODIFY: realm manager, realm dirs,
+                                      realms command, migration
+  core/
+    session.py             <- no changes
+    memory.py              <- no changes
+    proposal.py            <- no changes
+    state.py               <- MODIFY: add realms to capabilities
+    nammu.py               <- no changes
+    governance.py          <- no changes
+    operator.py            <- no changes
+    guardian.py            <- no changes
+    nammu_memory.py        <- no changes
+    realm.py               <- NEW: RealmManager, RealmConfig
+  ui/
+    server.py              <- MODIFY: realm manager, realm dirs,
+                                      realm in status payload,
+                                      realms command, migration
+    static/
+      index.html           <- MODIFY: add realm indicator to header
   tests/
-    test_identity.py       <- MODIFY: update phase assertion,
-                                      add CYCLE2_SUMMARY test
-    (others only if fixing gaps)
-docs/
-  cycle2_completion.md     <- NEW: Cycle 2 Completion Record
-  code_doctrine.md         <- MODIFY: add Lessons from Cycle 2
+    test_realm.py          <- NEW
+    test_identity.py       <- MODIFY: update phase assertion
+    test_state.py          <- MODIFY: add realms to capabilities
+    test_commands.py       <- MODIFY: add realms to capabilities
+    (all others)           <- no changes
+  data/
+    realms/                <- NEW directory (auto-created)
+      default/             <- auto-created by ensure_default_realm()
 ```
 
 ---
 
 ## What You Are NOT Building in This Phase
 
-- No new Faculties, commands, or capabilities
-- No new data storage formats
-- No UI changes except gap fixes
-- No changes to governance, nammu, operator, or guardian logic
-  except gap fixes found during verification
-- Do not begin any Cycle 3 work
+- No mid-session realm switching — realm is set at startup
+- No realm-specific Faculty configuration
+- No realm security or access control
+- No realm sharing or network distribution
+- No realm deletion (that is a future phase with a consent flow)
+- No change to core Faculty, governance, or NAMMU logic
+- No new Faculty classes
 
 ---
 
-## Definition of Done for Phase 2.9
+## Definition of Done for Phase 3.1
 
-- [ ] verify_cycle2.py exists and all checks pass
-- [ ] py -3 -m unittest discover -s tests passes
-- [ ] docs/cycle2_completion.md exists with all required sections
-- [ ] docs/code_doctrine.md has "Lessons from Cycle 2" section
-- [ ] CURRENT_PHASE updated to Phase 2.9
-- [ ] CYCLE2_SUMMARY constant exists in identity.py
-- [ ] Any integration gaps found are fixed and documented
+- [ ] inanna/core/realm.py exists with RealmManager and RealmConfig
+- [ ] All data directories are realm-scoped at startup
+- [ ] INANNA_REALM env var selects active realm
+- [ ] Default realm created automatically if absent
+- [ ] Existing flat data migrated to default realm on first run
+- [ ] Realm name shown in CLI banner and UI header
+- [ ] "realms" command lists available realms
+- [ ] All tests pass: py -3 -m unittest discover -s tests
+- [ ] CURRENT_PHASE updated
 
 ---
 
 ## Handoff to Command Center
 
 When Definition of Done is met, Codex must:
-1. Commit with message: cycle2-phase9-complete
-2. Write docs/implementation/CYCLE2_PHASE9_REPORT.md containing:
-   - What verify_cycle2.py found and fixed
-   - Final test count
-   - Any gaps that could not be fixed in this phase
-3. Stop. Cycle 2 is complete.
-   Do not begin Cycle 3 without authorization from the Command Center.
+1. Commit with message: cycle3-phase1-complete
+2. Write docs/implementation/CYCLE3_PHASE1_REPORT.md
+3. Stop. Do not begin Phase 3.2 without a new CURRENT_PHASE.md.
 
 ---
 
 *Written by: Claude (Command Center)*
 *Guardian approval: ZAERA*
 *Date: 2026-04-19*
-*Eight phases of building. One phase of truth.*
-*The integration phase is where the architecture meets itself.*
+*A realm is not a folder.*
+*It is a domain of meaning.*
+*Every conversation happens somewhere.*
+*Phase 3.1 makes that somewhere named.*
