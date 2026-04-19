@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import unittest
 from datetime import datetime, timezone
 from pathlib import Path
@@ -8,6 +9,43 @@ from unittest.mock import patch
 
 from core.body import BodyInspector, BodyReport
 import ui.server as ui_server
+
+
+ROLES_PAYLOAD = {
+    "roles": {
+        "guardian": {
+            "description": "Full system access - assigned directly only",
+            "privileges": ["all"],
+        },
+        "operator": {
+            "description": "Realm-scoped admin",
+            "privileges": [
+                "manage_users_in_realm",
+                "approve_proposals_in_realm",
+                "read_realm_audit_log",
+                "invite_users",
+            ],
+        },
+        "user": {
+            "description": "Standard interaction",
+            "privileges": [
+                "converse",
+                "approve_own_memory",
+                "read_own_log",
+                "forget_own_memory",
+            ],
+        },
+    }
+}
+
+
+def write_roles_config(app_root: Path) -> None:
+    config_dir = app_root / "config"
+    config_dir.mkdir(parents=True, exist_ok=True)
+    (config_dir / "roles.json").write_text(
+        json.dumps(ROLES_PAYLOAD, indent=2),
+        encoding="utf-8",
+    )
 
 
 class BodyInspectorTests(unittest.TestCase):
@@ -102,6 +140,7 @@ class BodyStatusPayloadTests(unittest.TestCase):
             original_app_root = ui_server.APP_ROOT
             try:
                 ui_server.APP_ROOT = Path(temp_dir)
+                write_roles_config(ui_server.APP_ROOT)
                 server = ui_server.InterfaceServer()
 
                 payload = server.build_status_payload()

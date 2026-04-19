@@ -17,12 +17,16 @@ class StateReport:
         realm_memory_count: int | None = None,
         realm_session_count: int | None = None,
         realm_governance_context: str = "",
+        active_user: str = "ZAERA (guardian)",
+        realm_access: bool = True,
     ) -> str:
         lines = [
             f"Session: {session_id}",
             f"Phase: {CURRENT_PHASE}",
             f"Mode: {mode}",
+            f"Active user: {active_user}",
             f"Realm: {realm_name}",
+            f"Realm access: {'allowed' if realm_access else 'warning only - denied'}",
             f"Memory records: {memory_count}",
             (
                 f"Realm memory records: {realm_memory_count}"
@@ -56,8 +60,9 @@ class StateReport:
             ),
             (
                 "Capabilities: respond, reflect, analyse, audit, guardian, realms, "
-                "realm-context, history, proposal-history, routing-log, nammu-log, "
-                "memory-log, body, status, diagnostics, approve, reject, forget, exit"
+                "realm-context, switch-user, assign-realm, unassign-realm, history, "
+                "proposal-history, routing-log, nammu-log, memory-log, body, status, "
+                "diagnostics, approve, reject, forget, exit"
             ),
         ]
         return "\n".join(lines)

@@ -27,6 +27,13 @@ from core.operator import OperatorFaculty
 from core.proposal import Proposal
 from core.session import AnalystFaculty, Engine, Session
 from core.state import StateReport
+from core.user import (
+    UserManager,
+    UserRecord,
+    can_access_realm,
+    check_privilege,
+    ensure_guardian_exists,
+)
 from identity import phase_banner
 from main import (
     STARTUP_COMMANDS,
@@ -35,18 +42,21 @@ from main import (
     build_history_report,
     build_memory_log_report,
     build_proposal_history_payload,
+    build_realm_access_warning_lines,
     build_realm_context_report,
     build_nammu_log_report,
     build_realms_report,
     build_routing_log_report,
     build_tool_result_text,
     build_tool_context_lines,
+    create_realm_assignment_proposal,
     create_memory_request_proposal,
     create_realm_context_proposal,
     create_tool_use_proposal,
     initialize_realm_context,
     inspect_body_report,
     load_current_realm,
+    parse_user_realm_command,
     startup_context_items,
 )
 
@@ -110,6 +120,13 @@ class InterfaceServer:
         self.memory = Memory(session_dir=self.session_dir, memory_dir=self.memory_dir)
         self.proposal = Proposal(proposal_dir=self.proposal_dir)
         self.state_report = StateReport()
+        self.user_manager = UserManager(
+            data_root=self.data_root,
+            roles_config_path=APP_ROOT / "config" / "roles.json",
+        )
+        self.guardian_user = ensure_guardian_exists(self.user_manager)
+        self.active_user: UserRecord | None = self.guardian_user
+        self.original_user: UserRecord | None = None
         self.engine = Engine(
             model_url=self.config.model_url,
             model_name=self.config.model_name,
@@ -173,27 +190,19 @@ class InterfaceServer:
             if text:
                 await self.process_user_input(text)
         elif t == "command":
-            cmd = str(payload.get("cmd", "")).strip().lower()
-            if cmd:
-                await self.process_command(cmd, payload)
+            raw_cmd = str(payload.get("cmd", "")).strip()
+            if raw_cmd:
+                command_payload = dict(payload)
+                command_payload["_raw_cmd"] = raw_cmd
+                await self.process_command(raw_cmd, command_payload)
 
     async def process_user_input(self, text: str) -> None:
         await self.broadcast({"type": "thinking", "active": True})
         try:
             lowered = text.lower()
-            if lowered == "nammu-log":
-                await self.process_command("nammu-log", {})
-            elif lowered == "realm-context":
-                await self.process_command("realm-context", {})
-            elif lowered.startswith("realm-context "):
-                created = await asyncio.to_thread(self._run_realm_context_update, text)
-                await self.broadcast(
-                    {
-                        "type": "system",
-                        "text": "realm-context > proposal required to update the active realm context.",
-                    }
-                )
-                await self.broadcast({"type": "system", "text": created["line"]})
+            command_name = lowered.split(" ", 1)[0]
+            if command_name in set(STARTUP_COMMANDS) - {"analyse"}:
+                await self.process_command(text, {"_raw_cmd": text})
             elif lowered.startswith("analyse"):
                 analysis_text, created, mode = await asyncio.to_thread(
                     self._run_analysis_turn, text
@@ -411,20 +420,25 @@ class InterfaceServer:
         )
 
     async def process_command(self, cmd: str, payload: dict[str, Any]) -> None:
-        if cmd == "reflect":
+        raw_cmd = str(payload.get("_raw_cmd", cmd)).strip()
+        lowered = raw_cmd.lower()
+        command_name = lowered.split(" ", 1)[0]
+        command_args = raw_cmd[len(command_name) :].strip()
+
+        if command_name == "reflect":
             await self.run_reflect()
-        elif cmd == "audit":
+        elif command_name == "audit":
             await self.run_audit()
-        elif cmd == "guardian":
+        elif command_name == "guardian":
             await self.run_guardian()
-        elif cmd == "history":
+        elif command_name == "history":
             report = await asyncio.to_thread(self.proposal.history_report)
             await self.broadcast({"type": "system", "text": build_history_report(report)})
             await self.broadcast_state()
-        elif cmd == "proposal-history":
+        elif command_name == "proposal-history":
             report = await asyncio.to_thread(self.proposal.history_report)
             await self.broadcast(build_proposal_history_payload(report))
-        elif cmd == "realms":
+        elif command_name == "realms":
             report = await asyncio.to_thread(
                 build_realms_report,
                 self.realm_manager,
@@ -432,29 +446,181 @@ class InterfaceServer:
             )
             await self.broadcast({"type": "system", "text": report})
             await self.broadcast_state()
-        elif cmd == "realm-context":
-            report = await asyncio.to_thread(
-                build_realm_context_report,
-                load_current_realm(self.realm_manager, self.active_realm),
-                self.session_dir,
-                self.memory_dir,
-                self.proposal_dir,
-            )
-            await self.broadcast({"type": "system", "text": report})
+        elif command_name == "realm-context":
+            if command_args:
+                allowed, reason = check_privilege(self.active_user, self.user_manager, "all")
+                if not allowed:
+                    await self.broadcast({"type": "system", "text": f"access > {reason}"})
+                    await self.broadcast_state()
+                    return
+                created = await asyncio.to_thread(self._run_realm_context_update, raw_cmd)
+                await self.broadcast(
+                    {
+                        "type": "system",
+                        "text": "realm-context > proposal required to update the active realm context.",
+                    }
+                )
+                await self.broadcast({"type": "system", "text": created["line"]})
+            else:
+                report = await asyncio.to_thread(
+                    build_realm_context_report,
+                    load_current_realm(self.realm_manager, self.active_realm),
+                    self.session_dir,
+                    self.memory_dir,
+                    self.proposal_dir,
+                )
+                await self.broadcast({"type": "system", "text": report})
             await self.broadcast_state()
-        elif cmd == "routing-log":
+        elif command_name == "switch-user":
+            controller = self.original_user or self.active_user
+            allowed, reason = check_privilege(controller, self.user_manager, "all")
+            if not allowed:
+                await self.broadcast({"type": "system", "text": f"access > {reason}"})
+                await self.broadcast_state()
+                return
+            target_name = command_args.strip()
+            if not target_name:
+                await self.broadcast(
+                    {"type": "system", "text": "switch-user > provide a display name or 'off'."}
+                )
+                await self.broadcast_state()
+                return
+            guardian_record = self.guardian_user or controller
+            if guardian_record is None:
+                await self.broadcast(
+                    {"type": "system", "text": "switch-user > guardian context is unavailable."}
+                )
+                await self.broadcast_state()
+                return
+            if target_name.lower() in {"off", guardian_record.display_name.lower()}:
+                self.active_user = guardian_record
+                self.original_user = None
+                await self.broadcast(
+                    {
+                        "type": "system",
+                        "text": f"switch-user > Returned to {guardian_record.display_name} ({guardian_record.role}).",
+                    }
+                )
+                await self.broadcast_state()
+                return
+            target = self.user_manager.get_user_by_display_name(target_name)
+            if target is None:
+                await self.broadcast(
+                    {"type": "system", "text": f"switch-user > No user found: {target_name}"}
+                )
+                await self.broadcast_state()
+                return
+            self.active_user = target
+            self.original_user = guardian_record
+            messages = [f"switch-user > Now operating as: {target.display_name} ({target.role})"]
+            if not can_access_realm(target, self.active_realm.name):
+                messages.extend(
+                    [
+                        f"switch-user > Warning: {target.display_name} does not have access to realm {self.active_realm.name}.",
+                        f"switch-user > Operating as {target.display_name} in an unassigned realm.",
+                        "switch-user > Use assign-realm to grant access.",
+                    ]
+                )
+            else:
+                messages.append(
+                    f'switch-user > Type "switch-user {guardian_record.display_name}" to return to Guardian.'
+                )
+            for message in messages:
+                await self.broadcast({"type": "system", "text": message})
+            await self.broadcast_state()
+        elif command_name == "assign-realm":
+            allowed, reason = check_privilege(self.active_user, self.user_manager, "all")
+            if not allowed:
+                await self.broadcast({"type": "system", "text": f"access > {reason}"})
+                await self.broadcast_state()
+                return
+            parsed = parse_user_realm_command(raw_cmd, "assign-realm")
+            if parsed is None:
+                await self.broadcast(
+                    {
+                        "type": "system",
+                        "text": "assign-realm > usage: assign-realm [user_name] [realm_name]",
+                    }
+                )
+                await self.broadcast_state()
+                return
+            display_name, realm_name = parsed
+            target = self.user_manager.get_user_by_display_name(display_name)
+            if target is None:
+                await self.broadcast(
+                    {"type": "system", "text": f"assign-realm > No user found: {display_name}"}
+                )
+                await self.broadcast_state()
+                return
+            created = await asyncio.to_thread(
+                create_realm_assignment_proposal,
+                self.proposal,
+                target.display_name,
+                target.user_id,
+                realm_name,
+                "assign_realm",
+            )
+            await self.broadcast(
+                {
+                    "type": "system",
+                    "text": "assign-realm > proposal required to change realm access.",
+                }
+            )
+            await self.broadcast({"type": "system", "text": created["line"]})
+            await self.broadcast_state()
+        elif command_name == "unassign-realm":
+            allowed, reason = check_privilege(self.active_user, self.user_manager, "all")
+            if not allowed:
+                await self.broadcast({"type": "system", "text": f"access > {reason}"})
+                await self.broadcast_state()
+                return
+            parsed = parse_user_realm_command(raw_cmd, "unassign-realm")
+            if parsed is None:
+                await self.broadcast(
+                    {
+                        "type": "system",
+                        "text": "unassign-realm > usage: unassign-realm [user_name] [realm_name]",
+                    }
+                )
+                await self.broadcast_state()
+                return
+            display_name, realm_name = parsed
+            target = self.user_manager.get_user_by_display_name(display_name)
+            if target is None:
+                await self.broadcast(
+                    {"type": "system", "text": f"unassign-realm > No user found: {display_name}"}
+                )
+                await self.broadcast_state()
+                return
+            created = await asyncio.to_thread(
+                create_realm_assignment_proposal,
+                self.proposal,
+                target.display_name,
+                target.user_id,
+                realm_name,
+                "unassign_realm",
+            )
+            await self.broadcast(
+                {
+                    "type": "system",
+                    "text": "unassign-realm > proposal required to change realm access.",
+                }
+            )
+            await self.broadcast({"type": "system", "text": created["line"]})
+            await self.broadcast_state()
+        elif command_name == "routing-log":
             report = await asyncio.to_thread(build_routing_log_report, self.routing_log)
             await self.broadcast({"type": "system", "text": report})
             await self.broadcast_state()
-        elif cmd == "nammu-log":
+        elif command_name == "nammu-log":
             report = await asyncio.to_thread(build_nammu_log_report, self.nammu_dir)
             await self.broadcast({"type": "system", "text": report})
             await self.broadcast_state()
-        elif cmd == "memory-log":
+        elif command_name == "memory-log":
             report = await asyncio.to_thread(self.memory.memory_log_report)
             await self.broadcast({"type": "system", "text": build_memory_log_report(report)})
             await self.broadcast_state()
-        elif cmd in {"body", "diagnostics"}:
+        elif command_name in {"body", "diagnostics"}:
             current_realm = load_current_realm(self.realm_manager, self.active_realm)
             report = await asyncio.to_thread(
                 build_body_report,
@@ -470,19 +636,19 @@ class InterfaceServer:
             )
             await self.broadcast({"type": "system", "text": report})
             await self.broadcast_state()
-        elif cmd == "status":
+        elif command_name == "status":
             await self.broadcast({"type": "system", "text": self.build_status_payload()["report"]})
             await self.broadcast_state()
-        elif cmd in {"approve", "reject"}:
+        elif command_name in {"approve", "reject"}:
             resolved = await asyncio.to_thread(
-                self.resolve_proposal, cmd, payload.get("proposal_id")
+                self.resolve_proposal, command_name, payload.get("proposal_id")
             )
             if not resolved:
                 await self.broadcast({"type": "system", "text": "No pending proposals."})
             else:
                 if resolved.get("payload", {}).get("action") == "tool_use":
                     outcome = await asyncio.to_thread(
-                        self.complete_tool_resolution, resolved, cmd
+                        self.complete_tool_resolution, resolved, command_name
                     )
                     for message in outcome["operator_messages"]:
                         await self.broadcast({"type": "operator", "text": message})
@@ -493,7 +659,7 @@ class InterfaceServer:
                     result = await asyncio.to_thread(self.apply_resolution, resolved)
                     await self.broadcast({"type": "system", "text": result})
             await self.broadcast_state()
-        elif cmd == "forget":
+        elif command_name == "forget":
             mid = str(payload.get("memory_id", "")).strip()
             if not mid:
                 await self.broadcast({"type": "system", "text": "No memory_id provided."})
@@ -581,6 +747,58 @@ class InterfaceServer:
                 if self.memory.delete_memory_record(str(mid)):
                     return f"Memory record {mid} removed."
                 return "Memory record not found."
+            if payload.get("action") == "assign_realm":
+                user_id = str(payload.get("user_id", "")).strip()
+                display_name = str(payload.get("display_name", "")).strip()
+                realm_name = str(payload.get("realm_name", "")).strip()
+                target = self.user_manager.get_user(user_id)
+                if target is None:
+                    return f"Approved {resolved['proposal_id']} but user {display_name or user_id} was not found."
+                if self.user_manager.assign_realm(user_id, realm_name):
+                    self.active_user = (
+                        self.user_manager.get_user(self.active_user.user_id)
+                        if self.active_user is not None
+                        else None
+                    ) or self.active_user
+                    self.original_user = (
+                        self.user_manager.get_user(self.original_user.user_id)
+                        if self.original_user is not None
+                        else None
+                    ) or self.original_user
+                    self.guardian_user = (
+                        self.user_manager.get_user(self.guardian_user.user_id)
+                        if self.guardian_user is not None
+                        else None
+                    ) or self.guardian_user
+                    return f"assign-realm > Realm {realm_name} assigned to {target.display_name}."
+                return f"assign-realm > {target.display_name} already has access to realm {realm_name}."
+            if payload.get("action") == "unassign_realm":
+                user_id = str(payload.get("user_id", "")).strip()
+                display_name = str(payload.get("display_name", "")).strip()
+                realm_name = str(payload.get("realm_name", "")).strip()
+                target = self.user_manager.get_user(user_id)
+                if target is None:
+                    return f"Approved {resolved['proposal_id']} but user {display_name or user_id} was not found."
+                if len(target.assigned_realms) <= 1 and realm_name in target.assigned_realms:
+                    return f"unassign-realm > Cannot remove last realm for {target.display_name}."
+                if self.user_manager.unassign_realm(user_id, realm_name):
+                    self.active_user = (
+                        self.user_manager.get_user(self.active_user.user_id)
+                        if self.active_user is not None
+                        else None
+                    ) or self.active_user
+                    self.original_user = (
+                        self.user_manager.get_user(self.original_user.user_id)
+                        if self.original_user is not None
+                        else None
+                    ) or self.original_user
+                    self.guardian_user = (
+                        self.user_manager.get_user(self.guardian_user.user_id)
+                        if self.guardian_user is not None
+                        else None
+                    ) or self.guardian_user
+                    return f"unassign-realm > Realm {realm_name} removed from {target.display_name}."
+                return f"unassign-realm > {target.display_name} does not have realm {realm_name}."
             self.memory.write_memory(
                 proposal_id=resolved["proposal_id"],
                 session_id=payload["session_id"],
@@ -593,6 +811,8 @@ class InterfaceServer:
             return f"Rejected {resolved['proposal_id']}."
         if payload.get("action") == "forget":
             return "Memory record retained."
+        if payload.get("action") in {"assign_realm", "unassign_realm"}:
+            return f"Rejected {resolved['proposal_id']}."
         return f"Rejected {resolved['proposal_id']}."
 
     def complete_tool_resolution(self, resolved: dict[str, Any], decision: str) -> dict[str, Any]:
@@ -656,6 +876,16 @@ class InterfaceServer:
         return report
 
     def build_status_payload(self) -> dict[str, Any]:
+        if self.active_user is not None:
+            self.active_user = self.user_manager.get_user(self.active_user.user_id) or self.active_user
+        if self.original_user is not None:
+            self.original_user = (
+                self.user_manager.get_user(self.original_user.user_id) or self.original_user
+            )
+        if self.guardian_user is not None:
+            self.guardian_user = (
+                self.user_manager.get_user(self.guardian_user.user_id) or self.guardian_user
+            )
         mem = self.memory.memory_count()
         history = self.proposal.history_report()
         pend = history["pending"]
@@ -673,9 +903,15 @@ class InterfaceServer:
             data_root=self.data_root,
             realm_name=current_realm.name if current_realm else self.active_realm.name,
         )
+        realm_name = current_realm.name if current_realm else self.active_realm.name
+        realm_access = (
+            can_access_realm(self.active_user, realm_name)
+            if self.active_user is not None
+            else True
+        )
         return {
             "phase": phase_banner(),
-            "realm": current_realm.name if current_realm else self.active_realm.name,
+            "realm": realm_name,
             "realm_purpose": (
                 current_realm.purpose if current_realm else self.active_realm.purpose
             ),
@@ -684,6 +920,33 @@ class InterfaceServer:
             ),
             "mode": self.engine.mode,
             "session_id": self.session.session_id,
+            "active_user": (
+                {
+                    "user_id": self.active_user.user_id,
+                    "display_name": self.active_user.display_name,
+                    "role": self.active_user.role,
+                    "assigned_realms": list(self.active_user.assigned_realms),
+                }
+                if self.active_user is not None
+                else None
+            ),
+            "acting_as": (
+                {
+                    "display_name": self.active_user.display_name,
+                    "role": self.active_user.role,
+                }
+                if self.original_user is not None and self.active_user is not None
+                else None
+            ),
+            "original_user": (
+                {
+                    "display_name": self.original_user.display_name,
+                    "role": self.original_user.role,
+                }
+                if self.original_user is not None
+                else None
+            ),
+            "realm_access": realm_access,
             "memory_count": mem,
             "realm_memory_count": realm_memory_count,
             "realm_session_count": realm_session_count,
@@ -702,12 +965,18 @@ class InterfaceServer:
                 total_proposals=history["total"],
                 approved_proposals=history["approved"],
                 rejected_proposals=history["rejected"],
-                realm_name=current_realm.name if current_realm else self.active_realm.name,
+                realm_name=realm_name,
                 realm_memory_count=realm_memory_count,
                 realm_session_count=realm_session_count,
                 realm_governance_context=(
                     current_realm.governance_context if current_realm else ""
                 ),
+                active_user=(
+                    f"{self.active_user.display_name} ({self.active_user.role})"
+                    if self.active_user is not None
+                    else "none"
+                ),
+                realm_access=realm_access,
             ),
         }
 
@@ -728,6 +997,10 @@ class InterfaceServer:
         payloads = [{"type": "status", "data": self.build_status_payload()}]
         if self.startup_notice:
             payloads.append({"type": "system", "text": self.startup_notice})
+        payloads.extend(
+            {"type": "system", "text": line}
+            for line in build_realm_access_warning_lines(self.active_user, self.active_realm.name)
+        )
         payloads.extend(
             [
                 {"type": "memory_update", "records": self.memory.memory_log_report()["records"]},

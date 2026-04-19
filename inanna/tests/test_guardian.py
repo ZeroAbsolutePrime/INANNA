@@ -10,6 +10,43 @@ from core.guardian import GuardianAlert, GuardianFaculty
 import ui.server as ui_server
 
 
+ROLES_PAYLOAD = {
+    "roles": {
+        "guardian": {
+            "description": "Full system access - assigned directly only",
+            "privileges": ["all"],
+        },
+        "operator": {
+            "description": "Realm-scoped admin",
+            "privileges": [
+                "manage_users_in_realm",
+                "approve_proposals_in_realm",
+                "read_realm_audit_log",
+                "invite_users",
+            ],
+        },
+        "user": {
+            "description": "Standard interaction",
+            "privileges": [
+                "converse",
+                "approve_own_memory",
+                "read_own_log",
+                "forget_own_memory",
+            ],
+        },
+    }
+}
+
+
+def write_roles_config(app_root: Path) -> None:
+    config_dir = app_root / "config"
+    config_dir.mkdir(parents=True, exist_ok=True)
+    (config_dir / "roles.json").write_text(
+        json.dumps(ROLES_PAYLOAD, indent=2),
+        encoding="utf-8",
+    )
+
+
 class GuardianFacultyTests(unittest.TestCase):
     def test_inspect_returns_guardian_alert_list(self) -> None:
         alerts = GuardianFaculty().inspect(
@@ -114,6 +151,7 @@ class InterfaceServerGuardianTests(unittest.TestCase):
             original_app_root = ui_server.APP_ROOT
             try:
                 ui_server.APP_ROOT = Path(temp_dir)
+                write_roles_config(ui_server.APP_ROOT)
                 server = ui_server.InterfaceServer()
                 for index in range(5):
                     server.proposal.create(
@@ -143,6 +181,7 @@ class InterfaceServerGuardianTests(unittest.TestCase):
             original_app_root = ui_server.APP_ROOT
             try:
                 ui_server.APP_ROOT = Path(temp_dir)
+                write_roles_config(ui_server.APP_ROOT)
                 server = ui_server.InterfaceServer()
                 connection = DummyConnection()
 

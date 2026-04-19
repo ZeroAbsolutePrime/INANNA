@@ -106,8 +106,8 @@ class IdentityTests(unittest.TestCase):
     def test_current_phase_constant_matches_phase_banner(self) -> None:
         self.assertEqual(CURRENT_PHASE, phase_banner())
 
-    def test_current_phase_names_proposal_dashboard(self) -> None:
-        self.assertIn("Proposal Dashboard", CURRENT_PHASE)
+    def test_current_phase_names_realm_access(self) -> None:
+        self.assertIn("Realm Access", CURRENT_PHASE)
 
     def test_cycle2_summary_describes_completed_kernel(self) -> None:
         self.assertIn("NAMMU Kernel", CYCLE2_SUMMARY)

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import io
+import json
 import unittest
 from contextlib import redirect_stdout
 from pathlib import Path
@@ -15,7 +16,36 @@ from core.proposal import Proposal
 from core.realm import RealmManager
 from core.session import AnalystFaculty, Engine, Session
 from core.state import StateReport
+from core.user import UserManager, ensure_guardian_exists
 from main import STARTUP_COMMANDS, handle_command, startup_commands_line
+
+
+ROLES_PAYLOAD = {
+    "roles": {
+        "guardian": {
+            "description": "Full system access - assigned directly only",
+            "privileges": ["all"],
+        },
+        "operator": {
+            "description": "Realm-scoped admin",
+            "privileges": [
+                "manage_users_in_realm",
+                "approve_proposals_in_realm",
+                "read_realm_audit_log",
+                "invite_users",
+            ],
+        },
+        "user": {
+            "description": "Standard interaction",
+            "privileges": [
+                "converse",
+                "approve_own_memory",
+                "read_own_log",
+                "forget_own_memory",
+            ],
+        },
+    }
+}
 
 
 class SuccessfulToolOperator:
@@ -145,8 +175,23 @@ class CommandTests(unittest.TestCase):
                 routing_log,
                 startup_context,
                 config,
-            )
+        )
         return result, output.getvalue(), prompts
+
+    def make_user_context(
+        self,
+        root: Path,
+    ) -> tuple[UserManager, dict[str, object | None]]:
+        roles_path = root / "roles.json"
+        roles_path.write_text(json.dumps(ROLES_PAYLOAD, indent=2), encoding="utf-8")
+        user_manager = UserManager(data_root=root, roles_config_path=roles_path)
+        guardian_user = ensure_guardian_exists(user_manager)
+        session_state: dict[str, object | None] = {
+            "active_user": guardian_user,
+            "original_user": None,
+            "guardian_user": guardian_user,
+        }
+        return user_manager, session_state
 
     def test_status_returns_session_line(self) -> None:
         (
@@ -177,7 +222,9 @@ class CommandTests(unittest.TestCase):
         )
 
         self.assertIn("Session:", result)
+        self.assertIn("Active user:", result)
         self.assertIn("Realm:", result)
+        self.assertIn("Realm access:", result)
         self.assertIn("Realm governance context:", result)
         self.assertIn("Total proposals:", result)
         self.assertIn("routing-log", result)
@@ -414,6 +461,9 @@ class CommandTests(unittest.TestCase):
                 "guardian",
                 "realms",
                 "realm-context",
+                "switch-user",
+                "assign-realm",
+                "unassign-realm",
                 "history",
                 "proposal-history",
                 "routing-log",
@@ -432,8 +482,9 @@ class CommandTests(unittest.TestCase):
             startup_commands_line(),
             (
                 "Commands: reflect, analyse, audit, guardian, realms, realm-context, "
-                "history, proposal-history, routing-log, nammu-log, memory-log, body, "
-                "status, diagnostics, approve, reject, forget, exit"
+                "switch-user, assign-realm, unassign-realm, history, proposal-history, "
+                "routing-log, nammu-log, memory-log, body, status, diagnostics, "
+                "approve, reject, forget, exit"
             ),
         )
 
@@ -575,6 +626,167 @@ class CommandTests(unittest.TestCase):
         )
         assert loaded is not None
         self.assertEqual(loaded.governance_context, "Focus on work memory boundaries.")
+
+    def test_assign_realm_command_creates_proposal_and_updates_user_on_approval(self) -> None:
+        (
+            session,
+            memory,
+            proposal,
+            state_report,
+            engine,
+            analyst,
+            classifier,
+            routing_log,
+            startup_context,
+            config,
+        ) = self.make_runtime()
+        root = session.session_path.parent.parent
+        user_manager, session_state = self.make_user_context(root)
+        alice = user_manager.create_user(
+            display_name="Alice",
+            role="user",
+            assigned_realms=["default"],
+            created_by="system",
+        )
+
+        proposal_result = handle_command(
+            "assign-realm Alice work",
+            session,
+            memory,
+            proposal,
+            state_report,
+            engine,
+            analyst,
+            classifier,
+            routing_log,
+            startup_context,
+            config,
+            user_manager=user_manager,
+            session_state=session_state,  # type: ignore[arg-type]
+        )
+        approval_result = handle_command(
+            "approve",
+            session,
+            memory,
+            proposal,
+            state_report,
+            engine,
+            analyst,
+            classifier,
+            routing_log,
+            startup_context,
+            config,
+            user_manager=user_manager,
+            session_state=session_state,  # type: ignore[arg-type]
+        )
+        updated = user_manager.get_user(alice.user_id)
+
+        self.assertIn("[REALM PROPOSAL]", proposal_result)
+        self.assertEqual(approval_result, "assign-realm > Realm work assigned to Alice.")
+        assert updated is not None
+        self.assertIn("work", updated.assigned_realms)
+
+    def test_unassign_realm_command_protects_last_realm(self) -> None:
+        (
+            session,
+            memory,
+            proposal,
+            state_report,
+            engine,
+            analyst,
+            classifier,
+            routing_log,
+            startup_context,
+            config,
+        ) = self.make_runtime()
+        root = session.session_path.parent.parent
+        user_manager, session_state = self.make_user_context(root)
+        user_manager.create_user(
+            display_name="Alice",
+            role="user",
+            assigned_realms=["default"],
+            created_by="system",
+        )
+
+        proposal_result = handle_command(
+            "unassign-realm Alice default",
+            session,
+            memory,
+            proposal,
+            state_report,
+            engine,
+            analyst,
+            classifier,
+            routing_log,
+            startup_context,
+            config,
+            user_manager=user_manager,
+            session_state=session_state,  # type: ignore[arg-type]
+        )
+        approval_result = handle_command(
+            "approve",
+            session,
+            memory,
+            proposal,
+            state_report,
+            engine,
+            analyst,
+            classifier,
+            routing_log,
+            startup_context,
+            config,
+            user_manager=user_manager,
+            session_state=session_state,  # type: ignore[arg-type]
+        )
+
+        self.assertIn("[REALM PROPOSAL]", proposal_result)
+        self.assertEqual(approval_result, "unassign-realm > Cannot remove last realm for Alice.")
+
+    def test_switch_user_warns_when_target_lacks_current_realm(self) -> None:
+        (
+            session,
+            memory,
+            proposal,
+            state_report,
+            engine,
+            analyst,
+            classifier,
+            routing_log,
+            startup_context,
+            config,
+        ) = self.make_runtime()
+        root = session.session_path.parent.parent
+        user_manager, session_state = self.make_user_context(root)
+        user_manager.create_user(
+            display_name="Alice",
+            role="user",
+            assigned_realms=["default"],
+            created_by="system",
+        )
+        realm_manager = RealmManager(root / "realm-data")
+        active_realm = realm_manager.create_realm("work")
+
+        result = handle_command(
+            "switch-user Alice",
+            session,
+            memory,
+            proposal,
+            state_report,
+            engine,
+            analyst,
+            classifier,
+            routing_log,
+            startup_context,
+            config,
+            active_realm=active_realm,
+            user_manager=user_manager,
+            session_state=session_state,  # type: ignore[arg-type]
+        )
+
+        self.assertIn("switch-user > Now operating as: Alice (user)", result)
+        self.assertIn("switch-user > Warning: Alice does not have access to realm work.", result)
+        self.assertIn("switch-user > Operating as Alice in an unassigned realm.", result)
+        self.assertIn("switch-user > Use assign-realm to grant access.", result)
 
     def test_nammu_log_with_no_history_reports_empty_persistent_state(self) -> None:
         (

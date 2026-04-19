@@ -24,6 +24,13 @@ from core.proposal import Proposal
 from core.realm import DEFAULT_REALM, RealmConfig, RealmManager
 from core.session import AnalystFaculty, Engine, Session
 from core.state import StateReport
+from core.user import (
+    UserManager,
+    UserRecord,
+    can_access_realm,
+    check_privilege,
+    ensure_guardian_exists,
+)
 from identity import phase_banner
 
 
@@ -31,6 +38,7 @@ APP_ROOT = Path(__file__).resolve().parent
 load_dotenv(APP_ROOT / ".env")
 
 DATA_ROOT = APP_ROOT / "data"
+ROLES_CONFIG_PATH = APP_ROOT / "config" / "roles.json"
 SESSION_DIR = DATA_ROOT / "sessions"
 MEMORY_DIR = DATA_ROOT / "memory"
 PROPOSAL_DIR = DATA_ROOT / "proposals"
@@ -42,6 +50,9 @@ STARTUP_COMMANDS = (
     "guardian",
     "realms",
     "realm-context",
+    "switch-user",
+    "assign-realm",
+    "unassign-realm",
     "history",
     "proposal-history",
     "routing-log",
@@ -187,6 +198,69 @@ def format_realm_proposal_line(record: dict) -> str:
         f"[REALM PROPOSAL] {record['timestamp']} | {record['what']} | "
         f"{record['why']} | status: {record['status']}"
     )
+
+
+def format_assigned_realms(user_record: UserRecord | None) -> str:
+    if user_record is None or not user_record.assigned_realms:
+        return "(none)"
+    return ", ".join(user_record.assigned_realms)
+
+
+def build_realm_access_warning_lines(
+    user_record: UserRecord | None,
+    realm_name: str,
+) -> list[str]:
+    if user_record is None or can_access_realm(user_record, realm_name):
+        return []
+    return [
+        f"access > {user_record.display_name} does not have access to realm {realm_name}.",
+        f"access > Assigned realms: {format_assigned_realms(user_record)}.",
+        f"access > Start with INANNA_REALM=default or use assign-realm.",
+    ]
+
+
+def parse_user_realm_command(command: str, command_name: str) -> tuple[str, str] | None:
+    parts = command.split(maxsplit=2)
+    if len(parts) != 3 or parts[0].lower() != command_name:
+        return None
+    return parts[1].strip(), parts[2].strip()
+
+
+def create_realm_assignment_proposal(
+    proposal: Proposal,
+    display_name: str,
+    user_id: str,
+    realm_name: str,
+    action: str,
+) -> dict:
+    verb = "Assign" if action == "assign_realm" else "Remove"
+    created = proposal.create(
+        what=f"{verb} realm {realm_name} {'to' if action == 'assign_realm' else 'from'} {display_name}",
+        why="Realm access changes require visible approval before they take effect.",
+        payload={
+            "action": action,
+            "user_id": user_id,
+            "display_name": display_name,
+            "realm_name": realm_name,
+        },
+    )
+    return {**created, "line": format_realm_proposal_line(created)}
+
+
+def refresh_session_state_user(
+    session_state: dict[str, UserRecord | None] | None,
+    user_manager: UserManager,
+    user_id: str,
+) -> None:
+    if session_state is None:
+        return
+    refreshed = user_manager.get_user(user_id)
+    if refreshed is None:
+        return
+    for key in ("active_user", "original_user", "guardian_user"):
+        record = session_state.get(key)
+        if record is not None and record.user_id == user_id:
+            session_state[key] = refreshed
 
 
 def create_realm_context_proposal(
@@ -733,19 +807,27 @@ def handle_command(
     nammu_dir: Path | None = None,
     realm_manager: RealmManager | None = None,
     active_realm: RealmConfig | None = None,
+    user_manager: UserManager | None = None,
+    session_state: dict[str, UserRecord | None] | None = None,
 ) -> str | None:
     normalized = command.strip()
     if not normalized:
         return ""
 
     guardian_metrics = ensure_guardian_metrics(guardian_metrics)
+    current_user = session_state.get("active_user") if session_state else None
+    original_user = session_state.get("original_user") if session_state else None
+    guardian_user = session_state.get("guardian_user") if session_state else None
+    active_realm_name = active_realm.name if active_realm else DEFAULT_REALM
+    current_realm = load_current_realm(realm_manager, active_realm)
+    if current_realm is not None:
+        active_realm_name = current_realm.name
 
     lowered = normalized.lower()
     if lowered in {"exit", "quit"}:
         return None
 
     if lowered == "status":
-        current_realm = load_current_realm(realm_manager, active_realm)
         history = proposal.history_report()
         return state_report.render(
             session_id=session.session_id,
@@ -755,12 +837,20 @@ def handle_command(
             total_proposals=history["total"],
             approved_proposals=history["approved"],
             rejected_proposals=history["rejected"],
-            realm_name=current_realm.name if current_realm else DEFAULT_REALM,
+            realm_name=active_realm_name,
             realm_memory_count=count_records(memory.memory_dir, "*.json"),
             realm_session_count=count_records(memory.session_dir, "*.json"),
             realm_governance_context=(
                 current_realm.governance_context if current_realm else ""
             ),
+            active_user=(
+                f"{current_user.display_name} ({current_user.role})"
+                if current_user is not None
+                else "none"
+            ),
+            realm_access=can_access_realm(current_user, active_realm_name)
+            if current_user is not None
+            else True,
         )
 
     if lowered in {"body", "diagnostics"}:
@@ -799,6 +889,10 @@ def handle_command(
     if lowered.startswith("realm-context "):
         if active_realm is None:
             return "realm-context > no active realm is available."
+        if user_manager is not None:
+            allowed, reason = check_privilege(current_user, user_manager, "all")
+            if not allowed:
+                return f"access > {reason}"
         governance_context = normalized[len("realm-context") :].strip()
         if not governance_context:
             return "realm-context > provide governance context text to propose an update."
@@ -811,6 +905,88 @@ def handle_command(
             "realm-context > proposal required to update the active realm context.\n"
             f"{created['line']}"
         )
+
+    if lowered.startswith("switch-user"):
+        if user_manager is None or session_state is None:
+            return "switch-user > user management is unavailable."
+        controller = original_user or current_user
+        allowed, reason = check_privilege(controller, user_manager, "all")
+        if not allowed:
+            return f"access > {reason}"
+        target_name = normalized[len("switch-user") :].strip()
+        if not target_name:
+            return "switch-user > provide a display name or 'off'."
+        guardian_record = guardian_user or controller
+        if guardian_record is None:
+            return "switch-user > guardian context is unavailable."
+        if target_name.lower() in {"off", guardian_record.display_name.lower()}:
+            session_state["active_user"] = guardian_record
+            session_state["original_user"] = None
+            return f"switch-user > Returned to {guardian_record.display_name} ({guardian_record.role})."
+        target = user_manager.get_user_by_display_name(target_name)
+        if target is None:
+            return f"switch-user > No user found: {target_name}"
+        session_state["active_user"] = target
+        session_state["guardian_user"] = guardian_record
+        session_state["original_user"] = guardian_record
+        lines = [f"switch-user > Now operating as: {target.display_name} ({target.role})"]
+        if not can_access_realm(target, active_realm_name):
+            lines.extend(
+                [
+                    f"switch-user > Warning: {target.display_name} does not have access to realm {active_realm_name}.",
+                    f"switch-user > Operating as {target.display_name} in an unassigned realm.",
+                    "switch-user > Use assign-realm to grant access.",
+                ]
+            )
+        else:
+            lines.append(
+                f'switch-user > Type "switch-user {guardian_record.display_name}" to return to Guardian.'
+            )
+        return "\n".join(lines)
+
+    if lowered.startswith("assign-realm"):
+        if user_manager is None or session_state is None:
+            return "assign-realm > user management is unavailable."
+        allowed, reason = check_privilege(current_user, user_manager, "all")
+        if not allowed:
+            return f"access > {reason}"
+        parsed = parse_user_realm_command(normalized, "assign-realm")
+        if parsed is None:
+            return "assign-realm > usage: assign-realm [user_name] [realm_name]"
+        display_name, realm_name = parsed
+        target = user_manager.get_user_by_display_name(display_name)
+        if target is None:
+            return f"assign-realm > No user found: {display_name}"
+        created = create_realm_assignment_proposal(
+            proposal=proposal,
+            display_name=target.display_name,
+            user_id=target.user_id,
+            realm_name=realm_name,
+            action="assign_realm",
+        )
+        return "assign-realm > proposal required to change realm access.\n" + created["line"]
+
+    if lowered.startswith("unassign-realm"):
+        if user_manager is None or session_state is None:
+            return "unassign-realm > user management is unavailable."
+        allowed, reason = check_privilege(current_user, user_manager, "all")
+        if not allowed:
+            return f"access > {reason}"
+        parsed = parse_user_realm_command(normalized, "unassign-realm")
+        if parsed is None:
+            return "unassign-realm > usage: unassign-realm [user_name] [realm_name]"
+        display_name, realm_name = parsed
+        target = user_manager.get_user_by_display_name(display_name)
+        if target is None:
+            return f"unassign-realm > No user found: {display_name}"
+        created = create_realm_assignment_proposal(
+            proposal=proposal,
+            display_name=target.display_name,
+            user_id=target.user_id,
+            realm_name=realm_name,
+            action="unassign_realm",
+        )
+        return "unassign-realm > proposal required to change realm access.\n" + created["line"]
 
     if lowered in {"history", "proposal-history"}:
         return build_history_report(proposal.history_report())
@@ -922,6 +1098,29 @@ def handle_command(
                     f"for realm {realm_name}."
                 )
             return f"Rejected {resolved['proposal_id']}."
+
+        if payload.get("action") in {"assign_realm", "unassign_realm"}:
+            if user_manager is None:
+                return f"Approved {resolved['proposal_id']} but user management was unavailable."
+            display_name = str(payload.get("display_name", "")).strip()
+            user_id = str(payload.get("user_id", "")).strip()
+            realm_name = str(payload.get("realm_name", "")).strip()
+            target = user_manager.get_user(user_id)
+            if resolved["status"] != "approved":
+                return f"Rejected {resolved['proposal_id']}."
+            if target is None:
+                return f"Approved {resolved['proposal_id']} but user {display_name or user_id} was not found."
+            if payload.get("action") == "assign_realm":
+                if user_manager.assign_realm(user_id, realm_name):
+                    refresh_session_state_user(session_state, user_manager, user_id)
+                    return f"assign-realm > Realm {realm_name} assigned to {target.display_name}."
+                return f"assign-realm > {target.display_name} already has access to realm {realm_name}."
+            if len(target.assigned_realms) <= 1 and realm_name in target.assigned_realms:
+                return f"unassign-realm > Cannot remove last realm for {target.display_name}."
+            if user_manager.unassign_realm(user_id, realm_name):
+                refresh_session_state_user(session_state, user_manager, user_id)
+                return f"unassign-realm > Realm {realm_name} removed from {target.display_name}."
+            return f"unassign-realm > {target.display_name} does not have realm {realm_name}."
 
         if resolved["status"] == "approved":
             memory.write_memory(
@@ -1040,6 +1239,13 @@ def main() -> None:
     memory = Memory(session_dir=SESSION_DIR, memory_dir=MEMORY_DIR)
     proposal = Proposal(proposal_dir=PROPOSAL_DIR)
     state_report = StateReport()
+    user_manager = UserManager(data_root=DATA_ROOT, roles_config_path=ROLES_CONFIG_PATH)
+    guardian_user = ensure_guardian_exists(user_manager)
+    session_state: dict[str, UserRecord | None] = {
+        "active_user": guardian_user,
+        "original_user": None,
+        "guardian_user": guardian_user,
+    }
     engine = Engine(
         model_url=config.model_url,
         model_name=config.model_name,
@@ -1078,9 +1284,15 @@ def main() -> None:
 
     print(f"Phase: {phase_banner()}")
     print(f"Realm: {active_realm.name}")
+    print(f"User: {guardian_user.display_name} ({guardian_user.role})")
     print(f"Session ID: {session.session_id}")
     print_startup_context(startup_context["summary_lines"])
     print(startup_commands_line())
+    for line in build_realm_access_warning_lines(
+        session_state.get("active_user"),
+        active_realm.name,
+    ):
+        print(line)
 
     while True:
         try:
@@ -1112,6 +1324,8 @@ def main() -> None:
             nammu_dir=NAMMU_DIR,
             realm_manager=realm_manager,
             active_realm=active_realm,
+            user_manager=user_manager,
+            session_state=session_state,
         )
         if result is None:
             print("Session closed.")

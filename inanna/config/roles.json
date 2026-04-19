@@ -1,0 +1,28 @@
+{
+  "roles": {
+    "guardian": {
+      "description": "Full system access - assigned directly only",
+      "privileges": [
+        "all"
+      ]
+    },
+    "operator": {
+      "description": "Realm-scoped admin",
+      "privileges": [
+        "manage_users_in_realm",
+        "approve_proposals_in_realm",
+        "read_realm_audit_log",
+        "invite_users"
+      ]
+    },
+    "user": {
+      "description": "Standard interaction",
+      "privileges": [
+        "converse",
+        "approve_own_memory",
+        "read_own_log",
+        "forget_own_memory"
+      ]
+    }
+  }
+}
