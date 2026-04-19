@@ -6,6 +6,7 @@ from pathlib import Path
 from dotenv import load_dotenv
 
 from config import Config
+from core.guardian import GuardianFaculty
 from core.memory import Memory
 from core.nammu import IntentClassifier
 from core.operator import OperatorFaculty, ToolResult
@@ -26,6 +27,7 @@ STARTUP_COMMANDS = (
     "reflect",
     "analyse",
     "audit",
+    "guardian",
     "history",
     "routing-log",
     "memory-log",
@@ -36,6 +38,16 @@ STARTUP_COMMANDS = (
     "forget",
     "exit",
 )
+
+
+def ensure_guardian_metrics(
+    guardian_metrics: dict[str, int] | None,
+) -> dict[str, int]:
+    if guardian_metrics is None:
+        guardian_metrics = {}
+    guardian_metrics.setdefault("governance_blocks", 0)
+    guardian_metrics.setdefault("tool_executions", 0)
+    return guardian_metrics
 
 
 def ensure_directories() -> None:
@@ -242,6 +254,7 @@ def complete_tool_resolution(
     engine: Engine,
     startup_context: dict,
     operator: OperatorFaculty,
+    guardian_metrics: dict[str, int],
 ) -> str:
     payload = resolved["payload"]
     original_input = payload.get("original_input", "")
@@ -251,6 +264,7 @@ def complete_tool_resolution(
     session.add_event("user", original_input)
 
     if decision == "approve":
+        guardian_metrics["tool_executions"] += 1
         result = operator.execute(tool, {"query": query})
         operator_text = build_tool_result_text(result)
         assistant_text = engine.respond(
@@ -347,10 +361,14 @@ def handle_command(
     startup_context: dict,
     config: Config,
     operator: OperatorFaculty | None = None,
+    guardian: GuardianFaculty | None = None,
+    guardian_metrics: dict[str, int] | None = None,
 ) -> str | None:
     normalized = command.strip()
     if not normalized:
         return ""
+
+    guardian_metrics = ensure_guardian_metrics(guardian_metrics)
 
     lowered = normalized.lower()
     if lowered in {"exit", "quit"}:
@@ -412,6 +430,20 @@ def handle_command(
             return f"inanna> [live audit] {audit_text}"
         return f"inanna> [audit summary] {audit_text}"
 
+    if lowered == "guardian":
+        guardian = guardian or GuardianFaculty()
+        report = guardian.format_report(
+            guardian.inspect(
+                session_id=session.session_id,
+                memory_count=memory.memory_count(),
+                pending_proposals=proposal.pending_count(),
+                routing_log=routing_log,
+                governance_blocks=guardian_metrics["governance_blocks"],
+                tool_executions=guardian_metrics["tool_executions"],
+            )
+        )
+        return f"guardian > {report}"
+
     if lowered == "reflect":
         reflection_mode, reflection_text = engine.reflect(startup_context["summary_lines"])
         if reflection_mode == "live":
@@ -438,6 +470,7 @@ def handle_command(
                 engine=engine,
                 startup_context=startup_context,
                 operator=operator,
+                guardian_metrics=guardian_metrics,
             )
 
         if resolved["status"] == "approved":
@@ -457,6 +490,7 @@ def handle_command(
     append_routing_decision(routing_log, governance_result.faculty, normalized)
 
     if governance_result.decision == "block":
+        guardian_metrics["governance_blocks"] += 1
         return f"governance > blocked: {governance_result.reason}"
 
     if governance_result.decision == "propose":
@@ -551,9 +585,11 @@ def main() -> None:
         model_name=config.model_name,
         api_key=config.api_key,
     )
+    guardian = GuardianFaculty()
     operator = OperatorFaculty()
     classifier = IntentClassifier(engine)
     routing_log: list[dict[str, str]] = []
+    guardian_metrics = {"governance_blocks": 0, "tool_executions": 0}
 
     if engine.verify_connection():
         print(f"Model connected: {config.model_name} at {config.model_url}")
@@ -599,6 +635,8 @@ def main() -> None:
             startup_context=startup_context,
             config=config,
             operator=operator,
+            guardian=guardian,
+            guardian_metrics=guardian_metrics,
         )
         if result is None:
             print("Session closed.")

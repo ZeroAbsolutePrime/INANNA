@@ -304,6 +304,7 @@ class CommandTests(unittest.TestCase):
                 "reflect",
                 "analyse",
                 "audit",
+                "guardian",
                 "history",
                 "routing-log",
                 "memory-log",
@@ -318,10 +319,44 @@ class CommandTests(unittest.TestCase):
         self.assertEqual(
             startup_commands_line(),
             (
-                "Commands: reflect, analyse, audit, history, routing-log, "
-                "memory-log, status, diagnostics, approve, reject, forget, exit"
+                "Commands: reflect, analyse, audit, guardian, history, "
+                "routing-log, memory-log, status, diagnostics, approve, reject, forget, exit"
             ),
         )
+
+    def test_guardian_returns_report_without_side_effects(self) -> None:
+        (
+            session,
+            memory,
+            proposal,
+            state_report,
+            engine,
+            analyst,
+            classifier,
+            routing_log,
+            startup_context,
+            config,
+        ) = self.make_runtime()
+
+        result = handle_command(
+            "guardian",
+            session,
+            memory,
+            proposal,
+            state_report,
+            engine,
+            analyst,
+            classifier,
+            routing_log,
+            startup_context,
+            config,
+        )
+
+        self.assertTrue(result.startswith("guardian > Guardian Report ("))
+        self.assertIn("SYSTEM_HEALTHY", result)
+        self.assertEqual(proposal.pending_count(), 0)
+        self.assertEqual(memory.memory_count(), 0)
+        self.assertEqual(session.events, [])
 
     def test_forget_cancel_returns_no_memory_removed(self) -> None:
         (

@@ -18,8 +18,8 @@ class StateReport:
             f"Memory records: {memory_count}",
             f"Pending proposals: {pending_count}",
             (
-                "Capabilities: respond, reflect, analyse, audit, history, routing-log, memory-log, "
-                "status, diagnostics, approve, reject, forget, exit"
+                "Capabilities: respond, reflect, analyse, audit, guardian, history, routing-log, "
+                "memory-log, status, diagnostics, approve, reject, forget, exit"
             ),
         ]
         return "\n".join(lines)

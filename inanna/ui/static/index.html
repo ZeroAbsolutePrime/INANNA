@@ -12,6 +12,7 @@
       --nammu: #6a8a7a;
       --governance: #8a6a6a;
       --operator: #7a8a6a;
+      --guardian: #7a6a8a;
       --border: #4a3a1e;
       --text: #b9b2a5;
       --user: #888888;
@@ -214,6 +215,13 @@
     .message-operator .message-content {
       color: var(--operator);
       font-size: 0.88rem;
+    }
+
+    .message-guardian .message-prefix,
+    .message-guardian .message-content {
+      color: var(--guardian);
+      font-size: 0.88rem;
+      white-space: pre;
     }
 
     .message-user .message-prefix,
@@ -463,6 +471,7 @@
     const commandSet = new Set([
       "reflect",
       "audit",
+      "guardian",
       "history",
       "routing-log",
       "memory-log",
@@ -535,6 +544,11 @@
 
       if (payload.type === "operator") {
         addMessage("operator", payload.text);
+        return;
+      }
+
+      if (payload.type === "guardian") {
+        addMessage("guardian", payload.text);
         return;
       }
 
@@ -635,6 +649,10 @@
 
         if (message.role === "operator") {
           prefix.textContent = "operator :";
+        }
+
+        if (message.role === "guardian") {
+          prefix.textContent = "guardian :";
         }
 
         const content = document.createElement("div");

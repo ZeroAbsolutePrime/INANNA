@@ -14,6 +14,7 @@ from websockets.asyncio.server import ServerConnection, serve
 from websockets.exceptions import ConnectionClosed
 
 from config import Config
+from core.guardian import GuardianFaculty
 from core.memory import Memory
 from core.nammu import IntentClassifier
 from core.operator import OperatorFaculty
@@ -97,9 +98,12 @@ class InterfaceServer:
             model_name=self.config.model_name,
             api_key=self.config.api_key,
         )
+        self.guardian = GuardianFaculty()
         self.operator = OperatorFaculty()
         self.classifier = IntentClassifier(self.engine)
         self.routing_log: list[dict[str, str]] = []
+        self.governance_blocks = 0
+        self.tool_executions = 0
         print("Verifying model connection...")
         self.engine.verify_connection()
         self.analyst.fallback_mode = self.engine.fallback_mode
@@ -209,6 +213,7 @@ class InterfaceServer:
         self._record_routing_decision(governance_result.faculty, text)
 
         if governance_result.decision == "block":
+            self.governance_blocks += 1
             return {
                 "governance": {
                     "type": "governance",
@@ -325,6 +330,8 @@ class InterfaceServer:
             await self.run_reflect()
         elif cmd == "audit":
             await self.run_audit()
+        elif cmd == "guardian":
+            await self.run_guardian()
         elif cmd == "history":
             report = await asyncio.to_thread(self.proposal.history_report)
             await self.broadcast({"type": "system", "text": build_history_report(report)})
@@ -412,6 +419,11 @@ class InterfaceServer:
         finally:
             await self.broadcast({"type": "thinking", "active": False})
 
+    async def run_guardian(self) -> None:
+        report = await asyncio.to_thread(self.build_guardian_report)
+        await self.broadcast({"type": "guardian", "text": report})
+        await self.broadcast_state()
+
     def resolve_proposal(self, decision: str, proposal_id: Any = None) -> dict[str, Any] | None:
         pid = str(proposal_id).strip() if proposal_id else ""
         if not pid:
@@ -453,6 +465,7 @@ class InterfaceServer:
         self.session.add_event("user", original_input)
 
         if decision == "approve":
+            self.tool_executions += 1
             result = self.operator.execute(tool, {"query": query})
             operator_text = build_tool_result_text(result)
             assistant_text = self.engine.respond(
@@ -480,6 +493,21 @@ class InterfaceServer:
             "assistant_text": assistant_text,
             "proposal_line": created["line"],
         }
+
+    def inspect_guardian(self) -> tuple[list[Any], str]:
+        alerts = self.guardian.inspect(
+            session_id=self.session.session_id,
+            memory_count=self.memory.memory_count(),
+            pending_proposals=self.proposal.pending_count(),
+            routing_log=self.routing_log,
+            governance_blocks=self.governance_blocks,
+            tool_executions=self.tool_executions,
+        )
+        return alerts, self.guardian.format_report(alerts)
+
+    def build_guardian_report(self) -> str:
+        _, report = self.inspect_guardian()
+        return report
 
     def build_status_payload(self) -> dict[str, Any]:
         mem = self.memory.memory_count()
@@ -520,6 +548,9 @@ class InterfaceServer:
             {"type": "system", "text": "INANNA NYX interface online."},
         ]:
             await self.send_json(connection, payload)
+        alerts, report = self.inspect_guardian()
+        if any(alert.level in {"warn", "critical"} for alert in alerts):
+            await self.send_json(connection, {"type": "guardian", "text": report})
 
     async def broadcast_state(self) -> None:
         await self.broadcast({"type": "status", "data": self.build_status_payload()})

@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 
-CURRENT_PHASE = "Cycle 2 - Phase 6 - The Bounded Tool"
+CURRENT_PHASE = "Cycle 2 - Phase 7 - The Guardian Check"
 
 
 PROMPT = """You are INANNA — a local-first, proposal-governed intelligence.
@@ -86,6 +86,14 @@ GOVERNANCE_RULES = [
 
 PERMITTED_TOOLS = ["web_search"]
 
+GUARDIAN_CHECK_CODES = [
+    "PENDING_PROPOSAL_ACCUMULATION",
+    "REPEATED_GOVERNANCE_BLOCKS",
+    "MEMORY_GROWTH",
+    "TOOL_USE_FREQUENCY",
+    "SYSTEM_HEALTHY",
+]
+
 
 def build_system_prompt() -> str:
     return PROMPT
@@ -105,6 +113,10 @@ def list_governance_rules() -> list[str]:
 
 def list_permitted_tools() -> list[str]:
     return PERMITTED_TOOLS
+
+
+def list_guardian_codes() -> list[str]:
+    return GUARDIAN_CHECK_CODES
 
 
 def phase_banner() -> str:

@@ -7,6 +7,7 @@ from identity import (
     build_analyst_prompt,
     build_nammu_prompt,
     build_system_prompt,
+    list_guardian_codes,
     list_governance_rules,
     list_permitted_tools,
     phase_banner,
@@ -95,11 +96,17 @@ class IdentityTests(unittest.TestCase):
         self.assertIsInstance(tools, list)
         self.assertIn("web_search", tools)
 
+    def test_guardian_codes_list_system_healthy(self) -> None:
+        codes = list_guardian_codes()
+
+        self.assertIsInstance(codes, list)
+        self.assertIn("SYSTEM_HEALTHY", codes)
+
     def test_current_phase_constant_matches_phase_banner(self) -> None:
         self.assertEqual(CURRENT_PHASE, phase_banner())
 
-    def test_current_phase_names_bounded_tool(self) -> None:
-        self.assertIn("Bounded Tool", CURRENT_PHASE)
+    def test_current_phase_names_guardian_check(self) -> None:
+        self.assertIn("Guardian Check", CURRENT_PHASE)
 
 
 if __name__ == "__main__":
