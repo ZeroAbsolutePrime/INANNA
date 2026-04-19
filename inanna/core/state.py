@@ -38,8 +38,8 @@ class StateReport:
             f"Pending proposals: {pending_count}",
             (
                 "Capabilities: respond, reflect, analyse, audit, guardian, realms, "
-                "realm-context, history, routing-log, nammu-log, memory-log, status, "
-                "diagnostics, approve, reject, forget, exit"
+                "realm-context, history, routing-log, nammu-log, memory-log, body, "
+                "status, diagnostics, approve, reject, forget, exit"
             ),
         ]
         return "\n".join(lines)

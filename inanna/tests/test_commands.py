@@ -209,7 +209,42 @@ class CommandTests(unittest.TestCase):
             config,
         )
 
-        self.assertIn("Model URL:", result)
+        self.assertIn("Body Report -", result)
+        self.assertIn("Model:", result)
+        self.assertIn("  URL: not set", result)
+
+    def test_body_returns_same_report_shape_as_diagnostics(self) -> None:
+        (
+            session,
+            memory,
+            proposal,
+            state_report,
+            engine,
+            analyst,
+            classifier,
+            routing_log,
+            startup_context,
+            config,
+        ) = self.make_runtime()
+
+        result = handle_command(
+            "body",
+            session,
+            memory,
+            proposal,
+            state_report,
+            engine,
+            analyst,
+            classifier,
+            routing_log,
+            startup_context,
+            config,
+        )
+
+        self.assertIn("Body Report -", result)
+        self.assertIn("Platform:", result)
+        self.assertIn("Session:", result)
+        self.assertIn("Model:", result)
 
     def test_history_with_no_proposals_returns_zero_total(self) -> None:
         (
@@ -351,6 +386,7 @@ class CommandTests(unittest.TestCase):
                 "routing-log",
                 "nammu-log",
                 "memory-log",
+                "body",
                 "status",
                 "diagnostics",
                 "approve",
@@ -363,8 +399,8 @@ class CommandTests(unittest.TestCase):
             startup_commands_line(),
             (
                 "Commands: reflect, analyse, audit, guardian, realms, realm-context, "
-                "history, routing-log, nammu-log, memory-log, status, diagnostics, "
-                "approve, reject, forget, exit"
+                "history, routing-log, nammu-log, memory-log, body, status, "
+                "diagnostics, approve, reject, forget, exit"
             ),
         )
 

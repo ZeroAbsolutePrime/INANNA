@@ -40,7 +40,7 @@ class StateTests(unittest.TestCase):
                     "Pending proposals: 1",
                     (
                         "Capabilities: respond, reflect, analyse, audit, guardian, realms, "
-                        "realm-context, history, routing-log, nammu-log, memory-log, "
+                        "realm-context, history, routing-log, nammu-log, memory-log, body, "
                         "status, diagnostics, approve, reject, forget, exit"
                     ),
                 ]
@@ -62,7 +62,9 @@ class StateTests(unittest.TestCase):
 
         report = build_diagnostics_report(config=config, engine=engine, session=session)
 
-        self.assertIn("API key: set", report)
+        self.assertIn("Body Report -", report)
+        self.assertIn("Model:", report)
+        self.assertIn("  URL: http://localhost:1234/v1", report)
         self.assertNotIn("secret-token", report)
         self.assertIn("Mode: fallback", report)
 

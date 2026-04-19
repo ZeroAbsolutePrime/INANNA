@@ -111,6 +111,18 @@
       white-space: nowrap;
     }
 
+    .body-indicator {
+      color: #6a8a6a;
+      font-size: 0.78rem;
+      letter-spacing: 0.14em;
+      text-transform: uppercase;
+      white-space: nowrap;
+    }
+
+    .body-indicator.warn {
+      color: var(--fallback);
+    }
+
     .mode {
       display: inline-flex;
       align-items: center;
@@ -429,6 +441,7 @@
       <div class="header-meta">
         <div class="header-phase" id="phase-text">loading phase</div>
         <div class="realm-indicator" id="realm-indicator" title="">realm: default</div>
+        <div class="body-indicator" id="body-indicator">body: ok</div>
         <div class="mode">
           <span class="mode-dot" id="mode-dot"></span>
           <span id="mode-text">fallback</span>
@@ -487,6 +500,7 @@
       "history",
       "routing-log",
       "memory-log",
+      "body",
       "status",
       "diagnostics",
       "approve",
@@ -498,6 +512,7 @@
     const brandIndicator = document.getElementById("brand-indicator");
     const phaseText = document.getElementById("phase-text");
     const realmIndicator = document.getElementById("realm-indicator");
+    const bodyIndicator = document.getElementById("body-indicator");
     const modeDot = document.getElementById("mode-dot");
     const modeText = document.getElementById("mode-text");
     const conversationLog = document.getElementById("conversation-log");
@@ -635,6 +650,28 @@
       phaseText.textContent = state.status.phase || "loading phase";
       realmIndicator.textContent = `realm: ${state.status.realm || "default"}`;
       realmIndicator.title = state.status.realm_purpose || "";
+      const body = state.status.body || {};
+      const isFallback = (body.model_mode || state.status.mode) === "fallback";
+      const isWarn =
+        (typeof body.memory_used_pct === "number" && body.memory_used_pct >= 80) ||
+        (typeof body.disk_free_gb === "number" && body.disk_free_gb < 1);
+      let bodyLabel = "body: ok";
+      if (isFallback) {
+        bodyLabel = "body: fallback";
+      } else if (isWarn) {
+        bodyLabel = "body: warn";
+      }
+      bodyIndicator.textContent = bodyLabel;
+      bodyIndicator.classList.toggle("warn", isFallback || isWarn);
+      bodyIndicator.title = [
+        body.platform ? `platform: ${body.platform}` : "",
+        body.python_version ? `python: ${body.python_version}` : "",
+        typeof body.session_uptime_seconds === "number"
+          ? `uptime: ${Math.round(body.session_uptime_seconds)}s`
+          : "",
+      ]
+        .filter(Boolean)
+        .join(" | ");
       modeText.textContent = state.status.mode || "fallback";
       modeDot.style.color = state.status.mode === "connected" ? "var(--connected)" : "var(--fallback)";
       brandIndicator.classList.toggle("pulsing", state.thinking);

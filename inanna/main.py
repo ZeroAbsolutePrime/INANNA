@@ -7,11 +7,13 @@ from pathlib import Path
 from dotenv import load_dotenv
 
 from config import Config
+from core.body import BodyInspector, BodyReport
 from core.governance import GovernanceLayer
 from core.guardian import GuardianFaculty
 from core.memory import Memory
 from core.nammu import IntentClassifier
 from core.nammu_memory import (
+    ROUTING_LOG_FILE,
     append_governance_event,
     append_routing_event,
     load_governance_history,
@@ -44,6 +46,7 @@ STARTUP_COMMANDS = (
     "routing-log",
     "nammu-log",
     "memory-log",
+    "body",
     "status",
     "diagnostics",
     "approve",
@@ -244,26 +247,106 @@ def print_startup_context(summary_lines: list[str]) -> None:
         print(f"  {index}. {line}")
 
 
+def count_routing_log_lines(nammu_dir: Path) -> int:
+    path = nammu_dir / ROUTING_LOG_FILE
+    if not path.exists():
+        return 0
+    return sum(1 for line in path.read_text(encoding="utf-8").splitlines() if line.strip())
+
+
+def inspect_body_report(
+    config: Config,
+    engine: Engine,
+    session: Session,
+    proposal: Proposal | None = None,
+    memory_dir: Path | None = None,
+    proposal_dir: Path | None = None,
+    nammu_dir: Path | None = None,
+    data_root: Path | None = None,
+    realm_name: str = DEFAULT_REALM,
+) -> BodyReport:
+    resolved_memory_dir = memory_dir or MEMORY_DIR
+    resolved_proposal_dir = proposal_dir or PROPOSAL_DIR
+    resolved_nammu_dir = nammu_dir or NAMMU_DIR
+    resolved_data_root = data_root or DATA_ROOT
+    pending_count = (
+        proposal.pending_count()
+        if proposal is not None
+        else count_records(resolved_proposal_dir, "*.txt")
+    )
+
+    return BodyInspector().inspect(
+        session_id=session.session_id,
+        session_started_at=session.started_at,
+        realm=realm_name,
+        model_url=config.model_url or "not set",
+        model_name=config.model_name or "not set",
+        model_mode=engine.mode,
+        data_root=resolved_data_root,
+        memory_record_count=count_records(resolved_memory_dir, "*.json"),
+        pending_proposal_count=pending_count,
+        routing_log_count=count_routing_log_lines(resolved_nammu_dir),
+    )
+
+
+def build_body_summary(report: BodyReport) -> dict[str, object]:
+    return {
+        "platform": report.platform,
+        "python_version": report.python_version,
+        "model_mode": report.model_mode,
+        "session_uptime_seconds": report.session_uptime_seconds,
+        "memory_used_pct": report.memory_used_pct,
+        "disk_free_gb": report.disk_free_gb,
+    }
+
+
+def build_body_report(
+    config: Config,
+    engine: Engine,
+    session: Session,
+    proposal: Proposal | None = None,
+    memory_dir: Path | None = None,
+    proposal_dir: Path | None = None,
+    nammu_dir: Path | None = None,
+    data_root: Path | None = None,
+    realm_name: str = DEFAULT_REALM,
+) -> str:
+    report = inspect_body_report(
+        config=config,
+        engine=engine,
+        session=session,
+        proposal=proposal,
+        memory_dir=memory_dir,
+        proposal_dir=proposal_dir,
+        nammu_dir=nammu_dir,
+        data_root=data_root,
+        realm_name=realm_name,
+    )
+    return BodyInspector().format_report(report)
+
+
 def build_diagnostics_report(
     config: Config,
     engine: Engine,
     session: Session,
+    proposal: Proposal | None = None,
     memory_dir: Path | None = None,
     proposal_dir: Path | None = None,
+    nammu_dir: Path | None = None,
+    data_root: Path | None = None,
+    realm_name: str = DEFAULT_REALM,
 ) -> str:
-    model_url = config.model_url or "not set"
-    model_name = config.model_name or "not set"
-    api_key_state = "set" if config.api_key else "not set"
-    lines = [
-        f"Model URL: {model_url}",
-        f"Model name: {model_name}",
-        f"API key: {api_key_state}",
-        f"Mode: {engine.mode}",
-        f"Session file: {session.session_path}",
-        f"Memory directory: {memory_dir or MEMORY_DIR}",
-        f"Proposal directory: {proposal_dir or PROPOSAL_DIR}",
-    ]
-    return "\n".join(lines)
+    return build_body_report(
+        config=config,
+        engine=engine,
+        session=session,
+        proposal=proposal,
+        memory_dir=memory_dir,
+        proposal_dir=proposal_dir,
+        nammu_dir=nammu_dir,
+        data_root=data_root,
+        realm_name=realm_name,
+    )
 
 
 def build_history_report(report: dict) -> str:
@@ -652,13 +735,18 @@ def handle_command(
             ),
         )
 
-    if lowered == "diagnostics":
+    if lowered in {"body", "diagnostics"}:
+        current_realm = load_current_realm(realm_manager, active_realm)
         return build_diagnostics_report(
             config=config,
             engine=engine,
             session=session,
+            proposal=proposal,
             memory_dir=memory.memory_dir,
             proposal_dir=proposal.proposal_dir,
+            nammu_dir=resolve_nammu_dir(session, nammu_dir),
+            data_root=DATA_ROOT,
+            realm_name=current_realm.name if current_realm else DEFAULT_REALM,
         )
 
     if lowered == "realms":

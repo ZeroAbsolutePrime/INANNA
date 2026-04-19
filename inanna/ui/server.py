@@ -30,7 +30,8 @@ from core.state import StateReport
 from identity import phase_banner
 from main import (
     STARTUP_COMMANDS,
-    build_diagnostics_report,
+    build_body_report,
+    build_body_summary,
     build_history_report,
     build_memory_log_report,
     build_realm_context_report,
@@ -43,6 +44,7 @@ from main import (
     create_realm_context_proposal,
     create_tool_use_proposal,
     initialize_realm_context,
+    inspect_body_report,
     load_current_realm,
     startup_context_items,
 )
@@ -448,19 +450,24 @@ class InterfaceServer:
             report = await asyncio.to_thread(self.memory.memory_log_report)
             await self.broadcast({"type": "system", "text": build_memory_log_report(report)})
             await self.broadcast_state()
-        elif cmd == "status":
-            await self.broadcast({"type": "system", "text": self.build_status_payload()["report"]})
-            await self.broadcast_state()
-        elif cmd == "diagnostics":
+        elif cmd in {"body", "diagnostics"}:
+            current_realm = load_current_realm(self.realm_manager, self.active_realm)
             report = await asyncio.to_thread(
-                build_diagnostics_report,
+                build_body_report,
                 self.config,
                 self.engine,
                 self.session,
+                self.proposal,
                 self.memory_dir,
                 self.proposal_dir,
+                self.nammu_dir,
+                self.data_root,
+                current_realm.name if current_realm else self.active_realm.name,
             )
             await self.broadcast({"type": "system", "text": report})
+            await self.broadcast_state()
+        elif cmd == "status":
+            await self.broadcast({"type": "system", "text": self.build_status_payload()["report"]})
             await self.broadcast_state()
         elif cmd in {"approve", "reject"}:
             resolved = await asyncio.to_thread(
@@ -650,6 +657,17 @@ class InterfaceServer:
         current_realm = load_current_realm(self.realm_manager, self.active_realm)
         realm_memory_count = len(list(self.memory_dir.glob("*.json")))
         realm_session_count = len(list(self.session_dir.glob("*.json")))
+        body_report = inspect_body_report(
+            config=self.config,
+            engine=self.engine,
+            session=self.session,
+            proposal=self.proposal,
+            memory_dir=self.memory_dir,
+            proposal_dir=self.proposal_dir,
+            nammu_dir=self.nammu_dir,
+            data_root=self.data_root,
+            realm_name=current_realm.name if current_realm else self.active_realm.name,
+        )
         return {
             "phase": phase_banner(),
             "realm": current_realm.name if current_realm else self.active_realm.name,
@@ -665,6 +683,7 @@ class InterfaceServer:
             "realm_memory_count": realm_memory_count,
             "realm_session_count": realm_session_count,
             "pending_count": pend,
+            "body": build_body_summary(body_report),
             "capabilities": list(STARTUP_COMMANDS),
             "report": self.state_report.render(
                 session_id=self.session.session_id,
