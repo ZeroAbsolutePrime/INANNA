@@ -11,6 +11,7 @@
       --analyst: #8ab4c4;
       --nammu: #6a8a7a;
       --governance: #8a6a6a;
+      --operator: #7a8a6a;
       --border: #4a3a1e;
       --text: #b9b2a5;
       --user: #888888;
@@ -207,6 +208,12 @@
     .message-governance .message-content {
       color: var(--governance);
       font-size: 0.85rem;
+    }
+
+    .message-operator .message-prefix,
+    .message-operator .message-content {
+      color: var(--operator);
+      font-size: 0.88rem;
     }
 
     .message-user .message-prefix,
@@ -526,6 +533,11 @@
         return;
       }
 
+      if (payload.type === "operator") {
+        addMessage("operator", payload.text);
+        return;
+      }
+
       if (payload.type === "system") {
         addMessage("system", payload.text);
         return;
@@ -619,6 +631,10 @@
 
         if (message.role === "governance") {
           prefix.textContent = "governance :";
+        }
+
+        if (message.role === "operator") {
+          prefix.textContent = "operator :";
         }
 
         const content = document.createElement("div");

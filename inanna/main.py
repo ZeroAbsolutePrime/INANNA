@@ -8,6 +8,7 @@ from dotenv import load_dotenv
 from config import Config
 from core.memory import Memory
 from core.nammu import IntentClassifier
+from core.operator import OperatorFaculty, ToolResult
 from core.proposal import Proposal
 from core.session import AnalystFaculty, Engine, Session
 from core.state import StateReport
@@ -171,6 +172,110 @@ def create_memory_request_proposal(
     )
 
 
+def create_tool_use_proposal(
+    proposal: Proposal,
+    session: Session,
+    user_input: str,
+    tool: str,
+    query: str,
+) -> dict:
+    created = proposal.create(
+        what="web_search tool use",
+        why="User requested current information that requires approved tool use.",
+        payload={
+            "action": "tool_use",
+            "tool": tool,
+            "query": query,
+            "original_input": user_input,
+            "session_id": session.session_id,
+        },
+    )
+    return {
+        **created,
+        "tool_line": (
+            f"[TOOL PROPOSAL] {created['timestamp']} | "
+            f"Use {tool} for: {query} | status: {created['status']}"
+        ),
+    }
+
+
+def build_tool_result_text(result: ToolResult) -> str:
+    lines = ["search result:"]
+    if not result.success:
+        lines.append(f"  Error: {result.error}")
+        return "\n".join(lines)
+
+    abstract = result.data.get("abstract", "")
+    answer = result.data.get("answer", "")
+    related = result.data.get("related", [])
+    lines.append(f"  Abstract: {abstract or 'none'}")
+    lines.append(f"  Answer: {answer or 'none'}")
+    if related:
+        lines.append(f"  Related: {related[0].get('text', '') or 'none'}")
+    return "\n".join(lines)
+
+
+def build_tool_context_lines(result: ToolResult) -> list[str]:
+    if result.success:
+        related = result.data.get("related", [])
+        related_text = related[0].get("text", "") if related else ""
+        lines = [
+            f"tool result ({result.tool}) query: {result.query}",
+            f"abstract: {result.data.get('abstract', '') or 'none'}",
+            f"answer: {result.data.get('answer', '') or 'none'}",
+        ]
+        if related_text:
+            lines.append(f"related: {related_text}")
+        return lines
+    return [
+        f"tool result ({result.tool}) query: {result.query}",
+        f"error: {result.error or 'unknown tool error'}",
+    ]
+
+
+def complete_tool_resolution(
+    resolved: dict,
+    decision: str,
+    session: Session,
+    proposal: Proposal,
+    memory: Memory,
+    engine: Engine,
+    startup_context: dict,
+    operator: OperatorFaculty,
+) -> str:
+    payload = resolved["payload"]
+    original_input = payload.get("original_input", "")
+    query = payload.get("query", "")
+    tool = payload.get("tool", "")
+
+    session.add_event("user", original_input)
+
+    if decision == "approve":
+        result = operator.execute(tool, {"query": query})
+        operator_text = build_tool_result_text(result)
+        assistant_text = engine.respond(
+            context_summary=startup_context["summary_lines"] + build_tool_context_lines(result),
+            conversation=session.events,
+        )
+    else:
+        operator_text = "tool use rejected. Proceeding without search."
+        assistant_text = engine.respond(
+            context_summary=startup_context["summary_lines"],
+            conversation=session.events,
+        )
+
+    session.add_event("assistant", assistant_text)
+    created = proposal.create(
+        what="Update the memory store from the latest session turn",
+        why="Keep the next session grounded in readable, user-approved context.",
+        payload=memory.build_candidate(
+            session_id=session.session_id,
+            events=session.events,
+        ),
+    )
+    return f"operator > {operator_text}\ninanna > {assistant_text}\n{created['line']}"
+
+
 def _resolve_inline_proposal(
     proposal: Proposal,
     created: dict,
@@ -241,6 +346,7 @@ def handle_command(
     routing_log: list[dict[str, str]],
     startup_context: dict,
     config: Config,
+    operator: OperatorFaculty | None = None,
 ) -> str | None:
     normalized = command.strip()
     if not normalized:
@@ -317,8 +423,24 @@ def handle_command(
         if not resolved:
             return "No pending proposals."
 
+        operator = operator or OperatorFaculty()
+        payload = resolved["payload"]
+        if payload.get("action") == "tool_use":
+            # DECISION POINT: CLI approve/reject continues to resolve the oldest
+            # pending proposal first, so tool execution follows the existing
+            # queue discipline rather than adding a new targeted approval syntax.
+            return complete_tool_resolution(
+                resolved=resolved,
+                decision=lowered,
+                session=session,
+                proposal=proposal,
+                memory=memory,
+                engine=engine,
+                startup_context=startup_context,
+                operator=operator,
+            )
+
         if resolved["status"] == "approved":
-            payload = resolved["payload"]
             memory.write_memory(
                 proposal_id=resolved["proposal_id"],
                 session_id=payload["session_id"],
@@ -347,6 +469,21 @@ def handle_command(
         return (
             f"governance > proposal required: {governance_result.reason}\n"
             f"{created['line']}"
+        )
+
+    if governance_result.suggests_tool:
+        created = create_tool_use_proposal(
+            proposal=proposal,
+            session=session,
+            user_input=normalized,
+            tool=governance_result.proposed_tool,
+            query=governance_result.tool_query or normalized,
+        )
+        return (
+            f'operator > tool proposed: {governance_result.proposed_tool} — '
+            f'"{governance_result.tool_query or normalized}"\n'
+            'Type "approve" to execute or "reject" to cancel.\n'
+            f"{created['tool_line']}"
         )
 
     if governance_result.faculty == "analyst":
@@ -414,6 +551,7 @@ def main() -> None:
         model_name=config.model_name,
         api_key=config.api_key,
     )
+    operator = OperatorFaculty()
     classifier = IntentClassifier(engine)
     routing_log: list[dict[str, str]] = []
 
@@ -460,6 +598,7 @@ def main() -> None:
             routing_log=routing_log,
             startup_context=startup_context,
             config=config,
+            operator=operator,
         )
         if result is None:
             print("Session closed.")

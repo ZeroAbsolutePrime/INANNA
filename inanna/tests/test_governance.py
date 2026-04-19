@@ -10,6 +10,7 @@ class GovernanceLayerTests(unittest.TestCase):
         result = GovernanceLayer().check("hello", "crown")
 
         self.assertIsInstance(result, GovernanceResult)
+        self.assertFalse(result.suggests_tool)
 
     def test_memory_signal_returns_propose_and_requires_proposal(self) -> None:
         result = GovernanceLayer().check("please remember this", "crown")
@@ -43,6 +44,18 @@ class GovernanceLayerTests(unittest.TestCase):
             result.reason,
             "Sensitive topic redirected to Analyst Faculty.",
         )
+
+    def test_governance_result_exposes_suggests_tool_field(self) -> None:
+        result = GovernanceLayer().check("hello", "crown")
+
+        self.assertTrue(hasattr(result, "suggests_tool"))
+
+    def test_tool_signal_sets_suggests_tool_true(self) -> None:
+        result = GovernanceLayer().check("search for the latest space news", "crown")
+
+        self.assertTrue(result.suggests_tool)
+        self.assertEqual(result.proposed_tool, "web_search")
+        self.assertTrue(result.tool_query)
 
 
 if __name__ == "__main__":

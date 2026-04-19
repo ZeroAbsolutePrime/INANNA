@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 
-CURRENT_PHASE = "Cycle 2 - Phase 5 - The Governed Route"
+CURRENT_PHASE = "Cycle 2 - Phase 6 - The Bounded Tool"
 
 
 PROMPT = """You are INANNA — a local-first, proposal-governed intelligence.
@@ -84,6 +84,8 @@ GOVERNANCE_RULES = [
     "Rule 4 - Allow: All other input proceeds as routed.",
 ]
 
+PERMITTED_TOOLS = ["web_search"]
+
 
 def build_system_prompt() -> str:
     return PROMPT
@@ -99,6 +101,10 @@ def build_nammu_prompt() -> str:
 
 def list_governance_rules() -> list[str]:
     return GOVERNANCE_RULES
+
+
+def list_permitted_tools() -> list[str]:
+    return PERMITTED_TOOLS
 
 
 def phase_banner() -> str:

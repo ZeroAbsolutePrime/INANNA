@@ -16,6 +16,7 @@ from websockets.exceptions import ConnectionClosed
 from config import Config
 from core.memory import Memory
 from core.nammu import IntentClassifier
+from core.operator import OperatorFaculty
 from core.proposal import Proposal
 from core.session import AnalystFaculty, Engine, Session
 from core.state import StateReport
@@ -26,6 +27,9 @@ from main import (
     build_history_report,
     build_memory_log_report,
     build_routing_log_report,
+    build_tool_result_text,
+    build_tool_context_lines,
+    create_tool_use_proposal,
     create_memory_request_proposal,
 )
 
@@ -93,6 +97,7 @@ class InterfaceServer:
             model_name=self.config.model_name,
             api_key=self.config.api_key,
         )
+        self.operator = OperatorFaculty()
         self.classifier = IntentClassifier(self.engine)
         self.routing_log: list[dict[str, str]] = []
         print("Verifying model connection...")
@@ -228,6 +233,25 @@ class InterfaceServer:
                 "proposal": created,
             }
 
+        if governance_result.suggests_tool:
+            created = create_tool_use_proposal(
+                proposal=self.proposal,
+                session=self.session,
+                user_input=text,
+                tool=governance_result.proposed_tool,
+                query=governance_result.tool_query or text,
+            )
+            return {
+                "response": {
+                    "type": "operator",
+                    "text": (
+                        f'tool proposed: {governance_result.proposed_tool} — '
+                        f'"{governance_result.tool_query or text}"'
+                    ),
+                },
+                "proposal": {**created, "line": created["tool_line"]},
+            }
+
         nammu_message = {
             "type": "nammu",
             "route": governance_result.faculty,
@@ -329,8 +353,16 @@ class InterfaceServer:
             if not resolved:
                 await self.broadcast({"type": "system", "text": "No pending proposals."})
             else:
-                result = await asyncio.to_thread(self.apply_resolution, resolved)
-                await self.broadcast({"type": "system", "text": result})
+                if resolved.get("payload", {}).get("action") == "tool_use":
+                    outcome = await asyncio.to_thread(
+                        self.complete_tool_resolution, resolved, cmd
+                    )
+                    await self.broadcast({"type": "operator", "text": outcome["operator_text"]})
+                    await self.broadcast({"type": "assistant", "text": outcome["assistant_text"]})
+                    await self.broadcast({"type": "system", "text": outcome["proposal_line"]})
+                else:
+                    result = await asyncio.to_thread(self.apply_resolution, resolved)
+                    await self.broadcast({"type": "system", "text": result})
             await self.broadcast_state()
         elif cmd == "forget":
             mid = str(payload.get("memory_id", "")).strip()
@@ -411,6 +443,43 @@ class InterfaceServer:
         if payload.get("action") == "forget":
             return "Memory record retained."
         return f"Rejected {resolved['proposal_id']}."
+
+    def complete_tool_resolution(self, resolved: dict[str, Any], decision: str) -> dict[str, str]:
+        payload = resolved["payload"]
+        original_input = payload.get("original_input", "")
+        query = payload.get("query", "")
+        tool = payload.get("tool", "")
+
+        self.session.add_event("user", original_input)
+
+        if decision == "approve":
+            result = self.operator.execute(tool, {"query": query})
+            operator_text = build_tool_result_text(result)
+            assistant_text = self.engine.respond(
+                context_summary=self.startup_context["summary_lines"] + build_tool_context_lines(result),
+                conversation=self.session.events,
+            )
+        else:
+            operator_text = "tool use rejected. Proceeding without search."
+            assistant_text = self.engine.respond(
+                context_summary=self.startup_context["summary_lines"],
+                conversation=self.session.events,
+            )
+
+        self.session.add_event("assistant", assistant_text)
+        created = self.proposal.create(
+            what="Update the memory store from the latest session turn",
+            why="Keep the next session grounded in readable, user-approved context.",
+            payload=self.memory.build_candidate(
+                session_id=self.session.session_id,
+                events=self.session.events,
+            ),
+        )
+        return {
+            "operator_text": operator_text,
+            "assistant_text": assistant_text,
+            "proposal_line": created["line"],
+        }
 
     def build_status_payload(self) -> dict[str, Any]:
         mem = self.memory.memory_count()

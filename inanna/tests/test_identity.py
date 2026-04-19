@@ -8,6 +8,7 @@ from identity import (
     build_nammu_prompt,
     build_system_prompt,
     list_governance_rules,
+    list_permitted_tools,
     phase_banner,
 )
 
@@ -88,11 +89,17 @@ class IdentityTests(unittest.TestCase):
         self.assertEqual(len(rules), 4)
         self.assertTrue(all(isinstance(rule, str) for rule in rules))
 
+    def test_permitted_tools_lists_web_search(self) -> None:
+        tools = list_permitted_tools()
+
+        self.assertIsInstance(tools, list)
+        self.assertIn("web_search", tools)
+
     def test_current_phase_constant_matches_phase_banner(self) -> None:
         self.assertEqual(CURRENT_PHASE, phase_banner())
 
-    def test_current_phase_names_governed_route(self) -> None:
-        self.assertIn("Governed Route", CURRENT_PHASE)
+    def test_current_phase_names_bounded_tool(self) -> None:
+        self.assertIn("Bounded Tool", CURRENT_PHASE)
 
 
 if __name__ == "__main__":
