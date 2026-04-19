@@ -10,6 +10,7 @@
       --voice: #c8a96e;
       --analyst: #8ab4c4;
       --nammu: #6a8a7a;
+      --governance: #8a6a6a;
       --border: #4a3a1e;
       --text: #b9b2a5;
       --user: #888888;
@@ -200,6 +201,12 @@
       color: var(--nammu);
       font-size: 0.82rem;
       letter-spacing: 0.06em;
+    }
+
+    .message-governance .message-prefix,
+    .message-governance .message-content {
+      color: var(--governance);
+      font-size: 0.85rem;
     }
 
     .message-user .message-prefix,
@@ -514,6 +521,11 @@
         return;
       }
 
+      if (payload.type === "governance") {
+        addMessage("governance", payload.text);
+        return;
+      }
+
       if (payload.type === "system") {
         addMessage("system", payload.text);
         return;
@@ -603,6 +615,10 @@
 
         if (message.role === "nammu") {
           prefix.textContent = "nammu :";
+        }
+
+        if (message.role === "governance") {
+          prefix.textContent = "governance :";
         }
 
         const content = document.createElement("div");

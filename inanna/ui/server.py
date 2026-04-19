@@ -26,6 +26,7 @@ from main import (
     build_history_report,
     build_memory_log_report,
     build_routing_log_report,
+    create_memory_request_proposal,
 )
 
 APP_ROOT = Path(__file__).resolve().parent.parent
@@ -154,18 +155,17 @@ class InterfaceServer:
                 if created:
                     await self.broadcast({"type": "system", "text": created["line"]})
             else:
-                route, response_type, response_text, created = await asyncio.to_thread(
+                outcome = await asyncio.to_thread(
                     self._run_routed_turn, text
                 )
-                await self.broadcast(
-                    {
-                        "type": "nammu",
-                        "route": route,
-                        "text": f"routing to {route} faculty",
-                    }
-                )
-                await self.broadcast({"type": response_type, "text": response_text})
-                await self.broadcast({"type": "system", "text": created["line"]})
+                if outcome.get("nammu"):
+                    await self.broadcast(outcome["nammu"])
+                if outcome.get("governance"):
+                    await self.broadcast(outcome["governance"])
+                if outcome.get("response"):
+                    await self.broadcast(outcome["response"])
+                if outcome.get("proposal"):
+                    await self.broadcast({"type": "system", "text": outcome["proposal"]["line"]})
             await self.broadcast_state()
         finally:
             await self.broadcast({"type": "thinking", "active": False})
@@ -199,11 +199,49 @@ class InterfaceServer:
     def _run_routed_turn(
         self,
         text: str,
-    ) -> tuple[str, str, str, dict[str, Any]]:
-        route = self.classifier.classify(text)
-        self._record_routing_decision(route, text)
+    ) -> dict[str, Any]:
+        governance_result = self.classifier.route(text)
+        self._record_routing_decision(governance_result.faculty, text)
 
-        if route == "analyst":
+        if governance_result.decision == "block":
+            return {
+                "governance": {
+                    "type": "governance",
+                    "decision": "block",
+                    "text": f"blocked: {governance_result.reason}",
+                }
+            }
+
+        if governance_result.decision == "propose":
+            created = create_memory_request_proposal(
+                proposal=self.proposal,
+                session=self.session,
+                user_input=text,
+                reason=governance_result.reason,
+            )
+            return {
+                "governance": {
+                    "type": "governance",
+                    "decision": "propose",
+                    "text": f"proposal required: {governance_result.reason}",
+                },
+                "proposal": created,
+            }
+
+        nammu_message = {
+            "type": "nammu",
+            "route": governance_result.faculty,
+            "text": f"routing to {governance_result.faculty} faculty",
+        }
+        governance_message = None
+        if governance_result.decision == "redirect":
+            governance_message = {
+                "type": "governance",
+                "decision": "redirect",
+                "text": f"redirected: {governance_result.reason}",
+            }
+
+        if governance_result.faculty == "analyst":
             mode, analysis_text = self.analyst.analyse(
                 question=text,
                 context=self.startup_context["summary_lines"],
@@ -219,10 +257,20 @@ class InterfaceServer:
                 ),
             )
             label = "[live analysis]" if mode == "live" else "[analysis fallback]"
-            return route, "analyst", f"{label} {analysis_text}", created
+            return {
+                "nammu": nammu_message,
+                "governance": governance_message,
+                "response": {"type": "analyst", "text": f"{label} {analysis_text}"},
+                "proposal": created,
+            }
 
         assistant_text, created = self._run_user_turn(text)
-        return route, "assistant", assistant_text, created
+        return {
+            "nammu": nammu_message,
+            "governance": governance_message,
+            "response": {"type": "assistant", "text": assistant_text},
+            "proposal": created,
+        }
 
     def _run_analysis_turn(
         self,

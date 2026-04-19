@@ -3,6 +3,7 @@ from __future__ import annotations
 import unittest
 from unittest.mock import patch
 
+from core.governance import GovernanceResult
 from core.nammu import IntentClassifier
 from core.session import Engine
 
@@ -18,6 +19,15 @@ class IntentClassifierTests(unittest.TestCase):
 
         self.assertIn(route, {"crown", "analyst"})
         self.assertEqual(route, "analyst")
+
+    def test_route_returns_governance_result(self) -> None:
+        classifier = IntentClassifier(Engine())
+
+        result = classifier.route("hello")
+
+        self.assertIsInstance(result, GovernanceResult)
+        self.assertEqual(result.decision, "allow")
+        self.assertEqual(result.faculty, "crown")
 
     def test_heuristic_classify_returns_analyst_for_analyse_this(self) -> None:
         classifier = IntentClassifier(Engine())

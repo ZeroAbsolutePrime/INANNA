@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 
-CURRENT_PHASE = "Cycle 2 - Phase 4 - The NAMMU Kernel"
+CURRENT_PHASE = "Cycle 2 - Phase 5 - The Governed Route"
 
 
 PROMPT = """You are INANNA — a local-first, proposal-governed intelligence.
@@ -77,6 +77,14 @@ Reply with exactly one word: either CROWN or ANALYST.
 Nothing else. No explanation. Just the routing decision."""
 
 
+GOVERNANCE_RULES = [
+    "Rule 1 - Memory Boundary: Memory changes require proposals.",
+    "Rule 2 - Identity Boundary: Laws and identity cannot be altered.",
+    "Rule 3 - Sensitive Redirect: Medical/legal/financial to Analyst.",
+    "Rule 4 - Allow: All other input proceeds as routed.",
+]
+
+
 def build_system_prompt() -> str:
     return PROMPT
 
@@ -87,6 +95,10 @@ def build_analyst_prompt() -> str:
 
 def build_nammu_prompt() -> str:
     return NAMMU_CLASSIFICATION_PROMPT
+
+
+def list_governance_rules() -> list[str]:
+    return GOVERNANCE_RULES
 
 
 def phase_banner() -> str:

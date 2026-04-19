@@ -155,6 +155,22 @@ def append_routing_decision(
     )
 
 
+def create_memory_request_proposal(
+    proposal: Proposal,
+    session: Session,
+    user_input: str,
+    reason: str,
+) -> dict:
+    return proposal.create(
+        what="Store a requested memory from direct user instruction",
+        why=reason,
+        payload={
+            "session_id": session.session_id,
+            "summary_lines": [f"user: {user_input}"],
+        },
+    )
+
+
 def _resolve_inline_proposal(
     proposal: Proposal,
     created: dict,
@@ -315,10 +331,25 @@ def handle_command(
 
         return f"Rejected {resolved['proposal_id']}."
 
-    route = classifier.classify(normalized)
-    append_routing_decision(routing_log, route, normalized)
+    governance_result = classifier.route(normalized)
+    append_routing_decision(routing_log, governance_result.faculty, normalized)
 
-    if route == "analyst":
+    if governance_result.decision == "block":
+        return f"governance > blocked: {governance_result.reason}"
+
+    if governance_result.decision == "propose":
+        created = create_memory_request_proposal(
+            proposal=proposal,
+            session=session,
+            user_input=normalized,
+            reason=governance_result.reason,
+        )
+        return (
+            f"governance > proposal required: {governance_result.reason}\n"
+            f"{created['line']}"
+        )
+
+    if governance_result.faculty == "analyst":
         analysis_mode, analysis_text = analyst.analyse(
             question=normalized,
             context=startup_context["summary_lines"],
@@ -334,10 +365,13 @@ def handle_command(
             ),
         )
         label = "[live analysis]" if analysis_mode == "live" else "[analysis fallback]"
+        lines = [f"nammu > routing to {governance_result.faculty} faculty"]
+        if governance_result.decision == "redirect":
+            lines.append(f"governance > redirected: {governance_result.reason}")
+        lines.append(f"analyst > {label} {analysis_text}")
+        lines.append(created["line"])
         return (
-            f"nammu > routing to analyst faculty\n"
-            f"analyst > {label} {analysis_text}\n"
-            f"{created['line']}"
+            "\n".join(lines)
         )
 
     session.add_event("user", normalized)
@@ -355,11 +389,12 @@ def handle_command(
             events=session.events,
         ),
     )
-    return (
-        f"nammu > routing to crown faculty\n"
-        f"inanna > {assistant_text}\n"
-        f"{created['line']}"
-    )
+    lines = [f"nammu > routing to {governance_result.faculty} faculty"]
+    if governance_result.decision == "redirect":
+        lines.append(f"governance > redirected: {governance_result.reason}")
+    lines.append(f"inanna > {assistant_text}")
+    lines.append(created["line"])
+    return "\n".join(lines)
 
 
 def main() -> None:

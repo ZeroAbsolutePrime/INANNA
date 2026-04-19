@@ -7,6 +7,7 @@ from identity import (
     build_analyst_prompt,
     build_nammu_prompt,
     build_system_prompt,
+    list_governance_rules,
     phase_banner,
 )
 
@@ -80,11 +81,18 @@ class IdentityTests(unittest.TestCase):
     def test_nammu_prompt_is_non_empty(self) -> None:
         self.assertTrue(build_nammu_prompt())
 
+    def test_governance_rules_list_has_four_strings(self) -> None:
+        rules = list_governance_rules()
+
+        self.assertIsInstance(rules, list)
+        self.assertEqual(len(rules), 4)
+        self.assertTrue(all(isinstance(rule, str) for rule in rules))
+
     def test_current_phase_constant_matches_phase_banner(self) -> None:
         self.assertEqual(CURRENT_PHASE, phase_banner())
 
-    def test_current_phase_names_nammu_kernel(self) -> None:
-        self.assertIn("NAMMU Kernel", CURRENT_PHASE)
+    def test_current_phase_names_governed_route(self) -> None:
+        self.assertIn("Governed Route", CURRENT_PHASE)
 
 
 if __name__ == "__main__":
