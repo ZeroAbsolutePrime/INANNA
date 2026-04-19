@@ -1,243 +1,236 @@
-﻿# CURRENT PHASE: Cycle 2 - Phase 6 - The Bounded Tool
+﻿# CURRENT PHASE: Cycle 2 - Phase 7 - The Guardian Check
 **Status: ACTIVE**
 **Authorized by: ZAERA (Guardian) + Claude (Command Center)**
 **Date opened: 2026-04-19**
 **Cycle: 2 - The NAMMU Kernel**
-**Replaces: Cycle 2 Phase 5 - The Governed Route (COMPLETE)**
+**Replaces: Cycle 2 Phase 6 - The Bounded Tool (COMPLETE)**
 
 ---
 
 ## What This Phase Is
 
-Phase 2.5 gave INANNA governance over routing decisions. The system
-now has: intent classification (NAMMU), Faculty routing, and deterministic
-governance checking. The architecture mediates before the model speaks.
+The architecture now has:
+- NAMMU routing between Faculties
+- Governance checking every input before routing
+- An Operator Faculty with bounded tool use
+- Proposals governing memory, tool use, and forgetting
 
-Phase 2.6 introduces the first tool use - bounded, governed, and explicit.
+But there is no layer that monitors the system itself over time.
+No layer that notices patterns, raises alerts, or reports on the
+health of the governance structure.
 
-In the Architecture Horizon, the Operator Faculty is described as:
-"code and tool execution planning." In this phase, we build the
-simplest possible form of that: a single tool that INANNA can invoke
-when the user asks a question that requires a real-world lookup.
+Phase 2.7 introduces the Guardian Faculty.
 
-The tool is: web_search
+In the Architecture Horizon, the Guardian Faculty is described as:
+"policy checking, anomaly detection, risk review."
 
-But unlike a raw web search, this tool is governed:
-- INANNA proposes using the tool before invoking it
-- The user approves or rejects the proposal
-- Only after approval does the tool execute
-- The result is shown transparently before INANNA summarizes it
+In this phase, the Guardian is a lightweight monitoring layer that:
+- Runs a periodic health check on the governance state
+- Detects anomalous patterns in the session
+- Raises alerts when something warrants attention
+- Is accessible via a "guardian" command
 
-This is Law 1 (proposal before change) applied to tool use.
-A search is a change to the information state of the session.
-It must be proposed, not assumed.
-
----
-
-## The Operator Faculty - Phase 2.6 Scope
-
-The Operator Faculty in this phase is a lightweight tool executor.
-It does not have its own LLM call. It executes a bounded set of
-approved tools and returns structured results.
-
-Tools available in Phase 2.6: one only - web_search via DuckDuckGo
-(no API key required, uses the public DDG instant answer API).
+The Guardian does not block actions - that is Governance's role.
+The Guardian observes, reports, and raises concerns.
+It is the conscience of the system, not its enforcer.
 
 ---
 
 ## What You Are Building
 
-### Task 1 - inanna/core/operator.py
+### Task 1 - inanna/core/guardian.py
 
-Create a new file: inanna/core/operator.py
+Create a new file: inanna/core/guardian.py
 
 ```python
 from __future__ import annotations
-import urllib.request
-import urllib.parse
-import json
-from dataclasses import dataclass
+from dataclasses import dataclass, field
+from datetime import datetime, timezone
 from typing import Any
 
 
 @dataclass
-class ToolResult:
-    tool: str
-    query: str
-    success: bool
-    data: dict[str, Any]
-    error: str = ""
+class GuardianAlert:
+    level: str        # "info" | "warn" | "critical"
+    code: str         # short machine-readable code
+    message: str      # human-readable description
+    timestamp: str = field(
+        default_factory=lambda: datetime.now(timezone.utc).isoformat()
+    )
 
 
-class OperatorFaculty:
-    PERMITTED_TOOLS = {"web_search"}
+class GuardianFaculty:
+    def inspect(
+        self,
+        session_id: str,
+        memory_count: int,
+        pending_proposals: int,
+        routing_log: list[dict[str, Any]],
+        governance_blocks: int,
+        tool_executions: int,
+    ) -> list[GuardianAlert]:
+        alerts: list[GuardianAlert] = []
 
-    def execute(self, tool: str, params: dict[str, Any]) -> ToolResult:
-        if tool not in self.PERMITTED_TOOLS:
-            return ToolResult(
-                tool=tool, query="",
-                success=False, data={},
-                error=f"Tool '{tool}' is not in the permitted tool set.",
-            )
-        if tool == "web_search":
-            return self._web_search(params.get("query", ""))
-        return ToolResult(tool=tool, query="", success=False, data={},
-                          error="Unknown tool.")
+        # Check 1: Excessive pending proposals
+        if pending_proposals >= 5:
+            alerts.append(GuardianAlert(
+                level="warn",
+                code="PENDING_PROPOSAL_ACCUMULATION",
+                message=(
+                    f"{pending_proposals} proposals are pending approval. "
+                    "Consider reviewing and resolving them."
+                ),
+            ))
 
-    def _web_search(self, query: str) -> ToolResult:
-        if not query.strip():
-            return ToolResult(tool="web_search", query=query,
-                              success=False, data={},
-                              error="Empty search query.")
-        try:
-            encoded = urllib.parse.quote_plus(query)
-            url = f"https://api.duckduckgo.com/?q={encoded}&format=json&no_html=1&skip_disambig=1"
-            req = urllib.request.Request(url)
-            req.add_header("User-Agent", "INANNA-NYX/1.0")
-            with urllib.request.urlopen(req, timeout=8) as r:
-                body = json.loads(r.read().decode("utf-8"))
-            results = {
-                "abstract": body.get("Abstract", ""),
-                "abstract_source": body.get("AbstractSource", ""),
-                "abstract_url": body.get("AbstractURL", ""),
-                "answer": body.get("Answer", ""),
-                "answer_type": body.get("AnswerType", ""),
-                "related": [
-                    {"text": t.get("Text", ""), "url": t.get("FirstURL", "")}
-                    for t in body.get("RelatedTopics", [])[:3]
-                    if isinstance(t, dict) and t.get("Text")
-                ],
-            }
-            return ToolResult(tool="web_search", query=query,
-                              success=True, data=results)
-        except Exception as e:
-            return ToolResult(tool="web_search", query=query,
-                              success=False, data={}, error=str(e))
+        # Check 2: Governance blocks in this session
+        if governance_blocks >= 3:
+            alerts.append(GuardianAlert(
+                level="warn",
+                code="REPEATED_GOVERNANCE_BLOCKS",
+                message=(
+                    f"{governance_blocks} inputs were blocked by governance "
+                    "in this session. This may indicate boundary testing."
+                ),
+            ))
+
+        # Check 3: Memory growth without review
+        if memory_count >= 10:
+            alerts.append(GuardianAlert(
+                level="info",
+                code="MEMORY_GROWTH",
+                message=(
+                    f"{memory_count} approved memory records exist. "
+                    "Consider reviewing older records for relevance."
+                ),
+            ))
+
+        # Check 4: Tool use frequency
+        if tool_executions >= 5:
+            alerts.append(GuardianAlert(
+                level="info",
+                code="TOOL_USE_FREQUENCY",
+                message=(
+                    f"{tool_executions} tool executions in this session. "
+                    "Tool use is governed and visible."
+                ),
+            ))
+
+        # Check 5: Healthy state
+        if not alerts:
+            alerts.append(GuardianAlert(
+                level="info",
+                code="SYSTEM_HEALTHY",
+                message="All governance indicators within normal bounds.",
+            ))
+
+        return alerts
+
+    def format_report(self, alerts: list[GuardianAlert]) -> str:
+        lines = [f"Guardian Report ({len(alerts)} alert(s)):"]
+        for alert in alerts:
+            level_marker = {
+                "info": "  [info]    ",
+                "warn": "  [warn]    ",
+                "critical": "  [critical]",
+            }.get(alert.level, "  [?]       ")
+            lines.append(f"{level_marker} {alert.code}")
+            lines.append(f"             {alert.message}")
+        return "\n".join(lines)
 ```
 
-### Task 2 - Tool detection in governance.py
+### Task 2 - Guardian state tracking in main.py and server.py
 
-Add tool intent detection to GovernanceLayer.
+Both main.py and InterfaceServer need to track:
+- governance_blocks: int — incremented each time GovernanceResult.decision == "block"
+- tool_executions: int — incremented each time a tool proposal is approved and executed
 
-When the input signals a need for current information that INANNA
-cannot have from memory alone, Governance sets a flag:
-suggests_tool=True in GovernanceResult.
+These are session-level counters, initialised to 0 at startup.
 
-Add suggests_tool: bool = False to GovernanceResult dataclass.
+### Task 3 - The "guardian" command
 
-Add TOOL_SIGNALS list to governance.py:
-```python
-TOOL_SIGNALS = [
-    "search for", "look up", "find out", "what is the latest",
-    "current news", "today's", "right now", "what happened",
-    "recent", "latest news", "search the web", "look it up",
-]
-```
+Add a new command: "guardian"
 
-When a tool signal is detected AND decision is "allow":
-- Set suggests_tool=True
-- Set proposed_tool="web_search"
-- Set tool_query=<extracted query or full input>
+When the user types "guardian", the system:
+1. Instantiates GuardianFaculty
+2. Calls guardian.inspect() with current session state
+3. Calls guardian.format_report() on the result
+4. Prints the report
 
-Add to GovernanceResult:
-```python
-suggests_tool: bool = False
-proposed_tool: str = ""
-tool_query: str = ""
-```
+CLI prefix: "guardian >"
+UI message type: {"type": "guardian", "text": "..."}
 
-### Task 3 - Tool proposal flow in main.py
+The guardian command is read-only. No proposals, no state changes.
 
-When GovernanceResult.suggests_tool is True, instead of calling
-any Faculty directly, create a tool proposal:
+### Task 4 - Guardian message rendering in index.html
 
-```
-[TOOL PROPOSAL] {timestamp} | Use web_search for: {query} | status: pending
-```
-
-Show the user:
-```
-operator > tool proposed: web_search — "{query}"
-Type "approve" to execute or "reject" to cancel.
-```
-
-When approved:
-1. Execute OperatorFaculty.execute("web_search", {"query": query})
-2. Show raw results:
-   ```
-   operator > search result:
-     Abstract: {abstract}
-     Answer: {answer}
-     Related: {related[0].text}
-   ```
-3. Then call Engine.respond() with the search result injected into context
-4. Show INANNA's response normally: inanna > ...
-
-When rejected:
-- Show: operator > tool use rejected. Proceeding without search.
-- Call Engine.respond() normally without search result
-
-Tool proposals use the existing Proposal system with what="web_search tool use"
-
-### Task 4 - OperatorFaculty in the UI server
-
-Update ui/server.py to instantiate OperatorFaculty.
-
-When GovernanceResult.suggests_tool is True, broadcast:
-{"type": "operator", "text": "tool proposed: web_search — query"}
-
-Add handling for tool approval flow:
-When user approves a pending tool proposal (proposal with
-action="tool_use"), execute the tool and inject results.
-
-Broadcast tool results as:
-{"type": "operator", "text": "search result:\n  Abstract: ...\n  Answer: ..."}
-
-### Task 5 - Operator message rendering in index.html
-
-Add CSS for operator messages:
+Add CSS for guardian messages:
 
 ```css
-.message-operator .message-prefix,
-.message-operator .message-content {
-    color: #7a8a6a;  /* muted olive - technical, distinct */
+.message-guardian .message-prefix,
+.message-guardian .message-content {
+    color: #7a6a8a;  /* muted violet - watchful, distinct */
     font-size: 0.88rem;
+    white-space: pre;
 }
 ```
 
-Prefix: "operator :"
+Prefix: "guardian :"
+
+The guardian report uses pre-formatted text (white-space: pre)
+because the report format uses alignment spaces.
+
+### Task 5 - Auto-guardian on session start
+
+When the UI first connects (send_initial_state), run the Guardian
+inspect automatically and include the report in the initial system
+messages if any non-info alerts exist.
+
+If all alerts are info/healthy: no auto-report on startup.
+If any warn or critical alerts exist: broadcast one guardian message
+on startup so the user sees it immediately.
+
+This is the Guardian fulfilling its monitoring role proactively.
 
 ### Task 6 - Update identity.py
 
-Add the permitted tools list as a constitutional record:
+Add guardian check codes as a constitutional record:
 
 ```python
-PERMITTED_TOOLS = ["web_search"]
+GUARDIAN_CHECK_CODES = [
+    "PENDING_PROPOSAL_ACCUMULATION",
+    "REPEATED_GOVERNANCE_BLOCKS",
+    "MEMORY_GROWTH",
+    "TOOL_USE_FREQUENCY",
+    "SYSTEM_HEALTHY",
+]
 
-def list_permitted_tools() -> list[str]:
-    return PERMITTED_TOOLS
+def list_guardian_codes() -> list[str]:
+    return GUARDIAN_CHECK_CODES
 ```
 
 Update CURRENT_PHASE:
 ```python
-CURRENT_PHASE = "Cycle 2 - Phase 6 - The Bounded Tool"
+CURRENT_PHASE = "Cycle 2 - Phase 7 - The Guardian Check"
 ```
+
+Add "guardian" to STARTUP_COMMANDS and capabilities line in state.py.
 
 ### Task 7 - Tests
 
-Create inanna/tests/test_operator.py:
-- OperatorFaculty.execute() with unknown tool returns success=False
-- OperatorFaculty.execute() with empty query returns success=False
-- OperatorFaculty only permits tools in PERMITTED_TOOLS
-- ToolResult is a dataclass with expected fields
-
-Update test_governance.py:
-- GovernanceResult has suggests_tool field
-- Tool signal input sets suggests_tool=True
+Create inanna/tests/test_guardian.py:
+- GuardianFaculty.inspect() returns a list of GuardianAlert
+- No alerts (healthy state) returns exactly one alert with code SYSTEM_HEALTHY
+- pending_proposals >= 5 triggers PENDING_PROPOSAL_ACCUMULATION at warn level
+- governance_blocks >= 3 triggers REPEATED_GOVERNANCE_BLOCKS at warn level
+- memory_count >= 10 triggers MEMORY_GROWTH at info level
+- format_report() returns a non-empty string containing "Guardian Report"
 
 Update test_identity.py:
-- list_permitted_tools() returns list with "web_search"
+- list_guardian_codes() returns a list containing "SYSTEM_HEALTHY"
 - Update CURRENT_PHASE assertion
+
+Update test_commands.py and test_state.py:
+- Add "guardian" to capabilities assertions
 
 ---
 
@@ -245,30 +238,32 @@ Update test_identity.py:
 
 ```
 inanna/
-  identity.py              <- MODIFY: add PERMITTED_TOOLS,
-                                      list_permitted_tools(),
+  identity.py              <- MODIFY: add GUARDIAN_CHECK_CODES,
+                                      list_guardian_codes(),
                                       update CURRENT_PHASE
   config.py                <- no changes
-  main.py                  <- MODIFY: handle suggests_tool in route result,
-                                      tool proposal flow, approve/reject tool
+  main.py                  <- MODIFY: track governance_blocks and
+                                      tool_executions counters,
+                                      add guardian command
   core/
     session.py             <- no changes
     memory.py              <- no changes
     proposal.py            <- no changes
-    state.py               <- no changes
+    state.py               <- MODIFY: add guardian to capabilities line
     nammu.py               <- no changes
-    governance.py          <- MODIFY: add suggests_tool to GovernanceResult,
-                                      add TOOL_SIGNALS detection
-    operator.py            <- NEW: OperatorFaculty, ToolResult
+    governance.py          <- no changes
+    operator.py            <- no changes
+    guardian.py            <- NEW: GuardianFaculty, GuardianAlert
   ui/
-    server.py              <- MODIFY: instantiate OperatorFaculty,
-                                      handle tool proposals and results
+    server.py              <- MODIFY: track counters, add guardian command,
+                                      auto-guardian on startup if warns exist
     static/
-      index.html           <- MODIFY: add operator message styling
+      index.html           <- MODIFY: add guardian message styling
   tests/
-    test_operator.py       <- NEW: OperatorFaculty tests
-    test_governance.py     <- MODIFY: add suggests_tool tests
-    test_identity.py       <- MODIFY: add permitted tools test, update phase
+    test_guardian.py       <- NEW: GuardianFaculty tests
+    test_identity.py       <- MODIFY: add guardian codes test, update phase
+    test_commands.py       <- MODIFY: add guardian in capabilities test
+    test_state.py          <- MODIFY: update capabilities assertion
     (all others)           <- no changes
 ```
 
@@ -276,26 +271,24 @@ inanna/
 
 ## What You Are NOT Building in This Phase
 
-- No automatic tool execution without user approval
-- No tool chaining or sequential tool calls
-- No additional tools beyond web_search
-- No persistent tool use log (in-memory only for this phase)
-- No change to Faculty LLM calls except injecting search results
-- No change to memory, proposal storage, or session storage beyond
-  the tool proposal entry
-- Do not add tool signals to the analyse direct override path
+- No automatic blocking by the Guardian (Governance blocks, Guardian observes)
+- No persistent Guardian log across sessions
+- No Guardian LLM call - all checks are deterministic
+- No Guardian alerts sent to external systems
+- No change to memory, proposal, or session storage
+- Do not add Guardian checks to the analyse direct override path
 
 ---
 
-## Definition of Done for Phase 2.6
+## Definition of Done for Phase 2.7
 
-- [ ] inanna/core/operator.py exists with OperatorFaculty and ToolResult
-- [ ] web_search tool executes via DuckDuckGo API
-- [ ] Tool signals in input trigger a tool proposal
-- [ ] User must approve before tool executes
-- [ ] Tool results shown transparently before INANNA summarizes
-- [ ] operator messages appear in muted olive color in UI
-- [ ] list_permitted_tools() exists in identity.py
+- [ ] inanna/core/guardian.py exists with GuardianFaculty and GuardianAlert
+- [ ] All five checks implemented and tested
+- [ ] "guardian" command works in CLI and UI
+- [ ] Auto-guardian runs on UI startup if warn/critical alerts exist
+- [ ] guardian messages appear in muted violet in UI
+- [ ] governance_blocks and tool_executions counters tracked correctly
+- [ ] list_guardian_codes() exists in identity.py
 - [ ] CURRENT_PHASE updated
 - [ ] All tests pass: py -3 -m unittest discover -s tests
 
@@ -304,14 +297,15 @@ inanna/
 ## Handoff to Command Center
 
 When Definition of Done is met, Codex must:
-1. Commit with message: cycle2-phase6-complete
-2. Write docs/implementation/CYCLE2_PHASE6_REPORT.md
-3. Stop. Do not begin Phase 2.7 without a new CURRENT_PHASE.md.
+1. Commit with message: cycle2-phase7-complete
+2. Write docs/implementation/CYCLE2_PHASE7_REPORT.md
+3. Stop. Do not begin Phase 2.8 without a new CURRENT_PHASE.md.
 
 ---
 
 *Written by: Claude (Command Center)*
 *Guardian approval: ZAERA*
 *Date: 2026-04-19*
-*The tool is bounded. The proposal is required.*
-*INANNA does not search the world without asking first.*
+*The Guardian does not enforce. It witnesses.*
+*Its violet light is not a warning siren.*
+*It is a lamp held steady in the dark.*
