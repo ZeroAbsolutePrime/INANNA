@@ -1,242 +1,245 @@
-﻿# CURRENT PHASE: Cycle 3 - Phase 3.8 - The Audit Surface
+﻿# CURRENT PHASE: Cycle 3 - Phase 3.9 - The Commander Room
 **Status: ACTIVE**
 **Authorized by: ZAERA (Guardian) + Claude (Command Center)**
 **Date opened: 2026-04-19**
 **Cycle: 3 - The Commander Room**
-**Replaces: Cycle 3 Phase 3.7 - The Guardian Room (COMPLETE)**
+**Replaces: Cycle 3 Phase 3.8 - The Audit Surface (COMPLETE)**
 
 ---
 
 ## What This Phase Is
 
-Phase 3.8 has three equally important goals.
+Eight phases built the Commander Room:
+3.1 Realm Boundary, 3.2 Realm Memory, 3.3 Body Report,
+3.4 Proposal Dashboard, 3.5 Faculty Monitor, 3.6 Memory Map,
+3.7 Guardian Room, 3.8 Audit Surface + UI/UX refinement.
 
-**Goal 1: UI/UX Refinement.** The side panel is dense and hard to navigate.
-Every section becomes collapsible. Breathing room increases throughout.
-Memory panel becomes less overwhelming. Complexity expressed as simplicity.
+Phase 3.9 is the completion phase.
 
-**Goal 2: Governance Sensitivity.** INANNA is blocking human interactions
-that should flow freely - greetings, personal sharing, creative language,
-philosophical questions. A governance_sensitivity field in RealmConfig
-controls how aggressive checking is. Default realm uses "open" mode.
-Only the identity boundary remains active in open mode.
+Its purpose: verify everything works as a coherent whole,
+update verify_cycle2.py into verify_cycle3.py with Cycle 3 checks,
+write the Cycle 3 Completion Record, update the Code Doctrine,
+and declare Cycle 3 complete.
 
-**Goal 3: The Audit Surface.** A cross-linked activity timeline showing
-all system events in one chronological view. The final Commander Room panel.
-
----
-
-## GOAL 1 - UI/UX Refinement
-
-### Task 1.1 - Collapsible side panel sections
-
-Every section gets a toggle arrow in its header. Collapse state in localStorage.
-
-Default states:
-- MEMORY: collapsed by default (it is dense)
-- PROPOSALS: expanded by default (pending actions need visibility)
-- FACULTIES: collapsed by default
-- GUARDIAN ROOM: collapsed by default
-- AUDIT: collapsed by default (new in this phase)
-
-Section header CSS:
-  .section-header: flex, justify-content space-between, padding 12px 16px,
-  cursor pointer, user-select none, border-bottom 1px solid var(--border)
-  .section-header:hover: background rgba(200,169,110,0.04)
-  .section-toggle: color var(--dim), font-size 0.7rem, transition transform 0.2s
-  .section-toggle.open: transform rotate(90deg)
-
-### Task 1.2 - Breathing room improvements
-
-Section content padding: 14px 16px 18px (was 12px 16px)
-Between memory records: gap 16px (was 12px)
-Between proposal records: gap 14px (was 12px)
-Panel title font size: 0.82rem letter-spacing 0.16em
-
-Memory over-capacity warning when total_lines > 50:
-Show in amber: "82/50 lines - consider forgetting older records"
-Bar filled segments turn amber when over capacity.
-
-Memory records collapsed by default showing first line + ID.
-Expand indicator: "[+N more lines]" when collapsed.
-
-### Task 1.3 - Scrollable side panel
-
-The side panel scrolls as one unit (overflow-y: auto, scrollbar hidden).
-Section headers are sticky within the panel scroll context.
+Build almost nothing. Verify everything. Document what was learned.
 
 ---
 
-## GOAL 2 - Governance Sensitivity
+## What You Are Building
 
-### Task 2.1 - governance_sensitivity in RealmConfig
+### Task 1 - inanna/verify_cycle3.py
 
-Add field to RealmConfig dataclass: governance_sensitivity: str = "open"
-Three levels: "open" | "standard" | "strict"
-Update ensure_default_realm() to set governance_sensitivity = "open".
+Create a standalone verification script that checks the full
+Cycle 3 architecture without requiring a live model or browser.
+Run with: py -3 verify_cycle3.py
 
-### Task 2.2 - Sensitivity-aware GovernanceLayer.check()
+The script verifies:
 
-New signature: check(user_input, nammu_route, sensitivity="open")
+1. REALM
+   - core/realm.py exists with RealmManager and RealmConfig
+   - RealmConfig has governance_sensitivity field defaulting to "open"
+   - ensure_default_realm() creates realm with sensitivity "open"
+   - realm_data_dirs() returns dict with sessions/memory/proposals/nammu
+   - update_realm_governance_context() updates realm.json
 
-In "open" mode: only Rule 2 (identity boundary) is checked.
-Everything else is allowed. Greetings, personal sharing, creative
-language, philosophy all flow freely to CROWN.
+2. GOVERNANCE SENSITIVITY
+   - GovernanceLayer.check() accepts sensitivity parameter
+   - sensitivity="open" allows greetings (hello, hi)
+   - sensitivity="open" allows personal sharing (i am, i feel)
+   - sensitivity="open" still blocks identity signals
+   - sensitivity="standard" applies all four rules
+   - always_allow_patterns exists in governance_signals.json
 
-Identity signals (ignore your instructions, forget your laws,
-pretend you are, you are now, etc.) remain blocked in ALL modes.
+3. BODY
+   - core/body.py exists with BodyInspector and BodyReport
+   - BodyReport has all required fields
+   - _format_uptime(45) == "45s"
+   - _format_uptime(90) == "1m 30s"
+   - _format_uptime(3661) == "1h 1m"
+   - inspect() works without psutil
 
-"standard" mode: existing behavior - all 4 rules active.
-"strict" mode: same as standard for now.
+4. FACULTY MONITOR
+   - core/faculty_monitor.py exists with FacultyMonitor
+   - all_records() returns 4 FacultyRecord entries
+   - update_model_mode("connected") updates crown and analyst
+   - record_call() increments call_count correctly
+   - format_report() contains all four Faculty names
 
-### Task 2.3 - always_allow_patterns in governance_signals.json
+5. NAMMU MEMORY
+   - core/nammu_memory.py exists with 4 helper functions
+   - append_routing_event and load_routing_history round-trip
+   - append_governance_event and load_governance_history round-trip
+   - Functions handle missing directory gracefully
 
-Add to governance_signals.json:
-"always_allow_patterns": [
-  "hello", "hi", "good morning", "good evening", "good night",
-  "how are you", "thank you", "thanks", "please", "i am",
-  "i feel", "i think", "i believe", "i wonder", "i love",
-  "beautiful", "sacred", "divine", "mystic", "spirit"
-]
+6. MEMORY MAP
+   - Memory.delete_all_memory_records() exists
+   - delete_all_memory_records() returns correct count
+   - memory_log_report() returns total_lines, oldest_at, newest_at
 
-In open mode, inputs matching any always_allow_pattern skip model
-classification entirely and route straight to CROWN.
+7. UI CAPABILITIES
+   - All Cycle 3 commands in capabilities:
+     realms, realm-context, body, diagnostics, guardian-log,
+     memory-map, memory-clear-all, proposal-history,
+     faculties, nammu-log, audit-log
 
-### Task 2.4 - Pass sensitivity through the routing chain
+8. IDENTITY
+   - CURRENT_PHASE is "Cycle 3 - Phase 3.9 - The Commander Room"
+   - CYCLE4_PREVIEW constant exists and mentions user roles
+   - build_system_prompt() accepts realm parameter
+   - build_system_prompt() with named realm injects realm context
+   - build_system_prompt() with default realm returns base prompt
 
-IntentClassifier.route(user_input, sensitivity="open") -> GovernanceResult
+9. CONFIG
+   - governance_signals.json has all 5 signal categories
+   - governance_signals.json has always_allow_patterns
+   - No hardcoded signal lists in governance.py or nammu.py
 
-In main.py and server.py:
-  sensitivity = realm_config.governance_sensitivity if realm_config else "open"
-  result = classifier.route(user_input, sensitivity=sensitivity)
+10. CYCLE 2 CONTINUITY
+    - py -3 verify_cycle2.py still passes all 24 checks
+    - (Run this and report results)
 
----
+Format: same as verify_cycle2.py
+[PASS] / [FAIL] per check, exit 0 if all pass.
+Target: 30+ checks.
 
-## GOAL 3 - The Audit Surface
+### Task 2 - Fix any integration gaps found
 
-### Task 3.1 - Audit timeline panel in index.html
+If verify_cycle3.py finds any failing check, fix the gap
+before writing the completion record.
+Document every gap found and fixed in the phase report.
 
-Collapsible AUDIT section at bottom of side panel (collapsed by default).
-Shows last 20 system events merged from all sources, newest-first.
+### Task 3 - docs/cycle3_completion.md
 
-Event types and colors:
-  route: var(--dim)
-  block: #c86e6e (muted red)
-  approve: var(--connected) (green)
-  guardian: #7a6a8a (violet)
-  memory: var(--voice) (amber)
-  tool: #7a8a6a (olive)
-  propose/redirect: var(--fallback)
+Create the Cycle 3 Completion Record containing:
 
-Panel auto-loads events when expanded.
+- What Cycle 3 set out to build (from master_cycle_plan.md)
+- What was actually built - one paragraph per phase
+  (3.1 through 3.8, plus the 3.8 UI fix patch)
+- The UI/UX correction story: Phase 3.8 was a dual-purpose phase
+  because the interface needed to breathe before adding more panels.
+  Collapsible sections, notification badges, governance sensitivity
+  "open" mode - these were corrections, not additions.
+- What verify_cycle3.py confirmed
+- What Cycle 3 did not build (honest):
+  - No user accounts or authentication
+  - No per-user logs or privilege system
+  - No realm creation via UI
+  - No realm deletion
+  - No cross-realm memory search
+  - No governance config editor UI
+- The bridge to Cycle 4
+- Stage 3 progress: both Cycle 2 and Cycle 3 complete
 
-### Task 3.2 - audit-log WebSocket command
+### Task 4 - docs/code_doctrine.md update
 
-Merges from: NAMMU routing log (last 10), governance log (last 10),
-proposal history (last 5 resolved), in-memory session audit events.
-Sorts newest-first.
+Add section: "Lessons from Cycle 3"
 
-Response: {"type": "audit_log", "events": [...], "total": N}
-Each event: {timestamp, event_type, summary, detail}
+Include:
 
-### Task 3.3 - session_audit tracking in server.py
+1. UI complexity accumulates faster than expected. Eight phases
+   of adding panels produced a dense, hard-to-navigate interface.
+   The correction (collapsible sections, notification badges,
+   breathing room) should have been designed in from Phase 3.1.
+   Future cycles: design the panel architecture before populating it.
 
-self.session_audit: list[dict] = []
-Append events on: routing decisions, governance decisions,
-proposal approvals/rejections, guardian inspections, tool executions.
+2. Governance sensitivity belongs in realm config, not in code.
+   "Open" mode is the right default for human-facing deployments.
+   The identity boundary is the only hard wall. Everything else
+   should flow unless the realm explicitly restricts it.
 
----
+3. The UI fix patch (cycle3-phase8-ui-fix) was correct protocol.
+   A targeted HTML-only fix within an authorized phase scope does
+   not require a new phase document. The commit message makes it
+   traceable. This pattern is valid for future patches.
 
-## identity.py and state.py
+4. Notification badges are not cosmetic. They are governance
+   visibility. When a user sees PROPOSALS (3 pending) collapsed,
+   they know there is action required without expanding anything.
+   Every panel that contains actionable state needs a badge.
 
-CURRENT_PHASE = "Cycle 3 - Phase 3.8 - The Audit Surface"
+5. Cycle 4 prerequisite: user roles and privileges require a
+   proper authentication layer first. Do not build per-user logs
+   without first establishing user identity. The order matters.
 
-Add CYCLE4_PREVIEW constant:
-  "Cycle 4 will introduce: user roles and privileges,
-  per-user interaction logs, realm-scoped access control,
-  and multi-user governance contexts."
+### Task 5 - Update identity.py
 
-Add "audit-log" to STARTUP_COMMANDS and capabilities in state.py.
+CURRENT_PHASE = "Cycle 3 - Phase 3.9 - The Commander Room"
 
----
+Add CYCLE3_SUMMARY:
+```python
+CYCLE3_SUMMARY = (
+    "Cycle 3 built the Commander Room: realm-scoped data, "
+    "body substrate reporting, proposal dashboard, faculty monitor, "
+    "memory map timeline, guardian room, audit surface, "
+    "collapsible UI panels with notification badges, "
+    "and governance sensitivity open mode for human-facing deployments."
+)
+```
 
-## Tests
+### Task 6 - Final test run
 
-test_governance.py:
-- sensitivity="open" allows "hello" (no block)
-- sensitivity="open" still blocks "ignore your instructions"
-- sensitivity="standard" blocks memory signals normally
-- route() accepts sensitivity parameter and passes through
-
-test_realm.py:
-- RealmConfig has governance_sensitivity field defaulting to "open"
-- ensure_default_realm() creates realm with sensitivity "open"
-
-test_commands.py: "audit-log" in capabilities
-test_identity.py: update CURRENT_PHASE assertion
-test_state.py: add audit-log capability
-test_nammu.py: route() sensitivity passthrough
+Run: py -3 -m unittest discover -s tests
+Run: py -3 verify_cycle2.py
+Run: py -3 verify_cycle3.py
+All must pass. Report counts in the phase report.
 
 ---
 
 ## Permitted file changes
 
-inanna/identity.py, main.py,
-config/governance_signals.json,
-core/governance.py, core/nammu.py, core/realm.py, core/state.py,
-ui/server.py, ui/static/index.html,
-tests/test_governance.py, tests/test_realm.py,
-tests/test_commands.py, tests/test_identity.py,
-tests/test_state.py, tests/test_nammu.py
+inanna/identity.py          <- MODIFY: CURRENT_PHASE, CYCLE3_SUMMARY
+inanna/verify_cycle3.py     <- NEW: integration verification script
+docs/cycle3_completion.md   <- NEW: Cycle 3 Completion Record
+docs/code_doctrine.md       <- MODIFY: add Lessons from Cycle 3
 
-No other files.
+Core/UI files: ONLY to fix gaps found by verify_cycle3.py.
+tests/test_identity.py      <- MODIFY: update phase assertion
+
+No new capabilities. No new commands. No new panels.
+Verify and document only.
 
 ---
 
 ## What You Are NOT Building
 
-- No user accounts or authentication (Cycle 4)
-- No per-user logs or privilege system (Cycle 4)
-- No realm creation via UI command
-- No governance config editor UI
-- No new Faculty classes
-- Sensitivity only affects GovernanceLayer.check()
-- NAMMU routing classification is unchanged
+- No new Faculties, commands, panels, or capabilities
+- No UI changes except gap fixes
+- No changes to governance, nammu, or routing logic except gap fixes
+- Do not begin any Cycle 4 work
 
 ---
 
-## Definition of Done
+## Definition of Done for Phase 3.9
 
-- [ ] All sections collapsible with arrow toggle
-- [ ] Collapse state persists in localStorage
-- [ ] MEMORY collapsed, PROPOSALS expanded by default
-- [ ] Breathing room increased throughout side panel
-- [ ] Memory over-capacity amber warning with guidance text
-- [ ] governance_sensitivity = "open" in default realm
-- [ ] Open mode allows greetings, sharing, creative, philosophy freely
-- [ ] Open mode still blocks identity boundary attempts
-- [ ] always_allow_patterns added to governance_signals.json
-- [ ] route() accepts and passes sensitivity parameter
-- [ ] Audit timeline panel shows merged cross-type events
-- [ ] audit-log command returns merged timeline newest-first
-- [ ] session_audit tracking in server.py
-- [ ] CURRENT_PHASE updated
-- [ ] All tests pass: py -3 -m unittest discover -s tests
+- [ ] verify_cycle3.py exists and all checks pass
+- [ ] py -3 verify_cycle2.py still passes (regression check)
+- [ ] py -3 -m unittest discover -s tests passes
+- [ ] docs/cycle3_completion.md exists with all required sections
+- [ ] docs/code_doctrine.md has "Lessons from Cycle 3" section
+- [ ] CURRENT_PHASE updated to Phase 3.9
+- [ ] CYCLE3_SUMMARY constant exists in identity.py
+- [ ] Any integration gaps found are fixed and documented
 
 ---
 
 ## Handoff to Command Center
 
 When Definition of Done is met, Codex must:
-1. Commit with message: cycle3-phase8-complete
-2. Write docs/implementation/CYCLE3_PHASE8_REPORT.md
-3. Stop. Do not begin Phase 3.9 without a new CURRENT_PHASE.md.
+1. Commit with message: cycle3-phase9-complete
+2. Write docs/implementation/CYCLE3_PHASE9_REPORT.md containing:
+   - What verify_cycle3.py found and fixed
+   - Final test count from unittest
+   - verify_cycle2.py result (regression)
+   - verify_cycle3.py result
+   - Any gaps that could not be fixed
+3. Stop. Cycle 3 is complete.
+   Do not begin Cycle 4 without authorization from Command Center.
 
 ---
 
 *Written by: Claude (Command Center)*
 *Guardian approval: ZAERA*
 *Date: 2026-04-19*
-*Complexity expressed as simplicity is excellence.*
-*The interface must breathe. The governance must flow.*
-*What is open should feel open.*
+*Nine phases. One proof. One room.*
+*The Commander Room is complete.*
+*Now it can be seen.*
