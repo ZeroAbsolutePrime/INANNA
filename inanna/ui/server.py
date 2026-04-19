@@ -1,0 +1,422 @@
+from __future__ import annotations
+
+import asyncio
+import json
+from datetime import datetime, timezone
+from http import HTTPStatus
+from pathlib import Path
+from typing import Any
+
+from dotenv import load_dotenv
+from websockets.asyncio.server import ServerConnection, serve
+from websockets.exceptions import ConnectionClosed
+
+from config import Config
+from core.memory import Memory
+from core.proposal import Proposal
+from core.session import Engine, Session
+from core.state import StateReport
+from identity import phase_banner
+from main import (
+    STARTUP_COMMANDS,
+    build_diagnostics_report,
+    build_history_report,
+    build_memory_log_report,
+)
+
+
+APP_ROOT = Path(__file__).resolve().parent.parent
+STATIC_ROOT = Path(__file__).resolve().parent / "static"
+INDEX_PATH = STATIC_ROOT / "index.html"
+HOST = "localhost"
+PORT = 8080
+
+load_dotenv(APP_ROOT / ".env")
+
+
+def utc_now() -> str:
+    return datetime.now(timezone.utc).isoformat()
+
+
+class InterfaceServer:
+    def __init__(self) -> None:
+        self.data_root = APP_ROOT / "data"
+        self.session_dir = self.data_root / "sessions"
+        self.memory_dir = self.data_root / "memory"
+        self.proposal_dir = self.data_root / "proposals"
+        self.session_dir.mkdir(parents=True, exist_ok=True)
+        self.memory_dir.mkdir(parents=True, exist_ok=True)
+        self.proposal_dir.mkdir(parents=True, exist_ok=True)
+
+        self.config = Config.from_env()
+        self.memory = Memory(session_dir=self.session_dir, memory_dir=self.memory_dir)
+        self.proposal = Proposal(proposal_dir=self.proposal_dir)
+        self.state_report = StateReport()
+        self.engine = Engine(
+            model_url=self.config.model_url,
+            model_name=self.config.model_name,
+            api_key=self.config.api_key,
+        )
+        self.engine.verify_connection()
+        self.startup_context = self.memory.load_startup_context()
+        self.session = Session.create(
+            session_dir=self.session_dir,
+            context_summary=self.startup_context["summary_lines"],
+        )
+        self.connections: set[ServerConnection] = set()
+        self.lock = asyncio.Lock()
+
+    async def start(self) -> None:
+        async with serve(
+            self.handle_connection,
+            HOST,
+            PORT,
+            process_request=self.process_request,
+        ):
+            await asyncio.Future()
+
+    async def process_request(
+        self,
+        connection: ServerConnection,
+        request: Any,
+    ) -> Any:
+        path = request.path
+        if path in {"/", "/index.html"}:
+            response = connection.respond(HTTPStatus.OK, INDEX_PATH.read_text(encoding="utf-8"))
+            response.headers["Content-Type"] = "text/html; charset=utf-8"
+            response.headers["Cache-Control"] = "no-store"
+            return response
+
+        if path == "/favicon.ico":
+            response = connection.respond(HTTPStatus.NO_CONTENT, "")
+            response.headers["Cache-Control"] = "no-store"
+            return response
+
+        if path == "/ws":
+            return None
+
+        response = connection.respond(HTTPStatus.NOT_FOUND, "Not found.")
+        response.headers["Content-Type"] = "text/plain; charset=utf-8"
+        return response
+
+    async def handle_connection(self, connection: ServerConnection) -> None:
+        if connection.request.path != "/ws":
+            await connection.close(code=1008, reason="WebSocket endpoint is /ws.")
+            return
+
+        self.connections.add(connection)
+        try:
+            await self.send_initial_state(connection)
+            async for raw_message in connection:
+                try:
+                    payload = json.loads(raw_message)
+                except json.JSONDecodeError:
+                    await self.send_json(connection, {"type": "system", "text": "Invalid message."})
+                    continue
+
+                async with self.lock:
+                    await self.dispatch_message(payload)
+        except ConnectionClosed:
+            pass
+        finally:
+            self.connections.discard(connection)
+
+    async def dispatch_message(self, payload: dict[str, Any]) -> None:
+        message_type = payload.get("type")
+        if message_type == "input":
+            text = str(payload.get("text", "")).strip()
+            if text:
+                await self.process_user_input(text)
+            return
+
+        if message_type == "command":
+            command = str(payload.get("cmd", "")).strip().lower()
+            if command:
+                await self.process_command(command, payload)
+
+    async def process_user_input(self, text: str) -> None:
+        await self.broadcast({"type": "thinking", "active": True})
+        try:
+            assistant_text, created = await asyncio.to_thread(self._run_user_turn, text)
+            await self.broadcast({"type": "assistant", "text": assistant_text})
+            await self.broadcast({"type": "system", "text": created["line"]})
+            await self.broadcast_state()
+        finally:
+            await self.broadcast({"type": "thinking", "active": False})
+
+    def _run_user_turn(self, text: str) -> tuple[str, dict[str, Any]]:
+        self.session.add_event("user", text)
+        assistant_text = self.engine.respond(
+            context_summary=self.startup_context["summary_lines"],
+            conversation=self.session.events,
+        )
+        self.session.add_event("assistant", assistant_text)
+        created = self.proposal.create(
+            what="Update the memory store from the latest session turn",
+            why="Keep the next session grounded in readable, user-approved context.",
+            payload=self.memory.build_candidate(
+                session_id=self.session.session_id,
+                events=self.session.events,
+            ),
+        )
+        return assistant_text, created
+
+    async def process_command(self, command: str, payload: dict[str, Any]) -> None:
+        if command == "reflect":
+            await self.run_reflect()
+            return
+
+        if command == "audit":
+            await self.run_audit()
+            return
+
+        if command == "history":
+            report = await asyncio.to_thread(self.proposal.history_report)
+            await self.broadcast({"type": "system", "text": build_history_report(report)})
+            await self.broadcast_state()
+            return
+
+        if command == "memory-log":
+            report = await asyncio.to_thread(self.memory.memory_log_report)
+            await self.broadcast({"type": "system", "text": build_memory_log_report(report)})
+            await self.broadcast_state()
+            return
+
+        if command == "status":
+            await self.broadcast({"type": "system", "text": self.build_status_payload()["report"]})
+            await self.broadcast_state()
+            return
+
+        if command == "diagnostics":
+            report = await asyncio.to_thread(
+                build_diagnostics_report,
+                self.config,
+                self.engine,
+                self.session,
+            )
+            await self.broadcast({"type": "system", "text": report})
+            await self.broadcast_state()
+            return
+
+        if command in {"approve", "reject"}:
+            resolved = await asyncio.to_thread(
+                self.resolve_proposal,
+                command,
+                payload.get("proposal_id"),
+            )
+            if not resolved:
+                await self.broadcast({"type": "system", "text": "No pending proposals."})
+                await self.broadcast_state()
+                return
+
+            result_text = await asyncio.to_thread(self.apply_resolution, resolved)
+            await self.broadcast({"type": "system", "text": result_text})
+            await self.broadcast_state()
+            return
+
+        if command == "forget":
+            memory_id = str(payload.get("memory_id", "")).strip()
+            if not memory_id:
+                await self.broadcast(
+                    {
+                        "type": "system",
+                        "text": 'Select a memory record from the MEMORY panel and use "[forget]".',
+                    }
+                )
+                await self.broadcast_state()
+                return
+
+            memory_report = await asyncio.to_thread(self.memory.memory_log_report)
+            record = next(
+                (item for item in memory_report["records"] if item.get("memory_id") == memory_id),
+                None,
+            )
+            if record is None:
+                await self.broadcast({"type": "system", "text": "Memory record not found."})
+                await self.broadcast_state()
+                return
+
+            created = await asyncio.to_thread(
+                self.proposal.create,
+                f"Remove memory record {memory_id} from approved memory",
+                "User requested removal — sovereignty over personal memory",
+                {"memory_id": memory_id, "action": "forget"},
+            )
+            await self.broadcast({"type": "system", "text": created["line"]})
+            await self.broadcast_state()
+            return
+
+        if command in {"exit", "quit"}:
+            await self.broadcast({"type": "system", "text": "Session closed."})
+            return
+
+    async def run_reflect(self) -> None:
+        await self.broadcast({"type": "thinking", "active": True})
+        try:
+            mode, text = await asyncio.to_thread(self.engine.reflect, self.startup_context["summary_lines"])
+            label = "[live reflection]" if mode == "live" else "[memory fallback]"
+            await self.broadcast({"type": "assistant", "text": f"{label} {text}"})
+            await self.broadcast_state()
+        finally:
+            await self.broadcast({"type": "thinking", "active": False})
+
+    async def run_audit(self) -> None:
+        await self.broadcast({"type": "thinking", "active": True})
+        try:
+            history = await asyncio.to_thread(self.proposal.history_report)
+            memory_log = await asyncio.to_thread(self.memory.memory_log_report)
+            mode, text = await asyncio.to_thread(
+                self.engine.speak_audit,
+                history,
+                memory_log,
+                self.startup_context["summary_lines"],
+            )
+            label = "[live audit]" if mode == "live" else "[audit summary]"
+            await self.broadcast({"type": "assistant", "text": f"{label} {text}"})
+            await self.broadcast_state()
+        finally:
+            await self.broadcast({"type": "thinking", "active": False})
+
+    def resolve_proposal(
+        self,
+        decision: str,
+        proposal_id: Any | None = None,
+    ) -> dict[str, Any] | None:
+        proposal_id_text = str(proposal_id).strip() if proposal_id else ""
+        if not proposal_id_text:
+            return self.proposal.resolve_next(decision)
+
+        pending = sorted(
+            [
+                record
+                for record in self.proposal.pending_records()
+                if record["proposal_id"] == proposal_id_text
+            ],
+            key=lambda record: record["timestamp"],
+        )
+        if not pending:
+            return None
+
+        record = pending[0]
+        record["status"] = "approved" if decision == "approve" else "rejected"
+        record["resolved_at"] = utc_now()
+        # The UI buttons operate on the specific proposal row the user selected.
+        self.proposal._write_record(record)
+        return {**record, "line": self.proposal.format_line(record)}
+
+    def apply_resolution(self, resolved: dict[str, Any]) -> str:
+        payload = resolved.get("payload", {})
+        if resolved["status"] == "approved":
+            if payload.get("action") == "forget":
+                memory_id = payload.get("memory_id", "")
+                if self.memory.delete_memory_record(str(memory_id)):
+                    return f"Memory record {memory_id} removed."
+                return "Memory record not found."
+
+            self.memory.write_memory(
+                proposal_id=resolved["proposal_id"],
+                session_id=payload["session_id"],
+                summary_lines=payload["summary_lines"],
+                approved_at=resolved["resolved_at"],
+            )
+            return (
+                f"Approved {resolved['proposal_id']} and wrote a memory record for the next session."
+            )
+
+        if payload.get("action") == "forget":
+            return "Memory record retained."
+
+        return f"Rejected {resolved['proposal_id']}."
+
+    def build_status_payload(self) -> dict[str, Any]:
+        memory_count = self.memory.memory_count()
+        pending_count = self.proposal.pending_count()
+        report = self.state_report.render(
+            session_id=self.session.session_id,
+            mode=self.engine.mode,
+            memory_count=memory_count,
+            pending_count=pending_count,
+        )
+        return {
+            "phase": phase_banner(),
+            "mode": self.engine.mode,
+            "session_id": self.session.session_id,
+            "memory_count": memory_count,
+            "pending_count": pending_count,
+            "capabilities": list(STARTUP_COMMANDS),
+            "report": report,
+        }
+
+    def build_pending_proposals(self) -> list[dict[str, Any]]:
+        pending = sorted(self.proposal.pending_records(), key=lambda record: record["timestamp"])
+        return [
+            {
+                "id": record["proposal_id"],
+                "proposal_id": record["proposal_id"],
+                "what": record["what"],
+                "why": record["why"],
+                "status": record["status"],
+                "timestamp": record["timestamp"],
+            }
+            for record in pending
+        ]
+
+    async def send_initial_state(self, connection: ServerConnection) -> None:
+        await self.send_json(connection, {"type": "status", "data": self.build_status_payload()})
+        await self.send_json(
+            connection,
+            {
+                "type": "memory_update",
+                "records": self.memory.memory_log_report()["records"],
+            },
+        )
+        await self.send_json(
+            connection,
+            {
+                "type": "proposal",
+                "records": self.build_pending_proposals(),
+            },
+        )
+        await self.send_json(
+            connection,
+            {
+                "type": "system",
+                "text": "INANNA NYX interface online.",
+            },
+        )
+
+    async def broadcast_state(self) -> None:
+        await self.broadcast({"type": "status", "data": self.build_status_payload()})
+        await self.broadcast(
+            {
+                "type": "memory_update",
+                "records": self.memory.memory_log_report()["records"],
+            }
+        )
+        await self.broadcast(
+            {
+                "type": "proposal",
+                "records": self.build_pending_proposals(),
+            }
+        )
+
+    async def send_json(self, connection: ServerConnection, payload: dict[str, Any]) -> None:
+        try:
+            await connection.send(json.dumps(payload))
+        except ConnectionClosed:
+            self.connections.discard(connection)
+
+    async def broadcast(self, payload: dict[str, Any]) -> None:
+        dead_connections: list[ServerConnection] = []
+        for connection in list(self.connections):
+            try:
+                await connection.send(json.dumps(payload))
+            except ConnectionClosed:
+                dead_connections.append(connection)
+        for connection in dead_connections:
+            self.connections.discard(connection)
+
+
+def start_server() -> None:
+    server = InterfaceServer()
+    asyncio.run(server.start())

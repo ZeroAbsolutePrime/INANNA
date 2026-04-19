@@ -1,0 +1,706 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>INANNA NYX</title>
+  <style>
+    :root {
+      --bg: #0a0a0f;
+      --voice: #c8a96e;
+      --border: #4a3a1e;
+      --text: #b9b2a5;
+      --user: #888888;
+      --system: #6a5a2e;
+      --panel: #111118;
+      --connected: #6f9a63;
+      --fallback: #c8a96e;
+      --danger: #8d5e4f;
+      --dim: #726a5d;
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    html,
+    body {
+      height: 100%;
+      margin: 0;
+      background:
+        linear-gradient(to bottom, rgba(200, 169, 110, 0.04), transparent 12%),
+        linear-gradient(to right, rgba(74, 58, 30, 0.12) 1px, transparent 1px),
+        linear-gradient(to bottom, rgba(74, 58, 30, 0.09) 1px, transparent 1px),
+        var(--bg);
+      background-size: auto, 32px 32px, 32px 32px, auto;
+      color: var(--text);
+      font-family: "Courier New", "Lucida Console", monospace;
+      overflow: hidden;
+    }
+
+    body {
+      padding: 18px;
+    }
+
+    .shell {
+      height: calc(100vh - 36px);
+      border: 1px solid var(--border);
+      display: grid;
+      grid-template-rows: auto 1fr auto;
+      background: rgba(10, 10, 15, 0.92);
+      box-shadow: inset 0 0 0 1px rgba(74, 58, 30, 0.12);
+    }
+
+    .header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 16px 18px;
+      border-bottom: 1px solid var(--border);
+      gap: 20px;
+    }
+
+    .brand {
+      display: flex;
+      align-items: center;
+      gap: 14px;
+      min-width: 0;
+    }
+
+    .brand-indicator {
+      color: var(--voice);
+      font-size: 1.1rem;
+      letter-spacing: 0.24em;
+      text-transform: uppercase;
+      white-space: nowrap;
+    }
+
+    .brand-indicator.pulsing {
+      animation: inanna-pulse 2.4s ease-in-out infinite;
+    }
+
+    .header-meta {
+      display: flex;
+      align-items: center;
+      gap: 18px;
+      justify-content: flex-end;
+      min-width: 0;
+      color: var(--dim);
+      font-size: 0.82rem;
+      text-transform: uppercase;
+      letter-spacing: 0.16em;
+    }
+
+    .header-phase {
+      max-width: 48ch;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .mode {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      white-space: nowrap;
+    }
+
+    .mode-dot {
+      width: 10px;
+      height: 10px;
+      border-radius: 50%;
+      border: 1px solid currentColor;
+      background: currentColor;
+      box-shadow: 0 0 10px currentColor;
+    }
+
+    .workspace {
+      min-height: 0;
+      display: grid;
+      grid-template-columns: minmax(0, 1.9fr) minmax(280px, 1fr);
+    }
+
+    .conversation-panel {
+      min-height: 0;
+      border-right: 1px solid var(--border);
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+    }
+
+    .panel-title {
+      padding: 14px 18px 10px;
+      border-bottom: 1px solid rgba(74, 58, 30, 0.5);
+      color: var(--dim);
+      font-size: 0.78rem;
+      letter-spacing: 0.18em;
+      text-transform: uppercase;
+    }
+
+    .conversation-log,
+    .records,
+    .proposals {
+      min-height: 0;
+      overflow: auto;
+      scrollbar-width: none;
+      -ms-overflow-style: none;
+    }
+
+    .conversation-log::-webkit-scrollbar,
+    .records::-webkit-scrollbar,
+    .proposals::-webkit-scrollbar {
+      width: 0;
+      height: 0;
+    }
+
+    .conversation-log {
+      padding: 12px 18px 18px;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+
+    .message {
+      display: grid;
+      grid-template-columns: auto 1fr;
+      gap: 12px;
+      padding-bottom: 10px;
+      border-bottom: 1px solid rgba(74, 58, 30, 0.18);
+      align-items: start;
+    }
+
+    .message-prefix {
+      font-size: 0.78rem;
+      letter-spacing: 0.1em;
+      text-transform: lowercase;
+      white-space: nowrap;
+    }
+
+    .message-content {
+      white-space: pre-wrap;
+      word-break: break-word;
+      line-height: 1.45;
+      font-size: 0.96rem;
+    }
+
+    .message-assistant .message-prefix,
+    .message-assistant .message-content {
+      color: var(--voice);
+    }
+
+    .message-user .message-prefix,
+    .message-user .message-content {
+      color: var(--user);
+    }
+
+    .message-system .message-prefix,
+    .message-system .message-content {
+      color: var(--system);
+    }
+
+    .side-panel {
+      min-height: 0;
+      display: grid;
+      grid-template-rows: minmax(0, 1fr) minmax(0, 1fr);
+      overflow: hidden;
+    }
+
+    .section {
+      min-height: 0;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+    }
+
+    .section + .section {
+      border-top: 1px solid var(--border);
+    }
+
+    .records,
+    .proposals {
+      padding: 12px 16px 18px;
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+    }
+
+    .memory-record,
+    .proposal-record {
+      padding-bottom: 12px;
+      border-bottom: 1px solid rgba(74, 58, 30, 0.18);
+      transition: opacity 0.45s ease, transform 0.45s ease;
+    }
+
+    .memory-record.removing {
+      opacity: 0;
+      transform: translateX(10px);
+    }
+
+    .record-meta {
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-start;
+      gap: 14px;
+      font-size: 0.78rem;
+      color: var(--dim);
+      line-height: 1.4;
+    }
+
+    .record-id {
+      color: var(--text);
+    }
+
+    .record-block {
+      margin-top: 8px;
+      font-size: 0.88rem;
+      line-height: 1.45;
+      color: var(--text);
+      white-space: pre-wrap;
+      word-break: break-word;
+    }
+
+    .record-list {
+      margin: 8px 0 0;
+      padding: 0 0 0 18px;
+      color: var(--text);
+      display: grid;
+      gap: 4px;
+      font-size: 0.88rem;
+    }
+
+    .record-actions,
+    .proposal-actions,
+    .forget-confirm {
+      margin-top: 10px;
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+    }
+
+    button {
+      appearance: none;
+      border: 1px solid var(--border);
+      background: transparent;
+      color: var(--text);
+      padding: 6px 10px;
+      font: inherit;
+      cursor: pointer;
+      text-transform: lowercase;
+      letter-spacing: 0.08em;
+    }
+
+    button:hover,
+    button:focus-visible {
+      outline: none;
+      border-color: var(--voice);
+      color: var(--voice);
+    }
+
+    .forget-button:hover,
+    .forget-button:focus-visible {
+      border-color: var(--danger);
+      color: var(--danger);
+    }
+
+    .forget-confirm {
+      padding-top: 8px;
+      border-top: 1px solid rgba(74, 58, 30, 0.18);
+      color: var(--dim);
+      font-size: 0.78rem;
+      letter-spacing: 0.04em;
+      align-items: center;
+    }
+
+    .empty-state {
+      color: var(--dim);
+      font-size: 0.84rem;
+      line-height: 1.5;
+    }
+
+    .input-bar {
+      border-top: 1px solid var(--border);
+      display: grid;
+      grid-template-columns: auto 1fr auto;
+      gap: 12px;
+      align-items: center;
+      padding: 12px 16px;
+    }
+
+    .input-prefix {
+      color: var(--user);
+      font-size: 0.9rem;
+      letter-spacing: 0.1em;
+      text-transform: lowercase;
+      white-space: nowrap;
+    }
+
+    .text-input {
+      width: 100%;
+      border: 1px solid var(--border);
+      background: rgba(10, 10, 15, 0.96);
+      color: var(--text);
+      font: inherit;
+      padding: 11px 12px;
+      min-width: 0;
+    }
+
+    .text-input:focus {
+      outline: none;
+      border-color: var(--voice);
+      color: var(--voice);
+    }
+
+    .send-button {
+      min-width: 88px;
+      text-transform: uppercase;
+      letter-spacing: 0.16em;
+      font-size: 0.78rem;
+    }
+
+    @keyframes inanna-pulse {
+      0%,
+      100% {
+        opacity: 0.55;
+        text-shadow: 0 0 0 transparent;
+      }
+      50% {
+        opacity: 1;
+        text-shadow: 0 0 14px rgba(200, 169, 110, 0.28);
+      }
+    }
+  </style>
+</head>
+<body>
+  <div class="shell">
+    <header class="header">
+      <div class="brand">
+        <div class="brand-indicator" id="brand-indicator">INANNA NYX</div>
+      </div>
+      <div class="header-meta">
+        <div class="header-phase" id="phase-text">loading phase</div>
+        <div class="mode">
+          <span class="mode-dot" id="mode-dot"></span>
+          <span id="mode-text">fallback</span>
+        </div>
+      </div>
+    </header>
+
+    <main class="workspace">
+      <section class="conversation-panel">
+        <div class="panel-title">Conversation</div>
+        <div class="conversation-log" id="conversation-log"></div>
+      </section>
+
+      <aside class="side-panel">
+        <section class="section">
+          <div class="panel-title">Memory</div>
+          <div class="records" id="memory-panel"></div>
+        </section>
+        <section class="section">
+          <div class="panel-title">Proposals</div>
+          <div class="proposals" id="proposal-panel"></div>
+        </section>
+      </aside>
+    </main>
+
+    <form class="input-bar" id="input-form">
+      <div class="input-prefix">you ∴</div>
+      <input class="text-input" id="text-input" type="text" autocomplete="off" spellcheck="false">
+      <button class="send-button" type="submit">Send</button>
+    </form>
+  </div>
+
+  <script>
+    const state = {
+      ws: null,
+      thinking: false,
+      status: {
+        phase: "",
+        mode: "fallback",
+      },
+      messages: [],
+      memoryRecords: [],
+      proposalRecords: [],
+      forgetConfirmId: null,
+      removingMemoryIds: new Set(),
+    };
+
+    const commandSet = new Set([
+      "reflect",
+      "audit",
+      "history",
+      "memory-log",
+      "status",
+      "diagnostics",
+      "approve",
+      "reject",
+      "forget",
+      "exit",
+    ]);
+
+    const brandIndicator = document.getElementById("brand-indicator");
+    const phaseText = document.getElementById("phase-text");
+    const modeDot = document.getElementById("mode-dot");
+    const modeText = document.getElementById("mode-text");
+    const conversationLog = document.getElementById("conversation-log");
+    const memoryPanel = document.getElementById("memory-panel");
+    const proposalPanel = document.getElementById("proposal-panel");
+    const inputForm = document.getElementById("input-form");
+    const textInput = document.getElementById("text-input");
+
+    function connect() {
+      const protocol = window.location.protocol === "https:" ? "wss" : "ws";
+      state.ws = new WebSocket(`${protocol}://${window.location.host}/ws`);
+
+      state.ws.addEventListener("message", (event) => {
+        const payload = JSON.parse(event.data);
+        handleServerMessage(payload);
+      });
+
+      state.ws.addEventListener("close", () => {
+        addMessage("system", "Connection closed. Attempting to reconnect...");
+        setTimeout(connect, 1000);
+      });
+    }
+
+    function handleServerMessage(payload) {
+      if (payload.type === "assistant") {
+        addMessage("assistant", payload.text);
+        return;
+      }
+
+      if (payload.type === "system") {
+        addMessage("system", payload.text);
+        return;
+      }
+
+      if (payload.type === "thinking") {
+        state.thinking = Boolean(payload.active);
+        renderHeader();
+        return;
+      }
+
+      if (payload.type === "status") {
+        state.status = payload.data;
+        renderHeader();
+        return;
+      }
+
+      if (payload.type === "memory_update") {
+        applyMemoryUpdate(payload.records || []);
+        return;
+      }
+
+      if (payload.type === "proposal") {
+        state.proposalRecords = payload.records || [];
+        renderProposals();
+      }
+    }
+
+    function applyMemoryUpdate(records) {
+      const previousIds = new Set(state.memoryRecords.map((record) => record.memory_id));
+      const nextIds = new Set(records.map((record) => record.memory_id));
+      const removedIds = [...previousIds].filter((memoryId) => !nextIds.has(memoryId));
+
+      if (removedIds.length === 0) {
+        state.memoryRecords = records;
+        renderMemory();
+        return;
+      }
+
+      removedIds.forEach((memoryId) => state.removingMemoryIds.add(memoryId));
+      renderMemory();
+
+      setTimeout(() => {
+        removedIds.forEach((memoryId) => state.removingMemoryIds.delete(memoryId));
+        state.memoryRecords = records;
+        renderMemory();
+      }, 420);
+    }
+
+    function addMessage(role, text) {
+      state.messages.push({ role, text });
+      renderMessages();
+    }
+
+    function renderHeader() {
+      phaseText.textContent = state.status.phase || "loading phase";
+      modeText.textContent = state.status.mode || "fallback";
+      modeDot.style.color = state.status.mode === "connected" ? "var(--connected)" : "var(--fallback)";
+      brandIndicator.classList.toggle("pulsing", state.thinking);
+    }
+
+    function renderMessages() {
+      conversationLog.innerHTML = "";
+      state.messages.forEach((message) => {
+        const article = document.createElement("article");
+        article.className = `message message-${message.role}`;
+
+        const prefix = document.createElement("div");
+        prefix.className = "message-prefix";
+        prefix.textContent = message.role === "assistant" ? "inanna ∴" : message.role === "user" ? "you ∴" : "∴";
+
+        const content = document.createElement("div");
+        content.className = "message-content";
+        content.textContent = message.text;
+
+        article.append(prefix, content);
+        conversationLog.appendChild(article);
+      });
+      conversationLog.scrollTop = conversationLog.scrollHeight;
+    }
+
+    function renderMemory() {
+      const visibleRecords = state.memoryRecords.slice();
+      const ghostRecords = [...state.removingMemoryIds]
+        .filter((memoryId) => !visibleRecords.some((record) => record.memory_id === memoryId))
+        .map((memoryId) => ({ memory_id: memoryId, removing: true, summary_lines: [] }));
+
+      const records = [...visibleRecords, ...ghostRecords];
+      if (records.length === 0) {
+        memoryPanel.innerHTML = '<div class="empty-state">No approved memory records yet.</div>';
+        return;
+      }
+
+      memoryPanel.innerHTML = "";
+      records.forEach((record) => {
+        const wrapper = document.createElement("div");
+        wrapper.className = "memory-record";
+        if (record.removing) {
+          wrapper.classList.add("removing");
+        }
+
+        const meta = document.createElement("div");
+        meta.className = "record-meta";
+        meta.innerHTML = `
+          <div>
+            <div class="record-id">[${record.memory_id}]</div>
+            <div>${record.approved_at || "removing"}</div>
+          </div>
+          <button class="forget-button" type="button" ${record.removing ? "disabled" : ""}>[forget]</button>
+        `;
+
+        const body = document.createElement("div");
+        body.className = "record-block";
+        body.textContent = record.removing ? "Removing memory record..." : `Session: ${record.session_id}`;
+
+        wrapper.append(meta, body);
+
+        if (!record.removing) {
+          const list = document.createElement("ol");
+          list.className = "record-list";
+          (record.summary_lines || []).forEach((line) => {
+            const item = document.createElement("li");
+            item.textContent = line;
+            list.appendChild(item);
+          });
+          wrapper.appendChild(list);
+
+          const forgetButton = meta.querySelector("button");
+          forgetButton.addEventListener("click", () => {
+            state.forgetConfirmId = state.forgetConfirmId === record.memory_id ? null : record.memory_id;
+            renderMemory();
+          });
+
+          if (state.forgetConfirmId === record.memory_id) {
+            const confirm = document.createElement("div");
+            confirm.className = "forget-confirm";
+            confirm.innerHTML = `
+              <span>Remove this memory?</span>
+              <button type="button">[confirm]</button>
+              <button type="button">[cancel]</button>
+            `;
+            const [confirmButton, cancelButton] = confirm.querySelectorAll("button");
+            confirmButton.addEventListener("click", () => {
+              state.forgetConfirmId = null;
+              sendCommand("forget", { memory_id: record.memory_id });
+            });
+            cancelButton.addEventListener("click", () => {
+              state.forgetConfirmId = null;
+              renderMemory();
+            });
+            wrapper.appendChild(confirm);
+          }
+        }
+
+        memoryPanel.appendChild(wrapper);
+      });
+    }
+
+    function renderProposals() {
+      if (state.proposalRecords.length === 0) {
+        proposalPanel.innerHTML = '<div class="empty-state">No pending proposals.</div>';
+        return;
+      }
+
+      proposalPanel.innerHTML = "";
+      state.proposalRecords.forEach((record) => {
+        const wrapper = document.createElement("div");
+        wrapper.className = "proposal-record";
+        wrapper.innerHTML = `
+          <div class="record-meta">
+            <div>
+              <div class="record-id">[${record.proposal_id}]</div>
+              <div>${record.timestamp}</div>
+            </div>
+            <div>${record.status}</div>
+          </div>
+          <div class="record-block">${record.what}</div>
+        `;
+
+        const actions = document.createElement("div");
+        actions.className = "proposal-actions";
+
+        const approveButton = document.createElement("button");
+        approveButton.type = "button";
+        approveButton.textContent = "[approve]";
+        approveButton.addEventListener("click", () => {
+          sendCommand("approve", { proposal_id: record.proposal_id });
+        });
+
+        const rejectButton = document.createElement("button");
+        rejectButton.type = "button";
+        rejectButton.textContent = "[reject]";
+        rejectButton.addEventListener("click", () => {
+          sendCommand("reject", { proposal_id: record.proposal_id });
+        });
+
+        actions.append(approveButton, rejectButton);
+        wrapper.appendChild(actions);
+        proposalPanel.appendChild(wrapper);
+      });
+    }
+
+    function sendCommand(cmd, extra = {}) {
+      if (!state.ws || state.ws.readyState !== WebSocket.OPEN) {
+        return;
+      }
+      state.ws.send(JSON.stringify({ type: "command", cmd, ...extra }));
+    }
+
+    inputForm.addEventListener("submit", (event) => {
+      event.preventDefault();
+      const raw = textInput.value.trim();
+      if (!raw || !state.ws || state.ws.readyState !== WebSocket.OPEN) {
+        return;
+      }
+
+      addMessage("user", raw);
+      const normalized = raw.toLowerCase();
+      if (commandSet.has(normalized)) {
+        sendCommand(normalized);
+      } else {
+        state.ws.send(JSON.stringify({ type: "input", text: raw }));
+      }
+
+      textInput.value = "";
+    });
+
+    connect();
+    renderHeader();
+    renderMessages();
+    renderMemory();
+    renderProposals();
+  </script>
+</body>
+</html>
