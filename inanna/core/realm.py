@@ -15,6 +15,7 @@ class RealmConfig:
     purpose: str
     created_at: str
     governance_context: str = ""
+    governance_sensitivity: str = "open"
 
 
 class RealmManager:
@@ -40,6 +41,7 @@ class RealmManager:
         name: str,
         purpose: str = "",
         governance_context: str = "",
+        governance_sensitivity: str = "open",
     ) -> RealmConfig:
         realm_dir = self.realms_root / name
         realm_dir.mkdir(parents=True, exist_ok=True)
@@ -50,6 +52,7 @@ class RealmManager:
             purpose=purpose,
             created_at=datetime.now(timezone.utc).isoformat(),
             governance_context=governance_context,
+            governance_sensitivity=governance_sensitivity,
         )
         (realm_dir / "realm.json").write_text(
             json.dumps(config.__dict__, indent=2),
@@ -78,6 +81,7 @@ class RealmManager:
             purpose=config.purpose,
             created_at=config.created_at,
             governance_context=governance_context,
+            governance_sensitivity=config.governance_sensitivity,
         )
         (self.realms_root / name / "realm.json").write_text(
             json.dumps(updated.__dict__, indent=2),
@@ -100,6 +104,7 @@ class RealmManager:
                 name=DEFAULT_REALM,
                 purpose="The default operational context.",
                 governance_context="Standard governance applies.",
+                governance_sensitivity="open",
             )
         loaded = self.load_realm(DEFAULT_REALM)
         if loaded is None:
@@ -107,5 +112,6 @@ class RealmManager:
                 name=DEFAULT_REALM,
                 purpose="The default operational context.",
                 governance_context="Standard governance applies.",
+                governance_sensitivity="open",
             )
         return loaded
