@@ -1,254 +1,267 @@
-﻿# CURRENT PHASE: Cycle 4 - Phase 4.3 - The Privilege Map
+﻿# CURRENT PHASE: Cycle 4 - Phase 4.4 - The User Memory
 **Status: ACTIVE**
 **Authorized by: ZAERA (Guardian) + Claude (Command Center)**
 **Date opened: 2026-04-19**
 **Cycle: 4 - The Civic Layer**
-**Replaces: Cycle 4 Phase 4.2 - The Access Gate (COMPLETE)**
+**Replaces: Cycle 4 Phase 4.3 - The Privilege Map (COMPLETE)**
 
 ---
 
 ## What This Phase Is
 
-Phase 4.2 gave sessions identity — a token bound to a user.
-Phase 4.3 makes that identity mean something.
+Phase 4.4 has four goals that belong together:
 
-Right now every command works regardless of who is logged in.
-The Guardian and a basic user have the same powers.
-That is wrong. The privilege map must be enforced.
+**Goal 1 - User-scoped memory.**
+Memory records now carry a user_id. When ZAERA approves a memory,
+it is tagged as ZAERA's. When Alice approves a memory, it is Alice's.
+The grounding turn only injects memory that belongs to the active user.
 
-Phase 4.3 wires has_privilege() into the command execution path.
-Every sensitive command checks the active user before running.
-If the privilege is absent, a clean response is returned.
-No crash. No silent failure. A clear, honest boundary.
+**Goal 2 - Guardian user management actions.**
+Beyond inspect, the Guardian can now: clear governance event history,
+dismiss all current alerts, and switch active user context.
+The Guardian Room panel gains these actions as small buttons.
 
-Phase 4.3 also delivers the memory bar improvement:
-more blocks, color progression from green to amber to red,
-so memory health is readable at a glance.
+**Goal 3 - switch-user command.**
+ZAERA (guardian role only) can type "switch-user Alice" to experience
+the system as Alice — her memory, her privileges, her context.
+A clear banner shows when operating as another user.
+Switch back with "switch-user ZAERA" or "switch-user off".
 
----
-
-## PART 1: Privilege Enforcement
-
-### Task 1.1 - Privilege check helper
-
-Add to inanna/core/user.py:
-
-```python
-def check_privilege(
-    active_token,       # SessionToken | None
-    user_manager,       # UserManager
-    privilege: str,     # required privilege
-) -> tuple[bool, str]:
-    """Returns (allowed, reason)."""
-    if active_token is None:
-        return False, "No active session. Type login [name] to identify."
-    ok = user_manager.has_privilege(active_token.user_id, privilege)
-    if not ok:
-        return False, (
-            f"Insufficient privileges. "
-            f"{active_token.display_name} ({active_token.role}) "
-            f"does not have: {privilege}"
-        )
-    return True, ""
-```
-
-### Task 1.2 - Protected commands in main.py and server.py
-
-Apply check_privilege() before executing these commands:
-
-| Command | Required privilege |
-|---|---|
-| users | all |
-| create-user | all |
-| memory-clear-all | all |
-| forget (all records) | approve_own_memory |
-| realm-context [update] | all |
-| guardian-log | all |
-| nammu-log | all |
-| routing-log | all |
-| approve | approve_own_memory |
-| reject | approve_own_memory |
-
-Commands that remain open to all (no privilege check):
-  login, logout, whoami, status, help, history,
-  body, diagnostics, realms, memory-map, faculties,
-  guardian (read-only inspect), audit-log, proposal-history
-
-Pattern for every protected command:
-```python
-allowed, reason = check_privilege(self.active_token, self.user_manager, "all")
-if not allowed:
-    await self.broadcast({"type": "system", "text": f"access > {reason}"})
-    return
-```
-
-### Task 1.3 - "access" message type in index.html
-
-Add CSS for access denial messages:
-```css
-.message-access .message-prefix,
-.message-access .message-content {
-    color: #c86e6e;
-    font-size: 0.85rem;
-    font-style: italic;
-}
-```
-Prefix: "access :"
-
-Broadcast access denials as:
-{"type": "access", "text": "Insufficient privileges..."}
-
-### Task 1.4 - Privilege summary in whoami
-
-Update whoami output to show full privilege list:
-```
-whoami > ZAERA (guardian)
-whoami > privileges: all
-whoami > can do: everything
-```
-
-For non-guardian roles:
-```
-whoami > Alice (user)
-whoami > privileges: converse, approve_own_memory,
-whoami >            read_own_log, forget_own_memory
-```
+**Goal 4 - UI button sizing.**
+All panel action buttons reduced to compact size.
+More breathing room. Less visual weight.
 
 ---
 
-## PART 2: Memory Bar Improvement
+## GOAL 1: User-Scoped Memory
 
-### Task 2.1 - Richer memory growth bar in index.html
+### Task 1.1 - Add user_id to memory records
 
-Replace the current simple memory bar with a 20-block
-color-progressive bar.
+Update Memory.write_memory() in memory.py to accept user_id parameter.
+Store it in the memory record JSON alongside realm_name.
 
-20 blocks total (was 10). Each block is 5% of capacity.
-Capacity = 100 lines (was 50 — increase the display cap).
-
-Color progression based on fill percentage:
-  0-40%:   green  #6a8a6a  (healthy)
-  41-70%:  amber  var(--voice) (growing)
-  71-90%:  orange #c8963e (getting full)
-  91-100%: red    #c86e6e (at capacity)
-  >100%:   red blinking animation
-
-Display text below the bar:
-  "{lines} lines used  ({pct}% of {cap} line capacity)"
-
-When over capacity:
-  "{lines} / {cap} lines  — over capacity, consider forgetting"
-  The text pulses gently (CSS animation, not JS).
-
-CSS for the new bar:
-```css
-.memory-bar-block {
-    display: inline-block;
-    width: 8px;
-    height: 10px;
-    margin: 0 1px;
-    border-radius: 1px;
-    transition: background-color 0.3s;
-}
-.memory-bar-block.empty   { background: rgba(200,169,110,0.12); }
-.memory-bar-block.green   { background: #6a8a6a; }
-.memory-bar-block.amber   { background: var(--voice); }
-.memory-bar-block.orange  { background: #c8963e; }
-.memory-bar-block.red     { background: #c86e6e; }
-
-@keyframes pulse-warn {
-  0%, 100% { opacity: 1; }
-  50% { opacity: 0.5; }
-}
-.memory-over-cap { animation: pulse-warn 2s ease-in-out infinite; }
+```python
+def write_memory(self, session_id, summary_lines, proposal_id,
+                 realm_name="", user_id="") -> str:
 ```
 
-The bar is built in JavaScript from memory_total_lines
-and the cap constant (100). Each block gets its color class
-based on which fill-percentage zone it falls in.
+Existing records without user_id are treated as belonging to
+the guardian (backward compatible).
 
-### Task 2.2 - Update memory cap constant
+### Task 1.2 - Filter memory by active user in grounding
 
-In server.py and main.py, where memory growth is reported,
-update MEMORY_DISPLAY_CAP from 50 to 100.
+In Engine._build_grounding_turn() and startup_context(),
+filter loaded memory records to only those matching the active user_id.
 
-Update the Guardian MEMORY_GROWTH check threshold in guardian.py
-from >= 10 records to >= 20 records (adjust for larger capacity).
+If no user_id is set (no active session), load all records
+(preserves existing behavior for backward compat).
+
+Pass active user_id through from main.py and server.py when
+building the startup context and grounding turn.
+
+### Task 1.3 - Pass user_id when writing memory
+
+In main.py and server.py, when a memory proposal is approved
+and write_memory() is called, pass the active_token.user_id
+(or "" if no active token).
+
+---
+
+## GOAL 2: Guardian Room Actions
+
+### Task 2.1 - "guardian-clear-events" command
+
+Add command: guardian-clear-events
+
+Requires privilege: all
+
+Clears the governance event log file on disk:
+  inanna/data/nammu/governance_log.jsonl -> truncated to empty
+
+Creates a proposal first:
+  [GUARDIAN PROPOSAL] | Clear governance event log | status: pending
+
+After approval, truncate the file and broadcast:
+  guardian > Governance event log cleared.
+
+Add to STARTUP_COMMANDS and capabilities.
+
+### Task 2.2 - "guardian-dismiss" command
+
+Add command: guardian-dismiss
+
+Clears the in-memory alert list in the server's guardian state.
+The next inspection will re-populate if conditions still exist.
+
+No proposal needed — dismissing alerts is a read action,
+not a data mutation.
+
+Broadcast:
+  guardian > Alerts dismissed. Next inspection will re-evaluate.
+
+Add [ clear events ] and [ dismiss ] buttons to Guardian Room panel.
+These appear below the [ inspect ] button.
+
+### Task 2.3 - Guardian Room panel button layout
+
+Replace the current single [ inspect ] button with a row of three:
+  [ inspect ]  [ dismiss ]  [ clear events ]
+
+All three are small compact buttons (see Goal 4 for sizing).
+
+---
+
+## GOAL 3: switch-user Command
+
+### Task 3.1 - switch-user in main.py and server.py
+
+Add command: switch-user [display_name]
+
+Requires privilege: all (guardian only)
+
+Flow:
+1. Validate requester has "all" privilege
+2. Look up target user by display_name
+3. If not found: "switch-user > No user found: [name]"
+4. Issue a new SessionToken for the target user
+5. Set self.active_token to the new token
+6. Broadcast:
+   switch-user > Now operating as: Alice (user)
+   switch-user > Type "switch-user ZAERA" to return to Guardian.
+
+"switch-user off" or "switch-user [guardian_name]" returns to Guardian.
+
+When operating as another user:
+- The UI header shows: USER: Alice [as ZAERA]
+- The status payload includes:
+    "acting_as": {"display_name": "Alice", "role": "user"},
+    "original_user": {"display_name": "ZAERA", "role": "guardian"}
+- Memory grounding uses Alice's memory
+- Privilege checks use Alice's privileges
+- A warning banner appears in the conversation area:
+    "⚠ Operating as Alice (user) — Guardian context suspended"
+
+Add switch-user to STARTUP_COMMANDS and capabilities.
+
+---
+
+## GOAL 4: Button Size Reduction
+
+### Task 4.1 - Compact button CSS
+
+Update all panel action buttons to compact size:
+
+```css
+.panel-btn {
+    padding: 3px 10px;
+    font-size: 0.75rem;
+    letter-spacing: 0.08em;
+    border: 1px solid var(--border);
+    background: transparent;
+    color: var(--dim);
+    cursor: pointer;
+    border-radius: 2px;
+    transition: color 0.15s, border-color 0.15s;
+}
+.panel-btn:hover {
+    color: var(--voice);
+    border-color: var(--voice);
+}
+.panel-btn.warn:hover {
+    color: var(--fallback);
+    border-color: var(--fallback);
+}
+```
+
+Apply .panel-btn class to:
+  [ inspect ] [ dismiss ] [ clear events ]  (Guardian Room)
+  [ approve ] [ reject ]                    (Proposals)
+  [ load full history ]                     (Proposals)
+  [ clear all ]                             (Memory)
+  [ forget ]                                (Memory records)
 
 ---
 
 ## Update identity.py and state.py
 
-CURRENT_PHASE = "Cycle 4 - Phase 4.3 - The Privilege Map"
+CURRENT_PHASE = "Cycle 4 - Phase 4.4 - The User Memory"
 
-No new commands to add to capabilities.
+Add "guardian-clear-events", "guardian-dismiss", "switch-user"
+to STARTUP_COMMANDS and capabilities in state.py.
 
 ---
 
 ## Tests
 
-Add to inanna/tests/test_user.py:
-- check_privilege() returns (False, reason) when token is None
-- check_privilege() returns (False, reason) for insufficient privilege
-- check_privilege() returns (True, "") for guardian with any privilege
-- check_privilege() returns (True, "") for user with "converse"
-- check_privilege() returns (False, reason) for user with "all"
+Update inanna/tests/test_memory.py:
+- write_memory() accepts user_id parameter
+- Memory record contains user_id field when written
+- load_memory_records() filters by user_id when provided
 
-Add to inanna/tests/test_guardian.py:
-- MEMORY_GROWTH triggers at >= 20 records (updated threshold)
+Add to inanna/tests/test_user.py:
+- check_privilege() returns False for switch-user when role is user
 
 Update test_identity.py: update CURRENT_PHASE assertion.
+Update test_state.py and test_commands.py: add new commands.
 
 ---
 
 ## Permitted file changes
 
 inanna/identity.py              <- MODIFY: update CURRENT_PHASE
-inanna/main.py                  <- MODIFY: check_privilege() on protected
-                                           commands, update memory cap
+inanna/main.py                  <- MODIFY: pass user_id to write_memory,
+                                           pass user_id to startup_context,
+                                           guardian-clear-events command,
+                                           guardian-dismiss command,
+                                           switch-user command
 inanna/core/
-  user.py                       <- MODIFY: add check_privilege() helper
-  guardian.py                   <- MODIFY: update MEMORY_GROWTH threshold
-  state.py                      <- no changes
+  memory.py                     <- MODIFY: write_memory() user_id param,
+                                           filter by user_id in load
+  session.py                    <- MODIFY: pass user_id to grounding
+  state.py                      <- MODIFY: add new commands
+  user.py                       <- no changes
+  guardian.py                   <- no changes
 inanna/ui/
-  server.py                     <- MODIFY: check_privilege() on protected
-                                           commands, update memory cap,
-                                           broadcast access type messages
-  static/index.html             <- MODIFY: 20-block color-progressive
-                                           memory bar, access message CSS
+  server.py                     <- MODIFY: same as main.py goals,
+                                           acting_as in status payload
+  static/index.html             <- MODIFY: compact .panel-btn class,
+                                           Guardian Room 3-button row,
+                                           acting-as banner in conversation,
+                                           USER: Alice [as ZAERA] in header,
+                                           acting_as in status handler
 inanna/tests/
-  test_user.py                  <- MODIFY: add check_privilege tests
-  test_guardian.py              <- MODIFY: update threshold test
+  test_memory.py                <- MODIFY: user_id tests
+  test_user.py                  <- MODIFY: switch-user privilege test
   test_identity.py              <- MODIFY: update phase assertion
+  test_state.py                 <- MODIFY: add capabilities
+  test_commands.py              <- MODIFY: add capabilities
 
 ---
 
 ## What You Are NOT Building
 
-- No per-user memory scoping (Phase 4.4)
 - No per-user interaction log (Phase 4.5)
 - No user management UI panel (Phase 4.8)
-- No role editing or privilege assignment via UI
-- Do not add privilege checks to conversation input —
-  the "converse" privilege is assumed for any logged-in user
-  interacting with INANNA in normal conversation.
-  Only explicit commands are privilege-checked.
-- Do not change roles.json
+- No cross-user memory sharing
+- No memory export or import
+- Do not change the proposal flow or governance rules
+- Do not add new Faculty classes
+- The switch-user command is Guardian-only (privilege: all)
 
 ---
 
-## Definition of Done for Phase 4.3
+## Definition of Done for Phase 4.4
 
-- [ ] check_privilege() helper exists in user.py
-- [ ] All listed sensitive commands are privilege-checked
-- [ ] Access denials return "access :" messages in muted red
-- [ ] Access denials never crash the server
-- [ ] whoami shows full privilege list for the active role
-- [ ] 20-block color-progressive memory bar in UI
-- [ ] Bar colors: green/amber/orange/red by fill percentage
-- [ ] Over-capacity text pulses gently
-- [ ] Memory display cap updated to 100 lines
-- [ ] Guardian MEMORY_GROWTH threshold updated to 20 records
+- [ ] Memory records carry user_id field
+- [ ] Grounding turn filters memory by active user_id
+- [ ] write_memory() passes active user_id from token
+- [ ] guardian-clear-events creates proposal then clears log
+- [ ] guardian-dismiss clears in-memory alerts
+- [ ] Guardian Room has 3 compact buttons: inspect/dismiss/clear events
+- [ ] switch-user works for guardian role only
+- [ ] UI header shows "USER: Alice [as ZAERA]" when switched
+- [ ] Warning banner appears in conversation when switched
+- [ ] All panel buttons use compact .panel-btn class
 - [ ] CURRENT_PHASE updated
 - [ ] All tests pass: py -3 -m unittest discover -s tests
 
@@ -257,15 +270,14 @@ inanna/tests/
 ## Handoff to Command Center
 
 When Definition of Done is met, Codex must:
-1. Commit with message: cycle4-phase3-complete
-2. Write docs/implementation/CYCLE4_PHASE3_REPORT.md
-3. Stop. Do not begin Phase 4.4 without a new CURRENT_PHASE.md.
+1. Commit with message: cycle4-phase4-complete
+2. Write docs/implementation/CYCLE4_PHASE4_REPORT.md
+3. Stop. Do not begin Phase 4.5 without a new CURRENT_PHASE.md.
 
 ---
 
 *Written by: Claude (Command Center)*
 *Guardian approval: ZAERA*
 *Date: 2026-04-19*
-*A privilege is not a wall.*
-*It is a shape — the exact outline of what a role can do.*
-*Phase 4.3 gives every role its shape.*
+*Memory is personal. The Guardian can walk in other shoes.*
+*But she always knows whose shoes she is wearing.*
