@@ -1,245 +1,230 @@
-﻿# CURRENT PHASE: Cycle 3 - Phase 3.9 - The Commander Room
+﻿# CURRENT PHASE: Cycle 4 - Phase 4.1 - The User Identity
 **Status: ACTIVE**
 **Authorized by: ZAERA (Guardian) + Claude (Command Center)**
 **Date opened: 2026-04-19**
-**Cycle: 3 - The Commander Room**
-**Replaces: Cycle 3 Phase 3.8 - The Audit Surface (COMPLETE)**
+**Cycle: 4 - The Civic Layer**
+**Prerequisite: Cycle 3 complete - verify_cycle3.py passed 46 checks**
 
 ---
 
 ## What This Phase Is
 
-Eight phases built the Commander Room:
-3.1 Realm Boundary, 3.2 Realm Memory, 3.3 Body Report,
-3.4 Proposal Dashboard, 3.5 Faculty Monitor, 3.6 Memory Map,
-3.7 Guardian Room, 3.8 Audit Surface + UI/UX refinement.
+INANNA has served one person until now: the Guardian.
+One session. One realm. One memory store. One voice.
 
-Phase 3.9 is the completion phase.
+Phase 4.1 introduces the foundation of the Civic Layer:
+user records with roles, a user manager, and the config
+file that defines what each role can do.
 
-Its purpose: verify everything works as a coherent whole,
-update verify_cycle2.py into verify_cycle3.py with Cycle 3 checks,
-write the Cycle 3 Completion Record, update the Code Doctrine,
-and declare Cycle 3 complete.
+No login yet. No session binding yet. No access control yet.
+Those come in Phases 4.2 and 4.3.
 
-Build almost nothing. Verify everything. Document what was learned.
+Phase 4.1 is purely: the data model, the manager, the config,
+and the Guardian command to create and list users.
+This is the identity foundation everything else will build on.
 
 ---
 
 ## What You Are Building
 
-### Task 1 - inanna/verify_cycle3.py
+### Task 1 - inanna/config/roles.json
 
-Create a standalone verification script that checks the full
-Cycle 3 architecture without requiring a live model or browser.
-Run with: py -3 verify_cycle3.py
+Create: inanna/config/roles.json
 
-The script verifies:
+This is the single source of truth for roles and privileges.
+Python code NEVER hardcodes role names or privilege lists.
 
-1. REALM
-   - core/realm.py exists with RealmManager and RealmConfig
-   - RealmConfig has governance_sensitivity field defaulting to "open"
-   - ensure_default_realm() creates realm with sensitivity "open"
-   - realm_data_dirs() returns dict with sessions/memory/proposals/nammu
-   - update_realm_governance_context() updates realm.json
+Content:
+{
+  "roles": {
+    "guardian": {
+      "description": "Full system access - assigned directly only",
+      "privileges": ["all"]
+    },
+    "operator": {
+      "description": "Realm-scoped admin",
+      "privileges": [
+        "manage_users_in_realm",
+        "approve_proposals_in_realm",
+        "read_realm_audit_log",
+        "invite_users"
+      ]
+    },
+    "user": {
+      "description": "Standard interaction",
+      "privileges": [
+        "converse",
+        "approve_own_memory",
+        "read_own_log",
+        "forget_own_memory"
+      ]
+    }
+  }
+}
 
-2. GOVERNANCE SENSITIVITY
-   - GovernanceLayer.check() accepts sensitivity parameter
-   - sensitivity="open" allows greetings (hello, hi)
-   - sensitivity="open" allows personal sharing (i am, i feel)
-   - sensitivity="open" still blocks identity signals
-   - sensitivity="standard" applies all four rules
-   - always_allow_patterns exists in governance_signals.json
+### Task 2 - inanna/core/user.py
 
-3. BODY
-   - core/body.py exists with BodyInspector and BodyReport
-   - BodyReport has all required fields
-   - _format_uptime(45) == "45s"
-   - _format_uptime(90) == "1m 30s"
-   - _format_uptime(3661) == "1h 1m"
-   - inspect() works without psutil
+Create: inanna/core/user.py
 
-4. FACULTY MONITOR
-   - core/faculty_monitor.py exists with FacultyMonitor
-   - all_records() returns 4 FacultyRecord entries
-   - update_model_mode("connected") updates crown and analyst
-   - record_call() increments call_count correctly
-   - format_report() contains all four Faculty names
+Two classes: UserRecord (dataclass) and UserManager.
 
-5. NAMMU MEMORY
-   - core/nammu_memory.py exists with 4 helper functions
-   - append_routing_event and load_routing_history round-trip
-   - append_governance_event and load_governance_history round-trip
-   - Functions handle missing directory gracefully
+UserRecord fields:
+  user_id: str          (generated: "user_" + 8 hex chars)
+  display_name: str
+  role: str             ("guardian" | "operator" | "user")
+  assigned_realms: list[str]  (realm names this user can access)
+  created_at: str       (ISO timestamp)
+  created_by: str       (user_id of creator, or "system")
+  status: str           ("active" | "suspended")
 
-6. MEMORY MAP
-   - Memory.delete_all_memory_records() exists
-   - delete_all_memory_records() returns correct count
-   - memory_log_report() returns total_lines, oldest_at, newest_at
+UserManager:
+  __init__(data_root: Path, roles_config_path: Path)
+  - users_dir = data_root / "users"
+  - loads roles.json at init
 
-7. UI CAPABILITIES
-   - All Cycle 3 commands in capabilities:
-     realms, realm-context, body, diagnostics, guardian-log,
-     memory-map, memory-clear-all, proposal-history,
-     faculties, nammu-log, audit-log
+  Methods:
+  create_user(display_name, role, assigned_realms, created_by) -> UserRecord
+  get_user(user_id) -> UserRecord | None
+  list_users() -> list[UserRecord]
+  list_users_by_realm(realm) -> list[UserRecord]
+  suspend_user(user_id) -> bool
+  activate_user(user_id) -> bool
+  has_privilege(user_id, privilege) -> bool
+  get_role_privileges(role) -> list[str]
 
-8. IDENTITY
-   - CURRENT_PHASE is "Cycle 3 - Phase 3.9 - The Commander Room"
-   - CYCLE4_PREVIEW constant exists and mentions user roles
-   - build_system_prompt() accepts realm parameter
-   - build_system_prompt() with named realm injects realm context
-   - build_system_prompt() with default realm returns base prompt
+has_privilege() logic:
+  - Load user record
+  - Get role from record
+  - Load role privileges from roles.json
+  - If role privileges contains "all": return True
+  - Return privilege in role privileges
 
-9. CONFIG
-   - governance_signals.json has all 5 signal categories
-   - governance_signals.json has always_allow_patterns
-   - No hardcoded signal lists in governance.py or nammu.py
+All user records stored as JSON:
+  inanna/data/users/{user_id}.json
 
-10. CYCLE 2 CONTINUITY
-    - py -3 verify_cycle2.py still passes all 24 checks
-    - (Run this and report results)
+ensure_guardian_exists(): called at startup.
+  If no user with role "guardian" exists, create one:
+  display_name="ZAERA", role="guardian",
+  assigned_realms=["all"], created_by="system"
+  Print: "Guardian user created: {user_id}"
 
-Format: same as verify_cycle2.py
-[PASS] / [FAIL] per check, exit 0 if all pass.
-Target: 30+ checks.
+### Task 3 - The "users" command
 
-### Task 2 - Fix any integration gaps found
+Add "users" command to main.py and server.py.
 
-If verify_cycle3.py finds any failing check, fix the gap
-before writing the completion record.
-Document every gap found and fixed in the phase report.
+Output:
+Users (N total):
+  [guardian]  ZAERA           active   realms: all
+  [operator]  ThyArcanum      active   realms: default, arcanum
+  [user]      Alice            active   realms: default
 
-### Task 3 - docs/cycle3_completion.md
+Only accessible by users with "all" privilege (guardian).
+For now in CLI and UI, no auth check yet — that is Phase 4.2.
+Show a note: "(access control active in Phase 4.2)"
 
-Create the Cycle 3 Completion Record containing:
+### Task 4 - The "create-user" command
 
-- What Cycle 3 set out to build (from master_cycle_plan.md)
-- What was actually built - one paragraph per phase
-  (3.1 through 3.8, plus the 3.8 UI fix patch)
-- The UI/UX correction story: Phase 3.8 was a dual-purpose phase
-  because the interface needed to breathe before adding more panels.
-  Collapsible sections, notification badges, governance sensitivity
-  "open" mode - these were corrections, not additions.
-- What verify_cycle3.py confirmed
-- What Cycle 3 did not build (honest):
-  - No user accounts or authentication
-  - No per-user logs or privilege system
-  - No realm creation via UI
-  - No realm deletion
-  - No cross-realm memory search
-  - No governance config editor UI
-- The bridge to Cycle 4
-- Stage 3 progress: both Cycle 2 and Cycle 3 complete
+Add "create-user [display_name] [role] [realm]" command.
 
-### Task 4 - docs/code_doctrine.md update
+This is a GOVERNED action — it creates a proposal:
+[USER PROPOSAL] | Create user: {name} with role {role} | status: pending
 
-Add section: "Lessons from Cycle 3"
+After approval, UserManager.create_user() is called.
+Print: "User created: {display_name} ({user_id}) role: {role}"
 
-Include:
+Only guardian can create users with operator or guardian role.
+For Phase 4.1 no auth check — proposal is the gate.
 
-1. UI complexity accumulates faster than expected. Eight phases
-   of adding panels produced a dense, hard-to-navigate interface.
-   The correction (collapsible sections, notification badges,
-   breathing room) should have been designed in from Phase 3.1.
-   Future cycles: design the panel architecture before populating it.
+### Task 5 - Update identity.py and state.py
 
-2. Governance sensitivity belongs in realm config, not in code.
-   "Open" mode is the right default for human-facing deployments.
-   The identity boundary is the only hard wall. Everything else
-   should flow unless the realm explicitly restricts it.
+CURRENT_PHASE = "Cycle 4 - Phase 4.1 - The User Identity"
 
-3. The UI fix patch (cycle3-phase8-ui-fix) was correct protocol.
-   A targeted HTML-only fix within an authorized phase scope does
-   not require a new phase document. The commit message makes it
-   traceable. This pattern is valid for future patches.
+Add "users" and "create-user" to STARTUP_COMMANDS and capabilities.
 
-4. Notification badges are not cosmetic. They are governance
-   visibility. When a user sees PROPOSALS (3 pending) collapsed,
-   they know there is action required without expanding anything.
-   Every panel that contains actionable state needs a badge.
+### Task 6 - Tests
 
-5. Cycle 4 prerequisite: user roles and privileges require a
-   proper authentication layer first. Do not build per-user logs
-   without first establishing user identity. The order matters.
+Create inanna/tests/test_user.py:
+  - UserRecord can be instantiated with required fields
+  - UserManager can be instantiated with temp directory
+  - create_user() creates a JSON file in users_dir
+  - get_user() returns correct UserRecord
+  - list_users() returns all users
+  - has_privilege("all") returns True for guardian role
+  - has_privilege("converse") returns True for user role
+  - has_privilege("manage_users_in_realm") returns False for user role
+  - suspend_user() changes status to "suspended"
+  - ensure_guardian_exists() creates guardian if none exists
+  - ensure_guardian_exists() does not duplicate if already exists
 
-### Task 5 - Update identity.py
-
-CURRENT_PHASE = "Cycle 3 - Phase 3.9 - The Commander Room"
-
-Add CYCLE3_SUMMARY:
-```python
-CYCLE3_SUMMARY = (
-    "Cycle 3 built the Commander Room: realm-scoped data, "
-    "body substrate reporting, proposal dashboard, faculty monitor, "
-    "memory map timeline, guardian room, audit surface, "
-    "collapsible UI panels with notification badges, "
-    "and governance sensitivity open mode for human-facing deployments."
-)
-```
-
-### Task 6 - Final test run
-
-Run: py -3 -m unittest discover -s tests
-Run: py -3 verify_cycle2.py
-Run: py -3 verify_cycle3.py
-All must pass. Report counts in the phase report.
+Update test_identity.py: update CURRENT_PHASE assertion.
+Update test_state.py and test_commands.py: add users, create-user.
 
 ---
 
 ## Permitted file changes
 
-inanna/identity.py          <- MODIFY: CURRENT_PHASE, CYCLE3_SUMMARY
-inanna/verify_cycle3.py     <- NEW: integration verification script
-docs/cycle3_completion.md   <- NEW: Cycle 3 Completion Record
-docs/code_doctrine.md       <- MODIFY: add Lessons from Cycle 3
-
-Core/UI files: ONLY to fix gaps found by verify_cycle3.py.
-tests/test_identity.py      <- MODIFY: update phase assertion
-
-No new capabilities. No new commands. No new panels.
-Verify and document only.
+inanna/identity.py              <- MODIFY: update CURRENT_PHASE
+inanna/config/roles.json        <- NEW: role and privilege definitions
+inanna/main.py                  <- MODIFY: users and create-user commands,
+                                           instantiate UserManager,
+                                           ensure_guardian_exists()
+inanna/core/
+  user.py                       <- NEW: UserRecord, UserManager
+  state.py                      <- MODIFY: add users, create-user
+inanna/ui/
+  server.py                     <- MODIFY: users command,
+                                           create-user command,
+                                           UserManager instantiation
+  static/index.html             <- no changes (Phase 4.2 adds UI)
+inanna/tests/
+  test_user.py                  <- NEW
+  test_identity.py              <- MODIFY: update phase assertion
+  test_state.py                 <- MODIFY: add capabilities
+  test_commands.py              <- MODIFY: add capabilities
 
 ---
 
 ## What You Are NOT Building
 
-- No new Faculties, commands, panels, or capabilities
-- No UI changes except gap fixes
-- No changes to governance, nammu, or routing logic except gap fixes
-- Do not begin any Cycle 4 work
+- No login or session token (Phase 4.2)
+- No access control enforcement (Phase 4.3)
+- No per-user memory scoping (Phase 4.4)
+- No per-user interaction log (Phase 4.5)
+- No UI user management panel (Phase 4.8)
+- No password or OAuth
+- No email or external identity
+- Do not hardcode role names or privilege lists in Python
 
 ---
 
-## Definition of Done for Phase 3.9
+## Definition of Done for Phase 4.1
 
-- [ ] verify_cycle3.py exists and all checks pass
-- [ ] py -3 verify_cycle2.py still passes (regression check)
-- [ ] py -3 -m unittest discover -s tests passes
-- [ ] docs/cycle3_completion.md exists with all required sections
-- [ ] docs/code_doctrine.md has "Lessons from Cycle 3" section
-- [ ] CURRENT_PHASE updated to Phase 3.9
-- [ ] CYCLE3_SUMMARY constant exists in identity.py
-- [ ] Any integration gaps found are fixed and documented
+- [ ] inanna/config/roles.json exists with 3 roles and privilege lists
+- [ ] inanna/core/user.py exists with UserRecord and UserManager
+- [ ] UserManager reads privileges from roles.json (not hardcoded)
+- [ ] has_privilege() works correctly for all three roles
+- [ ] ensure_guardian_exists() creates ZAERA on first startup
+- [ ] "users" command lists all users in CLI and UI
+- [ ] "create-user" command creates user via proposal flow
+- [ ] User records persisted as JSON in data/users/
+- [ ] CURRENT_PHASE updated to Phase 4.1
+- [ ] All tests pass: py -3 -m unittest discover -s tests
 
 ---
 
 ## Handoff to Command Center
 
 When Definition of Done is met, Codex must:
-1. Commit with message: cycle3-phase9-complete
-2. Write docs/implementation/CYCLE3_PHASE9_REPORT.md containing:
-   - What verify_cycle3.py found and fixed
-   - Final test count from unittest
-   - verify_cycle2.py result (regression)
-   - verify_cycle3.py result
-   - Any gaps that could not be fixed
-3. Stop. Cycle 3 is complete.
-   Do not begin Cycle 4 without authorization from Command Center.
+1. Commit with message: cycle4-phase1-complete
+2. Write docs/implementation/CYCLE4_PHASE1_REPORT.md
+3. Stop. Do not begin Phase 4.2 without a new CURRENT_PHASE.md.
 
 ---
 
 *Written by: Claude (Command Center)*
 *Guardian approval: ZAERA*
 *Date: 2026-04-19*
-*Nine phases. One proof. One room.*
-*The Commander Room is complete.*
-*Now it can be seen.*
+*The civic layer begins with a name.*
+*Before roles, before permissions, before access:*
+*a person must exist in the system.*
+*Phase 4.1 gives them existence.*
