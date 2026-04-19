@@ -1,222 +1,254 @@
-﻿# CURRENT PHASE: Cycle 4 - Phase 4.2 - The Access Gate
+﻿# CURRENT PHASE: Cycle 4 - Phase 4.3 - The Privilege Map
 **Status: ACTIVE**
 **Authorized by: ZAERA (Guardian) + Claude (Command Center)**
 **Date opened: 2026-04-19**
 **Cycle: 4 - The Civic Layer**
-**Replaces: Cycle 4 Phase 4.1 - The User Identity (COMPLETE)**
+**Replaces: Cycle 4 Phase 4.2 - The Access Gate (COMPLETE)**
 
 ---
 
 ## What This Phase Is
 
-Phase 4.1 gave users existence — records on disk with roles
-and config-driven privileges.
+Phase 4.2 gave sessions identity — a token bound to a user.
+Phase 4.3 makes that identity mean something.
 
-Phase 4.2 gives sessions identity. When the server starts,
-it no longer assumes the single Guardian is the only operator.
-A session is now bound to a user. That binding is explicit,
-lightweight, and governed.
+Right now every command works regardless of who is logged in.
+The Guardian and a basic user have the same powers.
+That is wrong. The privilege map must be enforced.
 
-In this phase: session tokens.
+Phase 4.3 wires has_privilege() into the command execution path.
+Every sensitive command checks the active user before running.
+If the privilege is absent, a clean response is returned.
+No crash. No silent failure. A clear, honest boundary.
 
-A session token is a short-lived string generated at login.
-It is stored in the session state and used to identify which
-user is active in the current session. The token is not
-cryptographically secure yet — that is Phase 4.3. For now
-it is a governed identity binding: a UUID tied to a user_id,
-valid for the duration of one server session.
-
-No passwords. No OAuth. No external identity. The access gate
-in Phase 4.2 is: you state who you are, a token is issued,
-and all subsequent actions in that session are associated
-with that user_id. The Guardian can always see who is active.
+Phase 4.3 also delivers the memory bar improvement:
+more blocks, color progression from green to amber to red,
+so memory health is readable at a glance.
 
 ---
 
-## What You Are Building
+## PART 1: Privilege Enforcement
 
-### Task 1 - inanna/core/session_token.py
+### Task 1.1 - Privilege check helper
 
-Create: inanna/core/session_token.py
+Add to inanna/core/user.py:
 
-Two classes: SessionToken (dataclass) and TokenStore.
+```python
+def check_privilege(
+    active_token,       # SessionToken | None
+    user_manager,       # UserManager
+    privilege: str,     # required privilege
+) -> tuple[bool, str]:
+    """Returns (allowed, reason)."""
+    if active_token is None:
+        return False, "No active session. Type login [name] to identify."
+    ok = user_manager.has_privilege(active_token.user_id, privilege)
+    if not ok:
+        return False, (
+            f"Insufficient privileges. "
+            f"{active_token.display_name} ({active_token.role}) "
+            f"does not have: {privilege}"
+        )
+    return True, ""
+```
 
-SessionToken fields:
-  token: str          (UUID4, generated at login)
-  user_id: str
-  display_name: str
-  role: str
-  issued_at: str      (ISO timestamp)
-  expires_at: str     (ISO timestamp, issued_at + SESSION_HOURS)
-  active: bool        (True until logout or expiry)
+### Task 1.2 - Protected commands in main.py and server.py
 
-SESSION_HOURS = 8  (configurable constant)
+Apply check_privilege() before executing these commands:
 
-TokenStore:
-  __init__()
-  - in-memory only: dict[str, SessionToken]
-  - no disk persistence (tokens are session-scoped)
+| Command | Required privilege |
+|---|---|
+| users | all |
+| create-user | all |
+| memory-clear-all | all |
+| forget (all records) | approve_own_memory |
+| realm-context [update] | all |
+| guardian-log | all |
+| nammu-log | all |
+| routing-log | all |
+| approve | approve_own_memory |
+| reject | approve_own_memory |
 
-  issue(user_id, display_name, role) -> SessionToken
-  validate(token) -> SessionToken | None
-    - Returns None if token not found, inactive, or expired
-  revoke(token) -> bool
-  active_tokens() -> list[SessionToken]
-  revoke_all_for_user(user_id) -> int
+Commands that remain open to all (no privilege check):
+  login, logout, whoami, status, help, history,
+  body, diagnostics, realms, memory-map, faculties,
+  guardian (read-only inspect), audit-log, proposal-history
 
-### Task 2 - The "login" command
+Pattern for every protected command:
+```python
+allowed, reason = check_privilege(self.active_token, self.user_manager, "all")
+if not allowed:
+    await self.broadcast({"type": "system", "text": f"access > {reason}"})
+    return
+```
 
-Add "login [display_name]" command to main.py and server.py.
+### Task 1.3 - "access" message type in index.html
 
-Flow:
-1. User types: login ZAERA
-2. System looks up user by display_name in UserManager
-3. If not found: "No user found with name: ZAERA"
-4. If found: issue a SessionToken, store in TokenStore
-5. Print:
-   login > session started for ZAERA (guardian)
-   login > token: {first 8 chars}... valid for 8 hours
-   login > session bound to user_id: {user_id}
+Add CSS for access denial messages:
+```css
+.message-access .message-prefix,
+.message-access .message-content {
+    color: #c86e6e;
+    font-size: 0.85rem;
+    font-style: italic;
+}
+```
+Prefix: "access :"
 
-The active token is stored in server/CLI state:
-  self.active_token: SessionToken | None = None
+Broadcast access denials as:
+{"type": "access", "text": "Insufficient privileges..."}
 
-The phase banner in the UI header updates to show the
-active user after login:
-  CYCLE 4 - PHASE 4.2   REALM: DEFAULT   USER: ZAERA   BODY: OK
+### Task 1.4 - Privilege summary in whoami
 
-### Task 3 - The "logout" command
+Update whoami output to show full privilege list:
+```
+whoami > ZAERA (guardian)
+whoami > privileges: all
+whoami > can do: everything
+```
 
-Add "logout" command.
+For non-guardian roles:
+```
+whoami > Alice (user)
+whoami > privileges: converse, approve_own_memory,
+whoami >            read_own_log, forget_own_memory
+```
 
-Flow:
-1. If no active token: "No active session."
-2. If active token: revoke it, clear self.active_token
-3. Print: "logout > session ended for {display_name}"
+---
 
-### Task 4 - The "whoami" command
+## PART 2: Memory Bar Improvement
 
-Add "whoami" command.
+### Task 2.1 - Richer memory growth bar in index.html
 
-Output:
-  whoami > ZAERA (guardian)
-  whoami > user_id: user_6e250a89
-  whoami > session token: {first 8 chars}... (active)
-  whoami > session expires: Apr 19 20:30
-  whoami > privileges: all
+Replace the current simple memory bar with a 20-block
+color-progressive bar.
 
-If no active session:
-  whoami > No active session. Type "login [name]" to identify.
+20 blocks total (was 10). Each block is 5% of capacity.
+Capacity = 100 lines (was 50 — increase the display cap).
 
-### Task 5 - Active user in status payload
+Color progression based on fill percentage:
+  0-40%:   green  #6a8a6a  (healthy)
+  41-70%:  amber  var(--voice) (growing)
+  71-90%:  orange #c8963e (getting full)
+  91-100%: red    #c86e6e (at capacity)
+  >100%:   red blinking animation
 
-Add to the WebSocket status payload:
-  "active_user": {
-    "user_id": "user_6e250a89",
-    "display_name": "ZAERA",
-    "role": "guardian",
-    "token_preview": "a3f7b2c1...",
-    "expires_at": "2026-04-19T20:30:00"
-  }
+Display text below the bar:
+  "{lines} lines used  ({pct}% of {cap} line capacity)"
 
-Or null if no active session.
+When over capacity:
+  "{lines} / {cap} lines  — over capacity, consider forgetting"
+  The text pulses gently (CSS animation, not JS).
 
-The UI header shows the active user name when present.
+CSS for the new bar:
+```css
+.memory-bar-block {
+    display: inline-block;
+    width: 8px;
+    height: 10px;
+    margin: 0 1px;
+    border-radius: 1px;
+    transition: background-color 0.3s;
+}
+.memory-bar-block.empty   { background: rgba(200,169,110,0.12); }
+.memory-bar-block.green   { background: #6a8a6a; }
+.memory-bar-block.amber   { background: var(--voice); }
+.memory-bar-block.orange  { background: #c8963e; }
+.memory-bar-block.red     { background: #c86e6e; }
 
-### Task 6 - Auto-login as Guardian on startup
+@keyframes pulse-warn {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.5; }
+}
+.memory-over-cap { animation: pulse-warn 2s ease-in-out infinite; }
+```
 
-For Phase 4.2, on server/CLI startup:
-  1. Call ensure_guardian_exists()
-  2. Auto-issue a session token for the Guardian user
-  3. Set self.active_token = the issued token
-  4. Print: "Auto-login: ZAERA (guardian) | session active"
+The bar is built in JavaScript from memory_total_lines
+and the cap constant (100). Each block gets its color class
+based on which fill-percentage zone it falls in.
 
-This means existing workflows are not disrupted.
-The Guardian is always the active user unless someone logs in
-as a different user. Phase 4.3 will enforce access control.
-For now, the binding is informational and auditable.
+### Task 2.2 - Update memory cap constant
 
-### Task 7 - Session token in audit log
+In server.py and main.py, where memory growth is reported,
+update MEMORY_DISPLAY_CAP from 50 to 100.
 
-When a login or logout event occurs, append to session_audit:
-  {"event_type": "login", "summary": "ZAERA (guardian) logged in"}
-  {"event_type": "logout", "summary": "ZAERA (guardian) logged out"}
+Update the Guardian MEMORY_GROWTH check threshold in guardian.py
+from >= 10 records to >= 20 records (adjust for larger capacity).
 
-### Task 8 - Update identity.py and state.py
+---
 
-CURRENT_PHASE = "Cycle 4 - Phase 4.2 - The Access Gate"
+## Update identity.py and state.py
 
-Add "login", "logout", "whoami" to STARTUP_COMMANDS and capabilities.
+CURRENT_PHASE = "Cycle 4 - Phase 4.3 - The Privilege Map"
 
-### Task 9 - Tests
+No new commands to add to capabilities.
 
-Create inanna/tests/test_session_token.py:
-  - SessionToken can be instantiated with required fields
-  - TokenStore.issue() returns a SessionToken with a UUID token
-  - TokenStore.validate() returns token for valid token string
-  - TokenStore.validate() returns None for unknown token
-  - TokenStore.validate() returns None for revoked token
-  - TokenStore.validate() returns None for expired token
-    (set SESSION_HOURS=0 and issue a token to test expiry)
-  - TokenStore.revoke() deactivates the token
-  - TokenStore.active_tokens() returns only active tokens
-  - TokenStore.revoke_all_for_user() revokes all user tokens
+---
+
+## Tests
+
+Add to inanna/tests/test_user.py:
+- check_privilege() returns (False, reason) when token is None
+- check_privilege() returns (False, reason) for insufficient privilege
+- check_privilege() returns (True, "") for guardian with any privilege
+- check_privilege() returns (True, "") for user with "converse"
+- check_privilege() returns (False, reason) for user with "all"
+
+Add to inanna/tests/test_guardian.py:
+- MEMORY_GROWTH triggers at >= 20 records (updated threshold)
 
 Update test_identity.py: update CURRENT_PHASE assertion.
-Update test_state.py and test_commands.py: add new commands.
 
 ---
 
 ## Permitted file changes
 
-inanna/identity.py                <- MODIFY: update CURRENT_PHASE
-inanna/main.py                    <- MODIFY: login/logout/whoami commands,
-                                             TokenStore instantiation,
-                                             auto-login at startup,
-                                             active_token state,
-                                             active_user in status
+inanna/identity.py              <- MODIFY: update CURRENT_PHASE
+inanna/main.py                  <- MODIFY: check_privilege() on protected
+                                           commands, update memory cap
 inanna/core/
-  session_token.py                <- NEW: SessionToken, TokenStore
-  state.py                        <- MODIFY: add new commands
-  user.py                         <- no changes
+  user.py                       <- MODIFY: add check_privilege() helper
+  guardian.py                   <- MODIFY: update MEMORY_GROWTH threshold
+  state.py                      <- no changes
 inanna/ui/
-  server.py                       <- MODIFY: login/logout/whoami commands,
-                                             TokenStore instantiation,
-                                             auto-login at startup,
-                                             active_user in status payload,
-                                             user name in header update
-  static/index.html               <- MODIFY: show active user in header,
-                                             handle active_user in status
+  server.py                     <- MODIFY: check_privilege() on protected
+                                           commands, update memory cap,
+                                           broadcast access type messages
+  static/index.html             <- MODIFY: 20-block color-progressive
+                                           memory bar, access message CSS
 inanna/tests/
-  test_session_token.py           <- NEW
-  test_identity.py                <- MODIFY: update phase assertion
-  test_state.py                   <- MODIFY: add capabilities
-  test_commands.py                <- MODIFY: add capabilities
+  test_user.py                  <- MODIFY: add check_privilege tests
+  test_guardian.py              <- MODIFY: update threshold test
+  test_identity.py              <- MODIFY: update phase assertion
 
 ---
 
 ## What You Are NOT Building
 
-- No password hashing or verification
-- No OAuth or external identity provider
-- No access control enforcement (Phase 4.3)
 - No per-user memory scoping (Phase 4.4)
-- No per-user log (Phase 4.5)
-- No token persistence across server restarts
-- No multi-session support per user (one active token per user)
-- Do not change the UserManager or roles.json
+- No per-user interaction log (Phase 4.5)
+- No user management UI panel (Phase 4.8)
+- No role editing or privilege assignment via UI
+- Do not add privilege checks to conversation input —
+  the "converse" privilege is assumed for any logged-in user
+  interacting with INANNA in normal conversation.
+  Only explicit commands are privilege-checked.
+- Do not change roles.json
 
 ---
 
-## Definition of Done for Phase 4.2
+## Definition of Done for Phase 4.3
 
-- [ ] core/session_token.py with SessionToken and TokenStore
-- [ ] "login [name]" issues a token and binds the session
-- [ ] "logout" revokes the token and clears the binding
-- [ ] "whoami" shows the active user and session state
-- [ ] Auto-login as Guardian at startup
-- [ ] Active user shown in UI header and status payload
-- [ ] Login/logout events appear in audit log
+- [ ] check_privilege() helper exists in user.py
+- [ ] All listed sensitive commands are privilege-checked
+- [ ] Access denials return "access :" messages in muted red
+- [ ] Access denials never crash the server
+- [ ] whoami shows full privilege list for the active role
+- [ ] 20-block color-progressive memory bar in UI
+- [ ] Bar colors: green/amber/orange/red by fill percentage
+- [ ] Over-capacity text pulses gently
+- [ ] Memory display cap updated to 100 lines
+- [ ] Guardian MEMORY_GROWTH threshold updated to 20 records
 - [ ] CURRENT_PHASE updated
 - [ ] All tests pass: py -3 -m unittest discover -s tests
 
@@ -225,15 +257,15 @@ inanna/tests/
 ## Handoff to Command Center
 
 When Definition of Done is met, Codex must:
-1. Commit with message: cycle4-phase2-complete
-2. Write docs/implementation/CYCLE4_PHASE2_REPORT.md
-3. Stop. Do not begin Phase 4.3 without a new CURRENT_PHASE.md.
+1. Commit with message: cycle4-phase3-complete
+2. Write docs/implementation/CYCLE4_PHASE3_REPORT.md
+3. Stop. Do not begin Phase 4.4 without a new CURRENT_PHASE.md.
 
 ---
 
 *Written by: Claude (Command Center)*
 *Guardian approval: ZAERA*
 *Date: 2026-04-19*
-*A session knows who it belongs to.*
-*That is the access gate.*
-*Not a wall — a binding.*
+*A privilege is not a wall.*
+*It is a shape — the exact outline of what a role can do.*
+*Phase 4.3 gives every role its shape.*
