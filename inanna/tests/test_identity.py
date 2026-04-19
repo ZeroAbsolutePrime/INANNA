@@ -2,7 +2,13 @@ from __future__ import annotations
 
 import unittest
 
-from identity import CURRENT_PHASE, build_analyst_prompt, build_system_prompt, phase_banner
+from identity import (
+    CURRENT_PHASE,
+    build_analyst_prompt,
+    build_nammu_prompt,
+    build_system_prompt,
+    phase_banner,
+)
 
 
 EXPECTED_PROMPT = """You are INANNA — a local-first, proposal-governed intelligence.
@@ -71,11 +77,14 @@ class IdentityTests(unittest.TestCase):
     def test_analyst_prompt_mentions_structured_reasoning(self) -> None:
         self.assertIn("structured", build_analyst_prompt().lower())
 
+    def test_nammu_prompt_is_non_empty(self) -> None:
+        self.assertTrue(build_nammu_prompt())
+
     def test_current_phase_constant_matches_phase_banner(self) -> None:
         self.assertEqual(CURRENT_PHASE, phase_banner())
 
-    def test_current_phase_names_second_faculty(self) -> None:
-        self.assertIn("Second Faculty", CURRENT_PHASE)
+    def test_current_phase_names_nammu_kernel(self) -> None:
+        self.assertIn("NAMMU Kernel", CURRENT_PHASE)
 
 
 if __name__ == "__main__":

@@ -15,6 +15,7 @@ from websockets.exceptions import ConnectionClosed
 
 from config import Config
 from core.memory import Memory
+from core.nammu import IntentClassifier
 from core.proposal import Proposal
 from core.session import AnalystFaculty, Engine, Session
 from core.state import StateReport
@@ -24,6 +25,7 @@ from main import (
     build_diagnostics_report,
     build_history_report,
     build_memory_log_report,
+    build_routing_log_report,
 )
 
 APP_ROOT = Path(__file__).resolve().parent.parent
@@ -90,6 +92,8 @@ class InterfaceServer:
             model_name=self.config.model_name,
             api_key=self.config.api_key,
         )
+        self.classifier = IntentClassifier(self.engine)
+        self.routing_log: list[dict[str, str]] = []
         print("Verifying model connection...")
         self.engine.verify_connection()
         self.analyst.fallback_mode = self.engine.fallback_mode
@@ -150,8 +154,17 @@ class InterfaceServer:
                 if created:
                     await self.broadcast({"type": "system", "text": created["line"]})
             else:
-                assistant_text, created = await asyncio.to_thread(self._run_user_turn, text)
-                await self.broadcast({"type": "assistant", "text": assistant_text})
+                route, response_type, response_text, created = await asyncio.to_thread(
+                    self._run_routed_turn, text
+                )
+                await self.broadcast(
+                    {
+                        "type": "nammu",
+                        "route": route,
+                        "text": f"routing to {route} faculty",
+                    }
+                )
+                await self.broadcast({"type": response_type, "text": response_text})
                 await self.broadcast({"type": "system", "text": created["line"]})
             await self.broadcast_state()
         finally:
@@ -173,6 +186,43 @@ class InterfaceServer:
             ),
         )
         return assistant_text, created
+
+    def _record_routing_decision(self, route: str, text: str) -> None:
+        self.routing_log.append(
+            {
+                "timestamp": utc_now(),
+                "input_preview": text[:60],
+                "route": route,
+            }
+        )
+
+    def _run_routed_turn(
+        self,
+        text: str,
+    ) -> tuple[str, str, str, dict[str, Any]]:
+        route = self.classifier.classify(text)
+        self._record_routing_decision(route, text)
+
+        if route == "analyst":
+            mode, analysis_text = self.analyst.analyse(
+                question=text,
+                context=self.startup_context["summary_lines"],
+            )
+            self.session.add_event("user", text)
+            self.session.add_event("analyst", analysis_text)
+            created = self.proposal.create(
+                what="Update the memory store from the latest session turn",
+                why="Keep the next session grounded in readable, user-approved context.",
+                payload=self.memory.build_candidate(
+                    session_id=self.session.session_id,
+                    events=self.session.events,
+                ),
+            )
+            label = "[live analysis]" if mode == "live" else "[analysis fallback]"
+            return route, "analyst", f"{label} {analysis_text}", created
+
+        assistant_text, created = self._run_user_turn(text)
+        return route, "assistant", assistant_text, created
 
     def _run_analysis_turn(
         self,
@@ -206,6 +256,10 @@ class InterfaceServer:
         elif cmd == "history":
             report = await asyncio.to_thread(self.proposal.history_report)
             await self.broadcast({"type": "system", "text": build_history_report(report)})
+            await self.broadcast_state()
+        elif cmd == "routing-log":
+            report = await asyncio.to_thread(build_routing_log_report, self.routing_log)
+            await self.broadcast({"type": "system", "text": report})
             await self.broadcast_state()
         elif cmd == "memory-log":
             report = await asyncio.to_thread(self.memory.memory_log_report)

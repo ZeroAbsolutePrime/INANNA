@@ -7,6 +7,7 @@ from dotenv import load_dotenv
 
 from config import Config
 from core.memory import Memory
+from core.nammu import IntentClassifier
 from core.proposal import Proposal
 from core.session import AnalystFaculty, Engine, Session
 from core.state import StateReport
@@ -25,6 +26,7 @@ STARTUP_COMMANDS = (
     "analyse",
     "audit",
     "history",
+    "routing-log",
     "memory-log",
     "status",
     "diagnostics",
@@ -125,6 +127,34 @@ def build_memory_log_report(report: dict) -> str:
     return "\n".join(lines)
 
 
+def build_routing_log_report(routing_log: list[dict[str, str]]) -> str:
+    total = len(routing_log)
+    if total == 0:
+        return "NAMMU Routing Log (0 decisions):\n  No routing decisions recorded yet."
+
+    lines = [f"NAMMU Routing Log ({total} decisions):"]
+    for record in routing_log:
+        label = f"[{record['route']}]"
+        lines.append(
+            f"  {label:<11}{record['timestamp']} | {record['input_preview']}"
+        )
+    return "\n".join(lines)
+
+
+def append_routing_decision(
+    routing_log: list[dict[str, str]],
+    route: str,
+    user_input: str,
+) -> None:
+    routing_log.append(
+        {
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+            "input_preview": user_input[:60],
+            "route": route,
+        }
+    )
+
+
 def _resolve_inline_proposal(
     proposal: Proposal,
     created: dict,
@@ -191,6 +221,8 @@ def handle_command(
     state_report: StateReport,
     engine: Engine,
     analyst: AnalystFaculty,
+    classifier: IntentClassifier,
+    routing_log: list[dict[str, str]],
     startup_context: dict,
     config: Config,
 ) -> str | None:
@@ -215,6 +247,9 @@ def handle_command(
 
     if lowered == "history":
         return build_history_report(proposal.history_report())
+
+    if lowered == "routing-log":
+        return build_routing_log_report(routing_log)
 
     if lowered == "memory-log":
         return build_memory_log_report(memory.memory_log_report())
@@ -280,6 +315,31 @@ def handle_command(
 
         return f"Rejected {resolved['proposal_id']}."
 
+    route = classifier.classify(normalized)
+    append_routing_decision(routing_log, route, normalized)
+
+    if route == "analyst":
+        analysis_mode, analysis_text = analyst.analyse(
+            question=normalized,
+            context=startup_context["summary_lines"],
+        )
+        session.add_event("user", normalized)
+        session.add_event("analyst", analysis_text)
+        created = proposal.create(
+            what="Update the memory store from the latest session turn",
+            why="Keep the next session grounded in readable, user-approved context.",
+            payload=memory.build_candidate(
+                session_id=session.session_id,
+                events=session.events,
+            ),
+        )
+        label = "[live analysis]" if analysis_mode == "live" else "[analysis fallback]"
+        return (
+            f"nammu > routing to analyst faculty\n"
+            f"analyst > {label} {analysis_text}\n"
+            f"{created['line']}"
+        )
+
     session.add_event("user", normalized)
     assistant_text = engine.respond(
         context_summary=startup_context["summary_lines"],
@@ -295,7 +355,11 @@ def handle_command(
             events=session.events,
         ),
     )
-    return f"assistant> {assistant_text}\n{created['line']}"
+    return (
+        f"nammu > routing to crown faculty\n"
+        f"inanna > {assistant_text}\n"
+        f"{created['line']}"
+    )
 
 
 def main() -> None:
@@ -315,6 +379,8 @@ def main() -> None:
         model_name=config.model_name,
         api_key=config.api_key,
     )
+    classifier = IntentClassifier(engine)
+    routing_log: list[dict[str, str]] = []
 
     if engine.verify_connection():
         print(f"Model connected: {config.model_name} at {config.model_url}")
@@ -355,6 +421,8 @@ def main() -> None:
             state_report=state_report,
             engine=engine,
             analyst=analyst,
+            classifier=classifier,
+            routing_log=routing_log,
             startup_context=startup_context,
             config=config,
         )

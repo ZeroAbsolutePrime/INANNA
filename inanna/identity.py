@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 
-CURRENT_PHASE = "Cycle 2 - Phase 3 - The Second Faculty"
+CURRENT_PHASE = "Cycle 2 - Phase 4 - The NAMMU Kernel"
 
 
 PROMPT = """You are INANNA — a local-first, proposal-governed intelligence.
@@ -62,12 +62,31 @@ If the available context is thin, say so directly.
 Do not claim certainty you do not have."""
 
 
+NAMMU_CLASSIFICATION_PROMPT = """You are the NAMMU routing layer of INANNA NYX.
+Your only task is to classify the user intention as one of two routes:
+
+CROWN - for: conversational exchanges, personal sharing, emotional content,
+        questions about INANNA herself, memory and identity topics,
+        reflective or relational requests
+
+ANALYST - for: requests for structured analysis, comparative reasoning,
+          technical questions, "why does X work", "explain the relationship
+          between X and Y", requests for breakdown or examination
+
+Reply with exactly one word: either CROWN or ANALYST.
+Nothing else. No explanation. Just the routing decision."""
+
+
 def build_system_prompt() -> str:
     return PROMPT
 
 
 def build_analyst_prompt() -> str:
     return ANALYST_PROMPT
+
+
+def build_nammu_prompt() -> str:
+    return NAMMU_CLASSIFICATION_PROMPT
 
 
 def phase_banner() -> str:

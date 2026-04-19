@@ -9,6 +9,7 @@ from unittest.mock import patch
 
 from config import Config
 from core.memory import Memory
+from core.nammu import IntentClassifier
 from core.proposal import Proposal
 from core.session import AnalystFaculty, Engine, Session
 from core.state import StateReport
@@ -18,7 +19,18 @@ from main import STARTUP_COMMANDS, handle_command, startup_commands_line
 class CommandTests(unittest.TestCase):
     def make_runtime(
         self,
-    ) -> tuple[Session, Memory, Proposal, StateReport, Engine, AnalystFaculty, dict, Config]:
+    ) -> tuple[
+        Session,
+        Memory,
+        Proposal,
+        StateReport,
+        Engine,
+        AnalystFaculty,
+        IntentClassifier,
+        list[dict[str, str]],
+        dict,
+        Config,
+    ]:
         temp_dir = TemporaryDirectory()
         self.addCleanup(temp_dir.cleanup)
         root = Path(temp_dir.name)
@@ -35,9 +47,22 @@ class CommandTests(unittest.TestCase):
         state_report = StateReport()
         engine = Engine()
         analyst = AnalystFaculty()
+        classifier = IntentClassifier(engine)
+        routing_log: list[dict[str, str]] = []
         startup_context = {"summary_lines": [], "memory_count": 0, "session_count": 0}
         config = Config(model_url="", model_name="", api_key="")
-        return session, memory, proposal, state_report, engine, analyst, startup_context, config
+        return (
+            session,
+            memory,
+            proposal,
+            state_report,
+            engine,
+            analyst,
+            classifier,
+            routing_log,
+            startup_context,
+            config,
+        )
 
     def write_memory_record(self, memory: Memory, memory_id: str = "proposal-a") -> None:
         memory.write_memory(
@@ -55,6 +80,8 @@ class CommandTests(unittest.TestCase):
         state_report: StateReport,
         engine: Engine,
         analyst: AnalystFaculty,
+        classifier: IntentClassifier,
+        routing_log: list[dict[str, str]],
         startup_context: dict,
         config: Config,
         answers: list[str],
@@ -76,15 +103,26 @@ class CommandTests(unittest.TestCase):
                 state_report,
                 engine,
                 analyst,
+                classifier,
+                routing_log,
                 startup_context,
                 config,
             )
         return result, output.getvalue(), prompts
 
     def test_status_returns_session_line(self) -> None:
-        session, memory, proposal, state_report, engine, analyst, startup_context, config = (
-            self.make_runtime()
-        )
+        (
+            session,
+            memory,
+            proposal,
+            state_report,
+            engine,
+            analyst,
+            classifier,
+            routing_log,
+            startup_context,
+            config,
+        ) = self.make_runtime()
 
         result = handle_command(
             "status",
@@ -94,17 +132,28 @@ class CommandTests(unittest.TestCase):
             state_report,
             engine,
             analyst,
+            classifier,
+            routing_log,
             startup_context,
             config,
         )
 
         self.assertIn("Session:", result)
-        self.assertIn("analyse", result)
+        self.assertIn("routing-log", result)
 
     def test_diagnostics_returns_model_url_line(self) -> None:
-        session, memory, proposal, state_report, engine, analyst, startup_context, config = (
-            self.make_runtime()
-        )
+        (
+            session,
+            memory,
+            proposal,
+            state_report,
+            engine,
+            analyst,
+            classifier,
+            routing_log,
+            startup_context,
+            config,
+        ) = self.make_runtime()
 
         result = handle_command(
             "diagnostics",
@@ -114,6 +163,8 @@ class CommandTests(unittest.TestCase):
             state_report,
             engine,
             analyst,
+            classifier,
+            routing_log,
             startup_context,
             config,
         )
@@ -121,9 +172,18 @@ class CommandTests(unittest.TestCase):
         self.assertIn("Model URL:", result)
 
     def test_history_with_no_proposals_returns_zero_total(self) -> None:
-        session, memory, proposal, state_report, engine, analyst, startup_context, config = (
-            self.make_runtime()
-        )
+        (
+            session,
+            memory,
+            proposal,
+            state_report,
+            engine,
+            analyst,
+            classifier,
+            routing_log,
+            startup_context,
+            config,
+        ) = self.make_runtime()
 
         result = handle_command(
             "history",
@@ -133,6 +193,8 @@ class CommandTests(unittest.TestCase):
             state_report,
             engine,
             analyst,
+            classifier,
+            routing_log,
             startup_context,
             config,
         )
@@ -140,10 +202,50 @@ class CommandTests(unittest.TestCase):
         self.assertIn("0 total", result)
         self.assertIn("No proposals recorded yet.", result)
 
-    def test_memory_log_with_no_memory_returns_zero_records(self) -> None:
-        session, memory, proposal, state_report, engine, analyst, startup_context, config = (
-            self.make_runtime()
+    def test_routing_log_with_no_decisions_returns_zero_total(self) -> None:
+        (
+            session,
+            memory,
+            proposal,
+            state_report,
+            engine,
+            analyst,
+            classifier,
+            routing_log,
+            startup_context,
+            config,
+        ) = self.make_runtime()
+
+        result = handle_command(
+            "routing-log",
+            session,
+            memory,
+            proposal,
+            state_report,
+            engine,
+            analyst,
+            classifier,
+            routing_log,
+            startup_context,
+            config,
         )
+
+        self.assertIn("NAMMU Routing Log (0 decisions)", result)
+        self.assertIn("No routing decisions recorded yet.", result)
+
+    def test_memory_log_with_no_memory_returns_zero_records(self) -> None:
+        (
+            session,
+            memory,
+            proposal,
+            state_report,
+            engine,
+            analyst,
+            classifier,
+            routing_log,
+            startup_context,
+            config,
+        ) = self.make_runtime()
 
         result = handle_command(
             "memory-log",
@@ -153,6 +255,8 @@ class CommandTests(unittest.TestCase):
             state_report,
             engine,
             analyst,
+            classifier,
+            routing_log,
             startup_context,
             config,
         )
@@ -161,9 +265,18 @@ class CommandTests(unittest.TestCase):
         self.assertIn("No approved memory records yet.", result)
 
     def test_audit_returns_summary_prefix_and_has_no_side_effects(self) -> None:
-        session, memory, proposal, state_report, engine, analyst, startup_context, config = (
-            self.make_runtime()
-        )
+        (
+            session,
+            memory,
+            proposal,
+            state_report,
+            engine,
+            analyst,
+            classifier,
+            routing_log,
+            startup_context,
+            config,
+        ) = self.make_runtime()
 
         result = handle_command(
             "audit",
@@ -173,6 +286,8 @@ class CommandTests(unittest.TestCase):
             state_report,
             engine,
             analyst,
+            classifier,
+            routing_log,
             startup_context,
             config,
         )
@@ -180,6 +295,7 @@ class CommandTests(unittest.TestCase):
         self.assertTrue(result.startswith("inanna> [audit summary] "))
         self.assertEqual(proposal.pending_count(), 0)
         self.assertEqual(memory.memory_count(), 0)
+        self.assertEqual(len(routing_log), 0)
 
     def test_startup_commands_line_lists_expected_commands(self) -> None:
         self.assertEqual(
@@ -189,6 +305,7 @@ class CommandTests(unittest.TestCase):
                 "analyse",
                 "audit",
                 "history",
+                "routing-log",
                 "memory-log",
                 "status",
                 "diagnostics",
@@ -201,15 +318,24 @@ class CommandTests(unittest.TestCase):
         self.assertEqual(
             startup_commands_line(),
             (
-                "Commands: reflect, analyse, audit, history, memory-log, status, "
-                "diagnostics, approve, reject, forget, exit"
+                "Commands: reflect, analyse, audit, history, routing-log, "
+                "memory-log, status, diagnostics, approve, reject, forget, exit"
             ),
         )
 
     def test_forget_cancel_returns_no_memory_removed(self) -> None:
-        session, memory, proposal, state_report, engine, analyst, startup_context, config = (
-            self.make_runtime()
-        )
+        (
+            session,
+            memory,
+            proposal,
+            state_report,
+            engine,
+            analyst,
+            classifier,
+            routing_log,
+            startup_context,
+            config,
+        ) = self.make_runtime()
         self.write_memory_record(memory)
 
         result, output, prompts = self.run_forget_command(
@@ -219,6 +345,8 @@ class CommandTests(unittest.TestCase):
             state_report,
             engine,
             analyst,
+            classifier,
+            routing_log,
             startup_context,
             config,
             ["cancel"],
@@ -232,11 +360,21 @@ class CommandTests(unittest.TestCase):
         )
         self.assertEqual(memory.memory_count(), 1)
         self.assertEqual(proposal.history_report()["total"], 0)
+        self.assertEqual(len(routing_log), 0)
 
     def test_forget_approve_removes_memory_after_inline_proposal(self) -> None:
-        session, memory, proposal, state_report, engine, analyst, startup_context, config = (
-            self.make_runtime()
-        )
+        (
+            session,
+            memory,
+            proposal,
+            state_report,
+            engine,
+            analyst,
+            classifier,
+            routing_log,
+            startup_context,
+            config,
+        ) = self.make_runtime()
         self.write_memory_record(memory, "proposal-a")
 
         result, output, prompts = self.run_forget_command(
@@ -246,6 +384,8 @@ class CommandTests(unittest.TestCase):
             state_report,
             engine,
             analyst,
+            classifier,
+            routing_log,
             startup_context,
             config,
             ["proposal-a", "approve"],
@@ -270,9 +410,18 @@ class CommandTests(unittest.TestCase):
         )
 
     def test_forget_reject_retains_memory(self) -> None:
-        session, memory, proposal, state_report, engine, analyst, startup_context, config = (
-            self.make_runtime()
-        )
+        (
+            session,
+            memory,
+            proposal,
+            state_report,
+            engine,
+            analyst,
+            classifier,
+            routing_log,
+            startup_context,
+            config,
+        ) = self.make_runtime()
         self.write_memory_record(memory, "proposal-a")
 
         result, output, prompts = self.run_forget_command(
@@ -282,6 +431,8 @@ class CommandTests(unittest.TestCase):
             state_report,
             engine,
             analyst,
+            classifier,
+            routing_log,
             startup_context,
             config,
             ["proposal-a", "reject"],
@@ -302,9 +453,18 @@ class CommandTests(unittest.TestCase):
         self.assertEqual(history["rejected"], 1)
 
     def test_reflect_with_empty_context_returns_no_memory_message(self) -> None:
-        session, memory, proposal, state_report, engine, analyst, startup_context, config = (
-            self.make_runtime()
-        )
+        (
+            session,
+            memory,
+            proposal,
+            state_report,
+            engine,
+            analyst,
+            classifier,
+            routing_log,
+            startup_context,
+            config,
+        ) = self.make_runtime()
 
         result = handle_command(
             "reflect",
@@ -314,6 +474,8 @@ class CommandTests(unittest.TestCase):
             state_report,
             engine,
             analyst,
+            classifier,
+            routing_log,
             startup_context,
             config,
         )
@@ -323,11 +485,21 @@ class CommandTests(unittest.TestCase):
             "inanna> [memory fallback] I hold no approved memory of our prior conversations yet.",
         )
         self.assertEqual(proposal.pending_count(), 0)
+        self.assertEqual(len(routing_log), 0)
 
     def test_approve_with_no_pending_proposals_returns_honest_message(self) -> None:
-        session, memory, proposal, state_report, engine, analyst, startup_context, config = (
-            self.make_runtime()
-        )
+        (
+            session,
+            memory,
+            proposal,
+            state_report,
+            engine,
+            analyst,
+            classifier,
+            routing_log,
+            startup_context,
+            config,
+        ) = self.make_runtime()
 
         result = handle_command(
             "approve",
@@ -337,16 +509,27 @@ class CommandTests(unittest.TestCase):
             state_report,
             engine,
             analyst,
+            classifier,
+            routing_log,
             startup_context,
             config,
         )
 
         self.assertEqual(result, "No pending proposals.")
 
-    def test_analyse_generates_proposal_with_analyst_prefix(self) -> None:
-        session, memory, proposal, state_report, engine, analyst, startup_context, config = (
-            self.make_runtime()
-        )
+    def test_explicit_analyse_remains_direct_override(self) -> None:
+        (
+            session,
+            memory,
+            proposal,
+            state_report,
+            engine,
+            analyst,
+            classifier,
+            routing_log,
+            startup_context,
+            config,
+        ) = self.make_runtime()
 
         result = handle_command(
             "analyse What patterns do you see?",
@@ -356,18 +539,30 @@ class CommandTests(unittest.TestCase):
             state_report,
             engine,
             analyst,
+            classifier,
+            routing_log,
             startup_context,
             config,
         )
 
         self.assertTrue(result.startswith("analyst > [analysis fallback] "))
-        self.assertIn("[PROPOSAL]", result)
+        self.assertNotIn("nammu >", result)
         self.assertEqual(proposal.pending_count(), 1)
+        self.assertEqual(len(routing_log), 0)
 
-    def test_unknown_input_is_treated_as_conversation(self) -> None:
-        session, memory, proposal, state_report, engine, analyst, startup_context, config = (
-            self.make_runtime()
-        )
+    def test_unknown_input_is_auto_routed_to_crown_and_logged(self) -> None:
+        (
+            session,
+            memory,
+            proposal,
+            state_report,
+            engine,
+            analyst,
+            classifier,
+            routing_log,
+            startup_context,
+            config,
+        ) = self.make_runtime()
 
         result = handle_command(
             "hello there",
@@ -377,12 +572,97 @@ class CommandTests(unittest.TestCase):
             state_report,
             engine,
             analyst,
+            classifier,
+            routing_log,
             startup_context,
             config,
         )
 
-        self.assertIsInstance(result, str)
-        self.assertIn("assistant>", result)
+        self.assertIn("nammu > routing to crown faculty", result)
+        self.assertIn("inanna >", result)
+        self.assertEqual(proposal.pending_count(), 1)
+        self.assertEqual(len(routing_log), 1)
+        self.assertEqual(routing_log[0]["route"], "crown")
+
+    def test_normal_input_can_be_auto_routed_to_analyst_and_logged(self) -> None:
+        (
+            session,
+            memory,
+            proposal,
+            state_report,
+            engine,
+            analyst,
+            classifier,
+            routing_log,
+            startup_context,
+            config,
+        ) = self.make_runtime()
+
+        result = handle_command(
+            "Explain why governance needs readable limits",
+            session,
+            memory,
+            proposal,
+            state_report,
+            engine,
+            analyst,
+            classifier,
+            routing_log,
+            startup_context,
+            config,
+        )
+
+        self.assertIn("nammu > routing to analyst faculty", result)
+        self.assertIn("analyst > [analysis fallback] ", result)
+        self.assertEqual(proposal.pending_count(), 1)
+        self.assertEqual(len(routing_log), 1)
+        self.assertEqual(routing_log[0]["route"], "analyst")
+
+    def test_routing_log_reports_recorded_decisions(self) -> None:
+        (
+            session,
+            memory,
+            proposal,
+            state_report,
+            engine,
+            analyst,
+            classifier,
+            routing_log,
+            startup_context,
+            config,
+        ) = self.make_runtime()
+
+        handle_command(
+            "hello there",
+            session,
+            memory,
+            proposal,
+            state_report,
+            engine,
+            analyst,
+            classifier,
+            routing_log,
+            startup_context,
+            config,
+        )
+
+        result = handle_command(
+            "routing-log",
+            session,
+            memory,
+            proposal,
+            state_report,
+            engine,
+            analyst,
+            classifier,
+            routing_log,
+            startup_context,
+            config,
+        )
+
+        self.assertIn("NAMMU Routing Log (1 decisions):", result)
+        self.assertIn("[crown]", result)
+        self.assertIn("hello there", result)
 
 
 if __name__ == "__main__":

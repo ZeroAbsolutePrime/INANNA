@@ -9,6 +9,7 @@
       --bg: #0a0a0f;
       --voice: #c8a96e;
       --analyst: #8ab4c4;
+      --nammu: #6a8a7a;
       --border: #4a3a1e;
       --text: #b9b2a5;
       --user: #888888;
@@ -192,6 +193,13 @@
     .message-analyst .message-prefix,
     .message-analyst .message-content {
       color: var(--analyst);
+    }
+
+    .message-nammu .message-prefix,
+    .message-nammu .message-content {
+      color: var(--nammu);
+      font-size: 0.82rem;
+      letter-spacing: 0.06em;
     }
 
     .message-user .message-prefix,
@@ -442,6 +450,7 @@
       "reflect",
       "audit",
       "history",
+      "routing-log",
       "memory-log",
       "status",
       "diagnostics",
@@ -497,6 +506,11 @@
 
       if (payload.type === "analyst") {
         addMessage("analyst", payload.text);
+        return;
+      }
+
+      if (payload.type === "nammu") {
+        addMessage("nammu", payload.text);
         return;
       }
 
@@ -585,6 +599,10 @@
 
         if (message.role === "analyst") {
           prefix.textContent = "analyst :";
+        }
+
+        if (message.role === "nammu") {
+          prefix.textContent = "nammu :";
         }
 
         const content = document.createElement("div");
