@@ -1,168 +1,184 @@
-﻿# CURRENT PHASE: Cycle 4 - Phase 4.5 - The User Log
+﻿# CURRENT PHASE: Cycle 4 - Phase 4.6 - The Governed Invite
 **Status: ACTIVE**
 **Authorized by: ZAERA (Guardian) + Claude (Command Center)**
 **Date opened: 2026-04-19**
 **Cycle: 4 - The Civic Layer**
-**Replaces: Cycle 4 Phase 4.4 - The User Memory (COMPLETE)**
+**Replaces: Cycle 4 Phase 4.5 - The User Log (COMPLETE)**
 
 ---
 
 ## What This Phase Is
 
-Phase 4.4 gave memory a user identity.
-Phase 4.5 gives interactions a personal record.
+Phase 4.5 gave every user a personal record.
+Phase 4.6 governs how users arrive in the system.
 
-Every conversation turn a user has with INANNA is now logged
-to that user's personal interaction log. The log is:
-  - Private: readable only by that user and the Guardian
-  - Persistent: survives across sessions
-  - Honest: contains the actual input and response, not a summary
-  - Governed: the user can read it, but cannot alter it
+Right now, user creation is a single proposal flow:
+the Guardian types "create-user Alice user default",
+approves the proposal, and Alice exists.
+Alice has no agency in this. She is created, not invited.
 
-This is Law 4 (Readable System Truth) applied to the user:
-a person should be able to ask what INANNA has done with
-their words, and receive a clear, bounded, honest answer.
+Phase 4.6 introduces the Governed Invite:
+a two-step onboarding where the Guardian or Operator
+generates an invite token, and the new person activates
+their account by presenting that token.
 
-This phase also fixes the noted issue from Phase 4.4:
-create-user now records the actual Guardian user_id as created_by,
-not the string "system".
+This matters for three reasons:
+
+1. Consent: the person chooses to join, not just appears.
+2. Identity: the person sets their own display name.
+3. Auditability: the full invite chain is recorded.
+
+The invite token is a short, human-readable code.
+Not a UUID. Something a person can type or share easily.
+Example: INANNA-7X4K-2M9P
 
 ---
 
 ## What You Are Building
 
-### Task 1 - inanna/core/user_log.py
+### Task 1 - Invite record in inanna/core/user.py
 
-Create: inanna/core/user_log.py
-
-One class: UserLog
-
-UserLog:
-  __init__(logs_dir: Path)
-  - logs_dir: inanna/data/user_logs/
-  - One JSONL file per user: {user_id}.jsonl
-
-  append(user_id, session_id, role, content, response_preview) -> None
-  - Appends one entry to the user's log file
-  - Entry format:
-    {
-      "timestamp": "ISO",
-      "session_id": "...",
-      "role": "user",
-      "content": "full input text",
-      "response_preview": "first 200 chars of INANNA response"
-    }
-
-  load(user_id, limit=50) -> list[dict]
-  - Loads the last N entries from the user log
-  - Returns [] if no log exists
-
-  entry_count(user_id) -> int
-  - Returns total number of log entries for a user
-
-  clear(user_id) -> int
-  - Clears all entries for a user
-  - Returns count of cleared entries
-  - Requires Guardian approval via proposal (handled in main.py/server.py)
-
-### Task 2 - Log every conversation turn
-
-In main.py and server.py, after every successful Faculty response
-(crown or analyst), append to the active user's log:
+Add to user.py:
 
 ```python
-if active_token:
-    user_log.append(
-        user_id=active_token.user_id,
-        session_id=session_id,
-        role="user",
-        content=user_input,
-        response_preview=response_text[:200],
-    )
+from dataclasses import dataclass
+
+@dataclass
+class InviteRecord:
+    invite_code: str      # e.g. INANNA-7X4K-2M9P
+    role: str
+    assigned_realms: list[str]
+    created_by: str       # user_id of inviter
+    created_at: str
+    expires_at: str       # created_at + 48 hours
+    status: str           # "pending" | "accepted" | "expired"
+    accepted_by: str      # user_id once accepted, else ""
 ```
 
-Logging is silent — it does not generate a proposal.
-It does not appear in the conversation.
-It is infrastructure, not governance.
+Add to UserManager:
 
-### Task 3 - The "my-log" command
+  create_invite(role, assigned_realms, created_by) -> InviteRecord
+    - Generates invite_code: "INANNA-" + 4 random uppercase chars
+      + "-" + 4 random uppercase chars
+    - Stores invite in inanna/data/invites/{invite_code}.json
+    - expires_at = created_at + 48 hours
 
-Add command: my-log
+  get_invite(invite_code) -> InviteRecord | None
 
-Privilege required: read_own_log
+  accept_invite(invite_code, display_name) -> UserRecord | None
+    - Validates invite: exists, status==pending, not expired
+    - Creates the UserRecord via create_user()
+    - Updates invite status to "accepted", accepted_by = new user_id
+    - Returns the new UserRecord
 
-Output (newest first):
+  list_invites(status=None) -> list[InviteRecord]
+    - Lists all invites, optionally filtered by status
+
+  expire_old_invites() -> int
+    - Marks expired invites, returns count
+    - Called at startup
+
+### Task 2 - "invite" command
+
+Add command: invite [role] [realm]
+
+Privilege required: invite_users
+(operators and guardians have this privilege)
+
+Flow:
+1. Check privilege
+2. Create a proposal:
+   [INVITE PROPOSAL] | Create invite: role=user realm=default | status: pending
+3. After approval: generate invite record, show the code:
+
 ```
-Your interaction log (N entries):
-
-  Apr 19 22:15  Hello, I am ZAERA
-    inanna > Hello ZAERA! It is wonderful to have you here...
-
-  Apr 19 21:45  What is the nature of consciousness?
-    inanna > That is one of the deepest questions in philosophy...
-```
-
-Show last 20 entries by default.
-
-### Task 4 - Guardian log access
-
-Add command: user-log [display_name]
-
-Privilege required: all (Guardian only)
-
-Shows the interaction log for any named user.
-Same format as my-log.
-
-Output header:
-```
-Interaction log for Alice (user_abc12345) — N entries:
-```
-
-This is the Guardian's window into any user's history.
-It is not surveillance — it is accountability.
-The user knows their log exists (Law 4).
-The Guardian can read it (Law 3 — governance above the model).
-
-### Task 5 - Log entry count in status payload
-
-Add to the status payload:
-  "user_log_count": N   (entries for the active user)
-
-### Task 6 - Fix create-user created_by
-
-In main.py and server.py, when processing a create_user proposal
-approval, pass the active_token.user_id as created_by instead of
-the string "system":
-
-```python
-created_by = active_token.user_id if active_token else "system"
+invite > Invite created.
+invite > Code: INANNA-7X4K-2M9P
+invite > Role: user  Realm: default
+invite > Expires: Apr 21 22:00  (48 hours)
+invite > Share this code with the person you are inviting.
+invite > They join with: join INANNA-7X4K-2M9P [their name]
 ```
 
-### Task 7 - UserLog in the data directory
+### Task 3 - "join" command
 
-User logs live at: inanna/data/user_logs/{user_id}.jsonl
+Add command: join [invite_code] [display_name]
 
-This directory is created automatically on first log write.
-It is realm-agnostic for now — one global log per user.
-(Realm-scoped logs are a future enhancement.)
+No privilege required — this is how new people enter.
 
-### Task 8 - Update identity.py and state.py
+Flow:
+1. Look up invite by code
+2. If not found: "join > Invalid invite code."
+3. If expired: "join > This invite has expired."
+4. If already accepted: "join > This invite has already been used."
+5. If valid:
+   - Call accept_invite(code, display_name)
+   - Issue a session token for the new user
+   - Set active_token to the new user
+   - Show:
 
-CURRENT_PHASE = "Cycle 4 - Phase 4.5 - The User Log"
+```
+join > Welcome, Alice.
+join > Your account has been created.
+join > Role: user  Realm: default
+join > You are now logged in.
+join > Type "whoami" to see your session details.
+```
 
-Add "my-log" and "user-log" to STARTUP_COMMANDS and capabilities.
+The join command does NOT require a proposal.
+The invite itself was proposal-governed.
+The acceptance is the fulfillment of that proposal.
 
-### Task 9 - Tests
+### Task 4 - "invites" command
 
-Create inanna/tests/test_user_log.py:
-  - UserLog can be instantiated with a temp directory
-  - append() creates the log file if absent
-  - load() returns empty list for missing file
-  - load() returns correct entries after append
-  - entry_count() returns 0 for missing file
-  - entry_count() returns correct count after appends
-  - clear() removes all entries and returns count
-  - Multiple users have separate log files
+Add command: invites
+
+Privilege required: all (Guardian) or invite_users (Operator)
+
+Shows all invites the active user created (or all, if Guardian):
+
+```
+Invites (3 total):
+  [pending]   INANNA-7X4K-2M9P  user/default  expires Apr 21
+  [accepted]  INANNA-3R8J-5N2Q  user/default  accepted by Alice
+  [expired]   INANNA-1M4P-9K7X  operator/arcanum  expired Apr 18
+```
+
+### Task 5 - Invite audit events
+
+When an invite is created, append to session_audit:
+  {"event_type": "invite", "summary": "invite INANNA-7X4K-2M9P created for user/default"}
+
+When an invite is accepted, append:
+  {"event_type": "join", "summary": "Alice joined via invite INANNA-7X4K-2M9P"}
+
+### Task 6 - expire_old_invites at startup
+
+Call expire_old_invites() at server and CLI startup,
+alongside ensure_guardian_exists().
+
+Print how many were expired if > 0:
+  "Expired N invite(s)."
+
+### Task 7 - Update identity.py and state.py
+
+CURRENT_PHASE = "Cycle 4 - Phase 4.6 - The Governed Invite"
+
+Add "invite", "join", "invites" to STARTUP_COMMANDS and capabilities.
+
+### Task 8 - Tests
+
+Add to inanna/tests/test_user.py:
+  - UserManager.create_invite() creates an InviteRecord
+  - Invite code starts with "INANNA-"
+  - get_invite() returns InviteRecord for valid code
+  - get_invite() returns None for unknown code
+  - accept_invite() creates a UserRecord and updates invite status
+  - accept_invite() returns None for expired invite
+  - accept_invite() returns None for already-accepted invite
+  - list_invites() returns all invites
+  - list_invites(status="pending") filters correctly
+  - expire_old_invites() marks past-expiry invites as expired
 
 Update test_identity.py: update CURRENT_PHASE assertion.
 Update test_state.py and test_commands.py: add new commands.
@@ -172,23 +188,21 @@ Update test_state.py and test_commands.py: add new commands.
 ## Permitted file changes
 
 inanna/identity.py              <- MODIFY: update CURRENT_PHASE
-inanna/main.py                  <- MODIFY: instantiate UserLog,
-                                           log every conversation turn,
-                                           my-log command,
-                                           user-log command,
-                                           fix create-user created_by
+inanna/main.py                  <- MODIFY: invite/join/invites commands,
+                                           expire_old_invites at startup
 inanna/core/
-  user_log.py                   <- NEW: UserLog class
+  user.py                       <- MODIFY: InviteRecord dataclass,
+                                           create_invite(), get_invite(),
+                                           accept_invite(), list_invites(),
+                                           expire_old_invites()
   state.py                      <- MODIFY: add new commands
 inanna/ui/
-  server.py                     <- MODIFY: instantiate UserLog,
-                                           log every conversation turn,
-                                           my-log and user-log commands,
-                                           user_log_count in status payload,
-                                           fix create-user created_by
+  server.py                     <- MODIFY: invite/join/invites commands,
+                                           expire_old_invites at startup,
+                                           invite/join audit events
   static/index.html             <- no changes
 inanna/tests/
-  test_user_log.py              <- NEW
+  test_user.py                  <- MODIFY: add invite tests
   test_identity.py              <- MODIFY: update phase assertion
   test_state.py                 <- MODIFY: add capabilities
   test_commands.py              <- MODIFY: add capabilities
@@ -197,26 +211,26 @@ inanna/tests/
 
 ## What You Are NOT Building
 
-- No UI panel for the user log (Phase 4.8)
-- No log export or download
-- No log search or filtering
-- No log encryption
-- No per-realm log scoping
-- Do not log governance blocks (those stay in the governance log)
-- Do not log tool execution details (those stay in the audit surface)
-- Do not add log entries for commands — only conversation turns
+- No email delivery of invite codes
+- No invite UI panel (Phase 4.8)
+- No invite revocation (the Guardian can always delete a user)
+- No invite renewal or extension
+- No multi-use invites (each code is single-use)
+- No realm creation through the invite flow
+- Do not change the existing create-user flow — it stays as is
+  (Guardians can still create users directly)
 
 ---
 
-## Definition of Done for Phase 4.5
+## Definition of Done for Phase 4.6
 
-- [ ] core/user_log.py exists with UserLog class
-- [ ] Every conversation turn appended to active user log
-- [ ] "my-log" shows last 20 entries for the active user
-- [ ] "user-log [name]" shows any user log (Guardian only)
-- [ ] Log entries include timestamp, content, response preview
-- [ ] user_log_count in status payload
-- [ ] create-user now records actual Guardian user_id as created_by
+- [ ] InviteRecord dataclass exists in user.py
+- [ ] create_invite() generates INANNA-XXXX-XXXX codes
+- [ ] "invite [role] [realm]" creates invite via proposal
+- [ ] "join [code] [name]" accepts invite and logs in the new user
+- [ ] "invites" lists invites with status
+- [ ] Expired invites marked at startup
+- [ ] Invite and join events in audit trail
 - [ ] CURRENT_PHASE updated
 - [ ] All tests pass: py -3 -m unittest discover -s tests
 
@@ -225,14 +239,14 @@ inanna/tests/
 ## Handoff to Command Center
 
 When Definition of Done is met, Codex must:
-1. Commit with message: cycle4-phase5-complete
-2. Write docs/implementation/CYCLE4_PHASE5_REPORT.md
-3. Stop. Do not begin Phase 4.6 without a new CURRENT_PHASE.md.
+1. Commit with message: cycle4-phase6-complete
+2. Write docs/implementation/CYCLE4_PHASE6_REPORT.md
+3. Stop. Do not begin Phase 4.7 without a new CURRENT_PHASE.md.
 
 ---
 
 *Written by: Claude (Command Center)*
 *Guardian approval: ZAERA*
 *Date: 2026-04-19*
-*A person should be able to ask what was done with their words.*
-*Phase 4.5 makes that question answerable.*
+*A person chooses to enter. That choice is recorded.*
+*The invite is the governance. The joining is the consent.*
