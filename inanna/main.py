@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -18,6 +19,7 @@ from core.nammu_memory import (
 )
 from core.operator import OperatorFaculty, ToolResult
 from core.proposal import Proposal
+from core.realm import DEFAULT_REALM, RealmConfig, RealmManager
 from core.session import AnalystFaculty, Engine, Session
 from core.state import StateReport
 from identity import phase_banner
@@ -30,11 +32,13 @@ DATA_ROOT = APP_ROOT / "data"
 SESSION_DIR = DATA_ROOT / "sessions"
 MEMORY_DIR = DATA_ROOT / "memory"
 PROPOSAL_DIR = DATA_ROOT / "proposals"
+NAMMU_DIR = DATA_ROOT / "nammu"
 STARTUP_COMMANDS = (
     "reflect",
     "analyse",
     "audit",
     "guardian",
+    "realms",
     "history",
     "routing-log",
     "nammu-log",
@@ -46,6 +50,82 @@ STARTUP_COMMANDS = (
     "forget",
     "exit",
 )
+
+
+def get_active_realm_name() -> str:
+    realm_name = os.getenv("INANNA_REALM", DEFAULT_REALM).strip()
+    return realm_name or DEFAULT_REALM
+
+
+def realm_is_empty(realm_dirs: dict[str, Path]) -> bool:
+    return all(not any(path.iterdir()) for path in realm_dirs.values())
+
+
+def flat_data_contains_files(data_root: Path) -> bool:
+    for key in ("sessions", "memory", "proposals", "nammu"):
+        flat_dir = data_root / key
+        if flat_dir.exists() and any(path.is_file() for path in flat_dir.iterdir()):
+            return True
+    return False
+
+
+def migrate_flat_data_to_default_realm(
+    data_root: Path,
+    realm_dirs: dict[str, Path],
+) -> int:
+    migrated = 0
+    for key in ("sessions", "memory", "proposals", "nammu"):
+        flat_dir = data_root / key
+        realm_dir = realm_dirs[key]
+        realm_dir.mkdir(parents=True, exist_ok=True)
+        if flat_dir.exists():
+            for path in flat_dir.iterdir():
+                if path.is_file():
+                    destination = realm_dir / path.name
+                    if not destination.exists():
+                        path.rename(destination)
+                        migrated += 1
+    return migrated
+
+
+def initialize_realm_context(
+    data_root: Path,
+) -> tuple[RealmManager, RealmConfig, dict[str, Path], int]:
+    realm_manager = RealmManager(data_root)
+    default_realm = realm_manager.ensure_default_realm()
+    default_dirs = realm_manager.realm_data_dirs(default_realm.name)
+    migrated = 0
+    if realm_is_empty(default_dirs) and flat_data_contains_files(data_root):
+        migrated = migrate_flat_data_to_default_realm(data_root, default_dirs)
+
+    active_realm_name = get_active_realm_name()
+    if not realm_manager.realm_exists(active_realm_name):
+        realm_manager.create_realm(active_realm_name)
+
+    active_realm = realm_manager.load_realm(active_realm_name)
+    if active_realm is None:
+        active_realm = realm_manager.ensure_default_realm()
+        active_realm_name = active_realm.name
+
+    realm_dirs = realm_manager.realm_data_dirs(active_realm_name)
+    for path in realm_dirs.values():
+        path.mkdir(parents=True, exist_ok=True)
+
+    return realm_manager, active_realm, realm_dirs, migrated
+
+
+def build_realms_report(
+    realm_manager: RealmManager,
+    active_realm_name: str,
+) -> str:
+    names = realm_manager.list_realms()
+    lines = [f"realms > Available realms ({len(names)}):"]
+    for name in names:
+        config = realm_manager.load_realm(name)
+        purpose = config.purpose if config and config.purpose else "No purpose set."
+        lines.append(f"  [{name}]  {purpose}")
+    lines.append(f"  Active: {active_realm_name}")
+    return "\n".join(lines)
 
 
 def ensure_guardian_metrics(
@@ -68,7 +148,7 @@ def ensure_directories() -> None:
     SESSION_DIR.mkdir(parents=True, exist_ok=True)
     MEMORY_DIR.mkdir(parents=True, exist_ok=True)
     PROPOSAL_DIR.mkdir(parents=True, exist_ok=True)
-    (DATA_ROOT / "nammu").mkdir(parents=True, exist_ok=True)
+    NAMMU_DIR.mkdir(parents=True, exist_ok=True)
 
 
 def startup_commands_line() -> str:
@@ -90,6 +170,8 @@ def build_diagnostics_report(
     config: Config,
     engine: Engine,
     session: Session,
+    memory_dir: Path | None = None,
+    proposal_dir: Path | None = None,
 ) -> str:
     model_url = config.model_url or "not set"
     model_name = config.model_name or "not set"
@@ -100,8 +182,8 @@ def build_diagnostics_report(
         f"API key: {api_key_state}",
         f"Mode: {engine.mode}",
         f"Session file: {session.session_path}",
-        f"Memory directory: {MEMORY_DIR}",
-        f"Proposal directory: {PROPOSAL_DIR}",
+        f"Memory directory: {memory_dir or MEMORY_DIR}",
+        f"Proposal directory: {proposal_dir or PROPOSAL_DIR}",
     ]
     return "\n".join(lines)
 
@@ -463,6 +545,8 @@ def handle_command(
     guardian: GuardianFaculty | None = None,
     guardian_metrics: dict[str, int] | None = None,
     nammu_dir: Path | None = None,
+    realm_manager: RealmManager | None = None,
+    active_realm: RealmConfig | None = None,
 ) -> str | None:
     normalized = command.strip()
     if not normalized:
@@ -483,7 +567,23 @@ def handle_command(
         )
 
     if lowered == "diagnostics":
-        return build_diagnostics_report(config=config, engine=engine, session=session)
+        return build_diagnostics_report(
+            config=config,
+            engine=engine,
+            session=session,
+            memory_dir=memory.memory_dir,
+            proposal_dir=proposal.proposal_dir,
+        )
+
+    if lowered == "realms":
+        active_realm_name = active_realm.name if active_realm else DEFAULT_REALM
+        if realm_manager is None:
+            return (
+                f"realms > Available realms (1):\n"
+                f"  [{active_realm_name}]  No purpose set.\n"
+                f"  Active: {active_realm_name}"
+            )
+        return build_realms_report(realm_manager, active_realm_name)
 
     if lowered == "history":
         return build_history_report(proposal.history_report())
@@ -680,6 +780,13 @@ def handle_command(
 
 
 def main() -> None:
+    global SESSION_DIR, MEMORY_DIR, PROPOSAL_DIR, NAMMU_DIR
+
+    realm_manager, active_realm, realm_dirs, migrated = initialize_realm_context(DATA_ROOT)
+    SESSION_DIR = realm_dirs["sessions"]
+    MEMORY_DIR = realm_dirs["memory"]
+    PROPOSAL_DIR = realm_dirs["proposals"]
+    NAMMU_DIR = realm_dirs["nammu"]
     ensure_directories()
 
     config = Config.from_env()
@@ -703,6 +810,9 @@ def main() -> None:
     routing_log: list[dict[str, str]] = []
     guardian_metrics = {"governance_blocks": 0, "tool_executions": 0}
 
+    if migrated:
+        print(f"Migrated {migrated} files to default realm.")
+
     if engine.verify_connection():
         print(f"Model connected: {config.model_name} at {config.model_url}")
     else:
@@ -717,7 +827,8 @@ def main() -> None:
         context_summary=startup_context["summary_lines"],
     )
 
-    print(phase_banner())
+    print(f"Phase: {phase_banner()}")
+    print(f"Realm: {active_realm.name}")
     print(f"Session ID: {session.session_id}")
     print_startup_context(startup_context["summary_lines"])
     print(startup_commands_line())
@@ -749,7 +860,9 @@ def main() -> None:
             operator=operator,
             guardian=guardian,
             guardian_metrics=guardian_metrics,
-            nammu_dir=DATA_ROOT / "nammu",
+            nammu_dir=NAMMU_DIR,
+            realm_manager=realm_manager,
+            active_realm=active_realm,
         )
         if result is None:
             print("Session closed.")

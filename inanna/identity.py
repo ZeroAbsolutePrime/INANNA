@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 
-CURRENT_PHASE = "Cycle 2 - Phase 9 - The Multi-Faculty Proof"
+CURRENT_PHASE = "Cycle 3 - Phase 1 - The Realm Boundary"
 
 CYCLE2_SUMMARY = (
     "Cycle 2 built the NAMMU Kernel: web interface, two Faculties, "

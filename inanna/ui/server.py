@@ -34,11 +34,13 @@ from main import (
     build_history_report,
     build_memory_log_report,
     build_nammu_log_report,
+    build_realms_report,
     build_routing_log_report,
     build_tool_result_text,
     build_tool_context_lines,
     create_tool_use_proposal,
     create_memory_request_proposal,
+    initialize_realm_context,
 )
 
 APP_ROOT = Path(__file__).resolve().parent.parent
@@ -85,12 +87,17 @@ def run_http_server() -> None:
 class InterfaceServer:
     def __init__(self) -> None:
         self.data_root = APP_ROOT / "data"
-        self.nammu_dir = self.data_root / "nammu"
-        self.session_dir = self.data_root / "sessions"
-        self.memory_dir = self.data_root / "memory"
-        self.proposal_dir = self.data_root / "proposals"
-        for d in [self.nammu_dir, self.session_dir, self.memory_dir, self.proposal_dir]:
-            d.mkdir(parents=True, exist_ok=True)
+        self.realm_manager, self.active_realm, realm_dirs, migrated = initialize_realm_context(
+            self.data_root
+        )
+        self.nammu_dir = realm_dirs["nammu"]
+        self.session_dir = realm_dirs["sessions"]
+        self.memory_dir = realm_dirs["memory"]
+        self.proposal_dir = realm_dirs["proposals"]
+        self.startup_notice = ""
+        if migrated:
+            self.startup_notice = f"Migrated {migrated} files to default realm."
+            print(self.startup_notice)
 
         self.config = Config.from_env()
         self.memory = Memory(session_dir=self.session_dir, memory_dir=self.memory_dir)
@@ -382,6 +389,14 @@ class InterfaceServer:
             report = await asyncio.to_thread(self.proposal.history_report)
             await self.broadcast({"type": "system", "text": build_history_report(report)})
             await self.broadcast_state()
+        elif cmd == "realms":
+            report = await asyncio.to_thread(
+                build_realms_report,
+                self.realm_manager,
+                self.active_realm.name,
+            )
+            await self.broadcast({"type": "system", "text": report})
+            await self.broadcast_state()
         elif cmd == "routing-log":
             report = await asyncio.to_thread(build_routing_log_report, self.routing_log)
             await self.broadcast({"type": "system", "text": report})
@@ -399,7 +414,12 @@ class InterfaceServer:
             await self.broadcast_state()
         elif cmd == "diagnostics":
             report = await asyncio.to_thread(
-                build_diagnostics_report, self.config, self.engine, self.session
+                build_diagnostics_report,
+                self.config,
+                self.engine,
+                self.session,
+                self.memory_dir,
+                self.proposal_dir,
             )
             await self.broadcast({"type": "system", "text": report})
             await self.broadcast_state()
@@ -572,6 +592,8 @@ class InterfaceServer:
         pend = self.proposal.pending_count()
         return {
             "phase": phase_banner(),
+            "realm": self.active_realm.name,
+            "realm_purpose": self.active_realm.purpose,
             "mode": self.engine.mode,
             "session_id": self.session.session_id,
             "memory_count": mem,
@@ -599,12 +621,17 @@ class InterfaceServer:
         ]
 
     async def send_initial_state(self, connection: ServerConnection) -> None:
-        for payload in [
-            {"type": "status", "data": self.build_status_payload()},
-            {"type": "memory_update", "records": self.memory.memory_log_report()["records"]},
-            {"type": "proposal", "records": self.build_pending_proposals()},
-            {"type": "system", "text": "INANNA NYX interface online."},
-        ]:
+        payloads = [{"type": "status", "data": self.build_status_payload()}]
+        if self.startup_notice:
+            payloads.append({"type": "system", "text": self.startup_notice})
+        payloads.extend(
+            [
+                {"type": "memory_update", "records": self.memory.memory_log_report()["records"]},
+                {"type": "proposal", "records": self.build_pending_proposals()},
+                {"type": "system", "text": "INANNA NYX interface online."},
+            ]
+        )
+        for payload in payloads:
             await self.send_json(connection, payload)
         alerts, report = self.inspect_guardian()
         if any(alert.level in {"warn", "critical"} for alert in alerts):

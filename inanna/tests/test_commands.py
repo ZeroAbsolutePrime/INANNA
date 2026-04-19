@@ -12,6 +12,7 @@ from core.memory import Memory
 from core.nammu import IntentClassifier
 from core.operator import ToolResult
 from core.proposal import Proposal
+from core.realm import RealmManager
 from core.session import AnalystFaculty, Engine, Session
 from core.state import StateReport
 from main import STARTUP_COMMANDS, handle_command, startup_commands_line
@@ -337,6 +338,7 @@ class CommandTests(unittest.TestCase):
                 "analyse",
                 "audit",
                 "guardian",
+                "realms",
                 "history",
                 "routing-log",
                 "nammu-log",
@@ -352,10 +354,49 @@ class CommandTests(unittest.TestCase):
         self.assertEqual(
             startup_commands_line(),
             (
-                "Commands: reflect, analyse, audit, guardian, history, "
-                "routing-log, nammu-log, memory-log, status, diagnostics, approve, reject, forget, exit"
+                "Commands: reflect, analyse, audit, guardian, realms, history, "
+                "routing-log, nammu-log, memory-log, status, diagnostics, approve, reject, "
+                "forget, exit"
             ),
         )
+
+    def test_realms_command_lists_available_realms(self) -> None:
+        (
+            session,
+            memory,
+            proposal,
+            state_report,
+            engine,
+            analyst,
+            classifier,
+            routing_log,
+            startup_context,
+            config,
+        ) = self.make_runtime()
+        realm_manager = RealmManager(session.session_path.parent.parent / "data")
+        active_realm = realm_manager.ensure_default_realm()
+        realm_manager.create_realm("work", purpose="Work-related conversations and analysis.")
+
+        result = handle_command(
+            "realms",
+            session,
+            memory,
+            proposal,
+            state_report,
+            engine,
+            analyst,
+            classifier,
+            routing_log,
+            startup_context,
+            config,
+            realm_manager=realm_manager,
+            active_realm=active_realm,
+        )
+
+        self.assertIn("realms > Available realms (2):", result)
+        self.assertIn("[default]  The default operational context.", result)
+        self.assertIn("[work]  Work-related conversations and analysis.", result)
+        self.assertIn("Active: default", result)
 
     def test_nammu_log_with_no_history_reports_empty_persistent_state(self) -> None:
         (
