@@ -105,8 +105,8 @@ class IdentityTests(unittest.TestCase):
     def test_current_phase_constant_matches_phase_banner(self) -> None:
         self.assertEqual(CURRENT_PHASE, phase_banner())
 
-    def test_current_phase_names_guardian_check(self) -> None:
-        self.assertIn("Guardian Check", CURRENT_PHASE)
+    def test_current_phase_names_nammu_memory(self) -> None:
+        self.assertIn("NAMMU Memory", CURRENT_PHASE)
 
 
 if __name__ == "__main__":

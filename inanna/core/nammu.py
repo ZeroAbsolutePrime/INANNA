@@ -10,7 +10,7 @@ CLASSIFICATION_PROMPT = build_nammu_prompt()
 class IntentClassifier:
     def __init__(self, engine, governance=None) -> None:
         self.engine = engine
-        self.governance = governance
+        self.governance = governance or GovernanceLayer(engine=engine)
 
     def classify(self, user_input: str) -> str:
         messages = [
@@ -30,26 +30,11 @@ class IntentClassifier:
 
     def route(self, user_input: str) -> GovernanceResult:
         nammu_route = self.classify(user_input)
-        governance = self.governance or GovernanceLayer()
-        return governance.check(user_input, nammu_route)
+        return self.governance.check(user_input, nammu_route)
 
     def _heuristic_classify(self, text: str) -> str:
-        analyst_signals = [
-            "analyse",
-            "analyze",
-            "explain",
-            "why does",
-            "how does",
-            "what is the relationship",
-            "compare",
-            "examine",
-            "breakdown",
-            "structured",
-            "reasoning",
-            "implications",
-            "technical",
-        ]
+        signals = self.governance.analyst_signals if self.governance else []
         lower = text.lower()
-        if any(signal in lower for signal in analyst_signals):
+        if any(signal in lower for signal in signals):
             return "analyst"
         return "crown"

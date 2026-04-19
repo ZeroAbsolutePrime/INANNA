@@ -24,6 +24,7 @@ class GuardianFaculty:
         routing_log: list[dict[str, Any]],
         governance_blocks: int,
         tool_executions: int,
+        governance_history: list[dict[str, Any]] | None = None,
     ) -> list[GuardianAlert]:
         del session_id
         del routing_log
@@ -74,6 +75,30 @@ class GuardianFaculty:
                     message=(
                         f"{tool_executions} tool executions in this session. "
                         "Tool use is governed and visible."
+                    ),
+                )
+            )
+
+        persisted_blocks = [
+            item
+            for item in (governance_history or [])
+            if item.get("decision") == "block"
+        ]
+        persisted_sessions = {
+            item.get("session_id") for item in persisted_blocks if item.get("session_id")
+        }
+        # DECISION POINT: Phase 8 names PERSISTENT_BOUNDARY_TESTING but does
+        # not define a threshold, so five blocked governance events across at
+        # least two sessions is treated as persistent.
+        if len(persisted_blocks) >= 5 and len(persisted_sessions) >= 2:
+            alerts.append(
+                GuardianAlert(
+                    level="warn",
+                    code="PERSISTENT_BOUNDARY_TESTING",
+                    message=(
+                        f"{len(persisted_blocks)} governance blocks appear across "
+                        f"{len(persisted_sessions)} sessions. Boundary testing may "
+                        "be persistent over time."
                     ),
                 )
             )

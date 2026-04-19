@@ -6,9 +6,16 @@ from pathlib import Path
 from dotenv import load_dotenv
 
 from config import Config
+from core.governance import GovernanceLayer
 from core.guardian import GuardianFaculty
 from core.memory import Memory
 from core.nammu import IntentClassifier
+from core.nammu_memory import (
+    append_governance_event,
+    append_routing_event,
+    load_governance_history,
+    load_routing_history,
+)
 from core.operator import OperatorFaculty, ToolResult
 from core.proposal import Proposal
 from core.session import AnalystFaculty, Engine, Session
@@ -30,6 +37,7 @@ STARTUP_COMMANDS = (
     "guardian",
     "history",
     "routing-log",
+    "nammu-log",
     "memory-log",
     "status",
     "diagnostics",
@@ -50,10 +58,17 @@ def ensure_guardian_metrics(
     return guardian_metrics
 
 
+def resolve_nammu_dir(session: Session, nammu_dir: Path | None = None) -> Path:
+    if nammu_dir is not None:
+        return nammu_dir
+    return session.session_path.parent.parent / "nammu"
+
+
 def ensure_directories() -> None:
     SESSION_DIR.mkdir(parents=True, exist_ok=True)
     MEMORY_DIR.mkdir(parents=True, exist_ok=True)
     PROPOSAL_DIR.mkdir(parents=True, exist_ok=True)
+    (DATA_ROOT / "nammu").mkdir(parents=True, exist_ok=True)
 
 
 def startup_commands_line() -> str:
@@ -154,18 +169,87 @@ def build_routing_log_report(routing_log: list[dict[str, str]]) -> str:
     return "\n".join(lines)
 
 
+def build_nammu_log_report(nammu_dir: Path) -> str:
+    routing_history = load_routing_history(nammu_dir)
+    governance_history = load_governance_history(nammu_dir)
+    lines = [
+        (
+            "NAMMU Memory "
+            f"({len(routing_history)} routing, {len(governance_history)} governance):"
+        ),
+        "",
+        "Routing history:",
+    ]
+
+    if not routing_history:
+        lines.append("  No persisted routing history yet.")
+    else:
+        for record in routing_history:
+            lines.append(
+                f"  [{record.get('route', '?')}] {record.get('timestamp', '')} | "
+                f"session {record.get('session_id', '?')} | {record.get('input_preview', '')}"
+            )
+
+    lines.extend(["", "Governance history:"])
+    if not governance_history:
+        lines.append("  No persisted governance history yet.")
+    else:
+        for record in governance_history:
+            lines.append(
+                f"  [{record.get('decision', '?')}] {record.get('timestamp', '')} | "
+                f"session {record.get('session_id', '?')}"
+            )
+            lines.append(f"       {record.get('reason', '') or 'No reason recorded.'}")
+            lines.append(f"       {record.get('input_preview', '')}")
+
+    return "\n".join(lines)
+
+
 def append_routing_decision(
     routing_log: list[dict[str, str]],
+    session: Session,
     route: str,
     user_input: str,
+    nammu_dir: Path | None = None,
 ) -> None:
-    routing_log.append(
-        {
-            "timestamp": datetime.now(timezone.utc).isoformat(),
-            "input_preview": user_input[:60],
-            "route": route,
-        }
+    record = {
+        "timestamp": datetime.now(timezone.utc).isoformat(),
+        "input_preview": user_input[:60],
+        "route": route,
+    }
+    routing_log.append(record)
+    append_routing_event(
+        resolve_nammu_dir(session, nammu_dir),
+        session.session_id,
+        route,
+        record["input_preview"],
     )
+
+
+def append_governance_decision(
+    session: Session,
+    governance_result,
+    user_input: str,
+    nammu_dir: Path | None = None,
+) -> None:
+    if governance_result.suggests_tool:
+        append_governance_event(
+            resolve_nammu_dir(session, nammu_dir),
+            session.session_id,
+            "tool",
+            "Current information requires governed tool use.",
+            user_input[:60],
+        )
+        return
+
+    if governance_result.decision != "allow":
+        append_governance_event(
+            resolve_nammu_dir(session, nammu_dir),
+            session.session_id,
+            governance_result.decision,
+            governance_result.reason,
+            user_input[:60],
+        )
 
 
 def create_memory_request_proposal(
@@ -267,10 +351,25 @@ def complete_tool_resolution(
         guardian_metrics["tool_executions"] += 1
         result = operator.execute(tool, {"query": query})
         operator_text = build_tool_result_text(result)
+        model_connected = engine._connected
         assistant_text = engine.respond(
             context_summary=startup_context["summary_lines"] + build_tool_context_lines(result),
             conversation=session.events,
         )
+        if result.success and model_connected and engine.mode == "fallback":
+            created = proposal.create(
+                what="Update the memory store from the latest session turn",
+                why="Keep the next session grounded in readable, user-approved context.",
+                payload=memory.build_candidate(
+                    session_id=session.session_id,
+                    events=session.events,
+                ),
+            )
+            return (
+                f"operator > {operator_text}\n"
+                "operator > model unavailable to summarize. Raw results shown above.\n"
+                f"{created['line']}"
+            )
     else:
         operator_text = "tool use rejected. Proceeding without search."
         assistant_text = engine.respond(
@@ -363,6 +462,7 @@ def handle_command(
     operator: OperatorFaculty | None = None,
     guardian: GuardianFaculty | None = None,
     guardian_metrics: dict[str, int] | None = None,
+    nammu_dir: Path | None = None,
 ) -> str | None:
     normalized = command.strip()
     if not normalized:
@@ -390,6 +490,9 @@ def handle_command(
 
     if lowered == "routing-log":
         return build_routing_log_report(routing_log)
+
+    if lowered == "nammu-log":
+        return build_nammu_log_report(resolve_nammu_dir(session, nammu_dir))
 
     if lowered == "memory-log":
         return build_memory_log_report(memory.memory_log_report())
@@ -440,6 +543,7 @@ def handle_command(
                 routing_log=routing_log,
                 governance_blocks=guardian_metrics["governance_blocks"],
                 tool_executions=guardian_metrics["tool_executions"],
+                governance_history=load_governance_history(resolve_nammu_dir(session, nammu_dir)),
             )
         )
         return f"guardian > {report}"
@@ -487,7 +591,14 @@ def handle_command(
         return f"Rejected {resolved['proposal_id']}."
 
     governance_result = classifier.route(normalized)
-    append_routing_decision(routing_log, governance_result.faculty, normalized)
+    append_routing_decision(
+        routing_log,
+        session,
+        governance_result.faculty,
+        normalized,
+        nammu_dir=nammu_dir,
+    )
+    append_governance_decision(session, governance_result, normalized, nammu_dir=nammu_dir)
 
     if governance_result.decision == "block":
         guardian_metrics["governance_blocks"] += 1
@@ -587,7 +698,8 @@ def main() -> None:
     )
     guardian = GuardianFaculty()
     operator = OperatorFaculty()
-    classifier = IntentClassifier(engine)
+    governance = GovernanceLayer(engine=engine)
+    classifier = IntentClassifier(engine, governance=governance)
     routing_log: list[dict[str, str]] = []
     guardian_metrics = {"governance_blocks": 0, "tool_executions": 0}
 
@@ -637,6 +749,7 @@ def main() -> None:
             operator=operator,
             guardian=guardian,
             guardian_metrics=guardian_metrics,
+            nammu_dir=DATA_ROOT / "nammu",
         )
         if result is None:
             print("Session closed.")

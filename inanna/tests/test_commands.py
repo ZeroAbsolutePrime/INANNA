@@ -10,10 +10,42 @@ from unittest.mock import patch
 from config import Config
 from core.memory import Memory
 from core.nammu import IntentClassifier
+from core.operator import ToolResult
 from core.proposal import Proposal
 from core.session import AnalystFaculty, Engine, Session
 from core.state import StateReport
 from main import STARTUP_COMMANDS, handle_command, startup_commands_line
+
+
+class SuccessfulToolOperator:
+    def execute(self, tool: str, params: dict[str, str]) -> ToolResult:
+        return ToolResult(
+            tool=tool,
+            query=params.get("query", ""),
+            success=True,
+            data={
+                "abstract": "Current result abstract",
+                "answer": "Current result answer",
+                "related": [],
+            },
+        )
+
+
+class FlakySummaryEngine:
+    def __init__(self) -> None:
+        self._connected = True
+        self._mode = "connected"
+
+    @property
+    def mode(self) -> str:
+        return self._mode
+
+    def respond(self, context_summary, conversation) -> str:
+        del context_summary
+        del conversation
+        self._connected = False
+        self._mode = "fallback"
+        return "Model call failed, so fallback mode continued safely: network down"
 
 
 class CommandTests(unittest.TestCase):
@@ -307,6 +339,7 @@ class CommandTests(unittest.TestCase):
                 "guardian",
                 "history",
                 "routing-log",
+                "nammu-log",
                 "memory-log",
                 "status",
                 "diagnostics",
@@ -320,9 +353,41 @@ class CommandTests(unittest.TestCase):
             startup_commands_line(),
             (
                 "Commands: reflect, analyse, audit, guardian, history, "
-                "routing-log, memory-log, status, diagnostics, approve, reject, forget, exit"
+                "routing-log, nammu-log, memory-log, status, diagnostics, approve, reject, forget, exit"
             ),
         )
+
+    def test_nammu_log_with_no_history_reports_empty_persistent_state(self) -> None:
+        (
+            session,
+            memory,
+            proposal,
+            state_report,
+            engine,
+            analyst,
+            classifier,
+            routing_log,
+            startup_context,
+            config,
+        ) = self.make_runtime()
+
+        result = handle_command(
+            "nammu-log",
+            session,
+            memory,
+            proposal,
+            state_report,
+            engine,
+            analyst,
+            classifier,
+            routing_log,
+            startup_context,
+            config,
+        )
+
+        self.assertIn("NAMMU Memory (0 routing, 0 governance):", result)
+        self.assertIn("No persisted routing history yet.", result)
+        self.assertIn("No persisted governance history yet.", result)
 
     def test_guardian_returns_report_without_side_effects(self) -> None:
         (
@@ -357,6 +422,52 @@ class CommandTests(unittest.TestCase):
         self.assertEqual(proposal.pending_count(), 0)
         self.assertEqual(memory.memory_count(), 0)
         self.assertEqual(session.events, [])
+
+    def test_tool_resilience_returns_clean_operator_message(self) -> None:
+        (
+            session,
+            memory,
+            proposal,
+            state_report,
+            _engine,
+            analyst,
+            classifier,
+            routing_log,
+            startup_context,
+            config,
+        ) = self.make_runtime()
+        engine = FlakySummaryEngine()
+        proposal.create(
+            what="web_search tool use",
+            why="test",
+            payload={
+                "action": "tool_use",
+                "tool": "web_search",
+                "query": "latest weather",
+                "original_input": "what is the weather today",
+                "session_id": session.session_id,
+            },
+        )
+
+        result = handle_command(
+            "approve",
+            session,
+            memory,
+            proposal,
+            state_report,
+            engine,
+            analyst,
+            classifier,
+            routing_log,
+            startup_context,
+            config,
+            operator=SuccessfulToolOperator(),
+            guardian_metrics={"governance_blocks": 0, "tool_executions": 0},
+        )
+
+        self.assertIn("operator > search result:", result)
+        self.assertIn("operator > model unavailable to summarize. Raw results shown above.", result)
+        self.assertNotIn("inanna >", result)
 
     def test_forget_cancel_returns_no_memory_removed(self) -> None:
         (

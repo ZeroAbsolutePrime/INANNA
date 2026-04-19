@@ -32,8 +32,8 @@ class StateTests(unittest.TestCase):
                     "Pending proposals: 1",
                     (
                         "Capabilities: respond, reflect, analyse, audit, guardian, "
-                        "history, routing-log, memory-log, status, diagnostics, "
-                        "approve, reject, forget, exit"
+                        "history, routing-log, nammu-log, memory-log, status, "
+                        "diagnostics, approve, reject, forget, exit"
                     ),
                 ]
             ),

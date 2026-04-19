@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 
-CURRENT_PHASE = "Cycle 2 - Phase 7 - The Guardian Check"
+CURRENT_PHASE = "Cycle 2 - Phase 8 - The NAMMU Memory"
 
 
 PROMPT = """You are INANNA — a local-first, proposal-governed intelligence.

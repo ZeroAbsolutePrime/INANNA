@@ -14,9 +14,15 @@ from websockets.asyncio.server import ServerConnection, serve
 from websockets.exceptions import ConnectionClosed
 
 from config import Config
+from core.governance import GovernanceLayer
 from core.guardian import GuardianFaculty
 from core.memory import Memory
 from core.nammu import IntentClassifier
+from core.nammu_memory import (
+    append_governance_event,
+    append_routing_event,
+    load_governance_history,
+)
 from core.operator import OperatorFaculty
 from core.proposal import Proposal
 from core.session import AnalystFaculty, Engine, Session
@@ -27,6 +33,7 @@ from main import (
     build_diagnostics_report,
     build_history_report,
     build_memory_log_report,
+    build_nammu_log_report,
     build_routing_log_report,
     build_tool_result_text,
     build_tool_context_lines,
@@ -78,10 +85,11 @@ def run_http_server() -> None:
 class InterfaceServer:
     def __init__(self) -> None:
         self.data_root = APP_ROOT / "data"
+        self.nammu_dir = self.data_root / "nammu"
         self.session_dir = self.data_root / "sessions"
         self.memory_dir = self.data_root / "memory"
         self.proposal_dir = self.data_root / "proposals"
-        for d in [self.session_dir, self.memory_dir, self.proposal_dir]:
+        for d in [self.nammu_dir, self.session_dir, self.memory_dir, self.proposal_dir]:
             d.mkdir(parents=True, exist_ok=True)
 
         self.config = Config.from_env()
@@ -100,7 +108,8 @@ class InterfaceServer:
         )
         self.guardian = GuardianFaculty()
         self.operator = OperatorFaculty()
-        self.classifier = IntentClassifier(self.engine)
+        self.governance = GovernanceLayer(engine=self.engine)
+        self.classifier = IntentClassifier(self.engine, governance=self.governance)
         self.routing_log: list[dict[str, str]] = []
         self.governance_blocks = 0
         self.tool_executions = 0
@@ -155,7 +164,10 @@ class InterfaceServer:
     async def process_user_input(self, text: str) -> None:
         await self.broadcast({"type": "thinking", "active": True})
         try:
-            if text.lower().startswith("analyse"):
+            lowered = text.lower()
+            if lowered == "nammu-log":
+                await self.process_command("nammu-log", {})
+            elif lowered.startswith("analyse"):
                 analysis_text, created, mode = await asyncio.to_thread(
                     self._run_analysis_turn, text
                 )
@@ -197,12 +209,26 @@ class InterfaceServer:
         return assistant_text, created
 
     def _record_routing_decision(self, route: str, text: str) -> None:
-        self.routing_log.append(
-            {
-                "timestamp": utc_now(),
-                "input_preview": text[:60],
-                "route": route,
-            }
+        record = {
+            "timestamp": utc_now(),
+            "input_preview": text[:60],
+            "route": route,
+        }
+        self.routing_log.append(record)
+        append_routing_event(
+            self.nammu_dir,
+            self.session.session_id,
+            route,
+            record["input_preview"],
+        )
+
+    def _record_governance_decision(self, decision: str, reason: str, text: str) -> None:
+        append_governance_event(
+            self.nammu_dir,
+            self.session.session_id,
+            decision,
+            reason,
+            text[:60],
         )
 
     def _run_routed_turn(
@@ -214,6 +240,11 @@ class InterfaceServer:
 
         if governance_result.decision == "block":
             self.governance_blocks += 1
+            self._record_governance_decision(
+                governance_result.decision,
+                governance_result.reason,
+                text,
+            )
             return {
                 "governance": {
                     "type": "governance",
@@ -223,6 +254,11 @@ class InterfaceServer:
             }
 
         if governance_result.decision == "propose":
+            self._record_governance_decision(
+                governance_result.decision,
+                governance_result.reason,
+                text,
+            )
             created = create_memory_request_proposal(
                 proposal=self.proposal,
                 session=self.session,
@@ -239,6 +275,11 @@ class InterfaceServer:
             }
 
         if governance_result.suggests_tool:
+            self._record_governance_decision(
+                "tool",
+                "Current information requires governed tool use.",
+                text,
+            )
             created = create_tool_use_proposal(
                 proposal=self.proposal,
                 session=self.session,
@@ -264,6 +305,11 @@ class InterfaceServer:
         }
         governance_message = None
         if governance_result.decision == "redirect":
+            self._record_governance_decision(
+                governance_result.decision,
+                governance_result.reason,
+                text,
+            )
             governance_message = {
                 "type": "governance",
                 "decision": "redirect",
@@ -340,6 +386,10 @@ class InterfaceServer:
             report = await asyncio.to_thread(build_routing_log_report, self.routing_log)
             await self.broadcast({"type": "system", "text": report})
             await self.broadcast_state()
+        elif cmd == "nammu-log":
+            report = await asyncio.to_thread(build_nammu_log_report, self.nammu_dir)
+            await self.broadcast({"type": "system", "text": report})
+            await self.broadcast_state()
         elif cmd == "memory-log":
             report = await asyncio.to_thread(self.memory.memory_log_report)
             await self.broadcast({"type": "system", "text": build_memory_log_report(report)})
@@ -364,8 +414,10 @@ class InterfaceServer:
                     outcome = await asyncio.to_thread(
                         self.complete_tool_resolution, resolved, cmd
                     )
-                    await self.broadcast({"type": "operator", "text": outcome["operator_text"]})
-                    await self.broadcast({"type": "assistant", "text": outcome["assistant_text"]})
+                    for message in outcome["operator_messages"]:
+                        await self.broadcast({"type": "operator", "text": message})
+                    if outcome["assistant_text"]:
+                        await self.broadcast({"type": "assistant", "text": outcome["assistant_text"]})
                     await self.broadcast({"type": "system", "text": outcome["proposal_line"]})
                 else:
                     result = await asyncio.to_thread(self.apply_resolution, resolved)
@@ -456,7 +508,7 @@ class InterfaceServer:
             return "Memory record retained."
         return f"Rejected {resolved['proposal_id']}."
 
-    def complete_tool_resolution(self, resolved: dict[str, Any], decision: str) -> dict[str, str]:
+    def complete_tool_resolution(self, resolved: dict[str, Any], decision: str) -> dict[str, Any]:
         payload = resolved["payload"]
         original_input = payload.get("original_input", "")
         query = payload.get("query", "")
@@ -467,19 +519,24 @@ class InterfaceServer:
         if decision == "approve":
             self.tool_executions += 1
             result = self.operator.execute(tool, {"query": query})
-            operator_text = build_tool_result_text(result)
+            operator_messages = [build_tool_result_text(result)]
+            model_connected = self.engine._connected
             assistant_text = self.engine.respond(
                 context_summary=self.startup_context["summary_lines"] + build_tool_context_lines(result),
                 conversation=self.session.events,
             )
+            if result.success and model_connected and self.engine.mode == "fallback":
+                assistant_text = ""
+                operator_messages.append("model unavailable to summarize. Raw results shown above.")
         else:
-            operator_text = "tool use rejected. Proceeding without search."
+            operator_messages = ["tool use rejected. Proceeding without search."]
             assistant_text = self.engine.respond(
                 context_summary=self.startup_context["summary_lines"],
                 conversation=self.session.events,
             )
 
-        self.session.add_event("assistant", assistant_text)
+        if assistant_text:
+            self.session.add_event("assistant", assistant_text)
         created = self.proposal.create(
             what="Update the memory store from the latest session turn",
             why="Keep the next session grounded in readable, user-approved context.",
@@ -489,7 +546,7 @@ class InterfaceServer:
             ),
         )
         return {
-            "operator_text": operator_text,
+            "operator_messages": operator_messages,
             "assistant_text": assistant_text,
             "proposal_line": created["line"],
         }
@@ -502,6 +559,7 @@ class InterfaceServer:
             routing_log=self.routing_log,
             governance_blocks=self.governance_blocks,
             tool_executions=self.tool_executions,
+            governance_history=load_governance_history(self.nammu_dir),
         )
         return alerts, self.guardian.format_report(alerts)
 
