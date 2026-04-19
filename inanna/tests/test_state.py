@@ -17,6 +17,10 @@ class StateTests(unittest.TestCase):
             mode="connected",
             memory_count=3,
             pending_count=1,
+            realm_name="work",
+            realm_memory_count=3,
+            realm_session_count=2,
+            realm_governance_context="Focus on work memory boundaries.",
         )
 
         self.assertEqual(
@@ -28,12 +32,16 @@ class StateTests(unittest.TestCase):
                     # constant, so this expectation must move with the active phase.
                     f"Phase: {CURRENT_PHASE}",
                     "Mode: connected",
+                    "Realm: work",
                     "Memory records: 3",
+                    "Realm memory records: 3",
+                    "Realm sessions: 2",
+                    "Realm governance context: Focus on work memory boundaries.",
                     "Pending proposals: 1",
                     (
                         "Capabilities: respond, reflect, analyse, audit, guardian, realms, "
-                        "history, routing-log, nammu-log, memory-log, status, "
-                        "diagnostics, approve, reject, forget, exit"
+                        "realm-context, history, routing-log, nammu-log, memory-log, "
+                        "status, diagnostics, approve, reject, forget, exit"
                     ),
                 ]
             ),

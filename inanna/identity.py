@@ -1,7 +1,12 @@
 from __future__ import annotations
 
+from typing import TYPE_CHECKING
 
-CURRENT_PHASE = "Cycle 3 - Phase 1 - The Realm Boundary"
+if TYPE_CHECKING:
+    from core.realm import RealmConfig
+
+
+CURRENT_PHASE = "Cycle 3 - Phase 2 - The Realm Memory"
 
 CYCLE2_SUMMARY = (
     "Cycle 2 built the NAMMU Kernel: web interface, two Faculties, "
@@ -102,8 +107,20 @@ GUARDIAN_CHECK_CODES = [
 ]
 
 
-def build_system_prompt() -> str:
-    return PROMPT
+def build_system_prompt(realm: "RealmConfig | None" = None) -> str:
+    if realm is None or realm.name.strip().lower() == "default":
+        return PROMPT
+
+    realm_lines = [
+        f"Active realm: {realm.name}.",
+        f"Realm purpose: {realm.purpose or 'No purpose set.'}",
+        (
+            "Realm governance context: "
+            + (realm.governance_context or "No governance context set.")
+        ),
+        "Keep your responses relevant to this realm when approved memory and the current turn allow it.",
+    ]
+    return f"{PROMPT}\n\n" + "\n".join(realm_lines)
 
 
 def build_analyst_prompt() -> str:

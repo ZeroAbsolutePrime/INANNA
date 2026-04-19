@@ -82,7 +82,12 @@ class CommandTests(unittest.TestCase):
         analyst = AnalystFaculty()
         classifier = IntentClassifier(engine)
         routing_log: list[dict[str, str]] = []
-        startup_context = {"summary_lines": [], "memory_count": 0, "session_count": 0}
+        startup_context = {
+            "summary_lines": [],
+            "summary_items": [],
+            "memory_count": 0,
+            "session_count": 0,
+        }
         config = Config(model_url="", model_name="", api_key="")
         return (
             session,
@@ -172,6 +177,8 @@ class CommandTests(unittest.TestCase):
         )
 
         self.assertIn("Session:", result)
+        self.assertIn("Realm:", result)
+        self.assertIn("Realm governance context:", result)
         self.assertIn("routing-log", result)
 
     def test_diagnostics_returns_model_url_line(self) -> None:
@@ -339,6 +346,7 @@ class CommandTests(unittest.TestCase):
                 "audit",
                 "guardian",
                 "realms",
+                "realm-context",
                 "history",
                 "routing-log",
                 "nammu-log",
@@ -354,9 +362,9 @@ class CommandTests(unittest.TestCase):
         self.assertEqual(
             startup_commands_line(),
             (
-                "Commands: reflect, analyse, audit, guardian, realms, history, "
-                "routing-log, nammu-log, memory-log, status, diagnostics, approve, reject, "
-                "forget, exit"
+                "Commands: reflect, analyse, audit, guardian, realms, realm-context, "
+                "history, routing-log, nammu-log, memory-log, status, diagnostics, "
+                "approve, reject, forget, exit"
             ),
         )
 
@@ -397,6 +405,107 @@ class CommandTests(unittest.TestCase):
         self.assertIn("[default]  The default operational context.", result)
         self.assertIn("[work]  Work-related conversations and analysis.", result)
         self.assertIn("Active: default", result)
+
+    def test_realm_context_command_reports_active_realm_details(self) -> None:
+        (
+            session,
+            memory,
+            proposal,
+            state_report,
+            engine,
+            analyst,
+            classifier,
+            routing_log,
+            startup_context,
+            config,
+        ) = self.make_runtime()
+        realm_manager = RealmManager(session.session_path.parent.parent / "data")
+        active_realm = realm_manager.create_realm(
+            "work",
+            purpose="Work-related conversations and analysis.",
+            governance_context="Focus on work memory boundaries.",
+        )
+
+        result = handle_command(
+            "realm-context",
+            session,
+            memory,
+            proposal,
+            state_report,
+            engine,
+            analyst,
+            classifier,
+            routing_log,
+            startup_context,
+            config,
+            realm_manager=realm_manager,
+            active_realm=active_realm,
+        )
+
+        self.assertIn("Active realm: work", result)
+        self.assertIn("Purpose: Work-related conversations and analysis.", result)
+        self.assertIn("Governance context: Focus on work memory boundaries.", result)
+
+    def test_realm_context_update_is_proposal_governed_and_updates_realm_on_approval(self) -> None:
+        (
+            session,
+            memory,
+            proposal,
+            state_report,
+            engine,
+            analyst,
+            classifier,
+            routing_log,
+            startup_context,
+            config,
+        ) = self.make_runtime()
+        realm_manager = RealmManager(session.session_path.parent.parent / "data")
+        active_realm = realm_manager.create_realm(
+            "work",
+            purpose="Work-related conversations and analysis.",
+            governance_context="Initial context.",
+        )
+
+        proposal_result = handle_command(
+            "realm-context Focus on work memory boundaries.",
+            session,
+            memory,
+            proposal,
+            state_report,
+            engine,
+            analyst,
+            classifier,
+            routing_log,
+            startup_context,
+            config,
+            realm_manager=realm_manager,
+            active_realm=active_realm,
+        )
+        approval_result = handle_command(
+            "approve",
+            session,
+            memory,
+            proposal,
+            state_report,
+            engine,
+            analyst,
+            classifier,
+            routing_log,
+            startup_context,
+            config,
+            realm_manager=realm_manager,
+            active_realm=active_realm,
+        )
+        loaded = realm_manager.load_realm("work")
+
+        self.assertIn("[REALM PROPOSAL]", proposal_result)
+        self.assertEqual(
+            approval_result,
+            "Approved " + proposal.history_report()["records"][0]["proposal_id"]
+            + " and updated governance context for realm work.",
+        )
+        assert loaded is not None
+        self.assertEqual(loaded.governance_context, "Focus on work memory boundaries.")
 
     def test_nammu_log_with_no_history_reports_empty_persistent_state(self) -> None:
         (

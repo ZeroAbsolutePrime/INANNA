@@ -33,14 +33,18 @@ from main import (
     build_diagnostics_report,
     build_history_report,
     build_memory_log_report,
+    build_realm_context_report,
     build_nammu_log_report,
     build_realms_report,
     build_routing_log_report,
     build_tool_result_text,
     build_tool_context_lines,
-    create_tool_use_proposal,
     create_memory_request_proposal,
+    create_realm_context_proposal,
+    create_tool_use_proposal,
     initialize_realm_context,
+    load_current_realm,
+    startup_context_items,
 )
 
 APP_ROOT = Path(__file__).resolve().parent.parent
@@ -107,11 +111,13 @@ class InterfaceServer:
             model_url=self.config.model_url,
             model_name=self.config.model_name,
             api_key=self.config.api_key,
+            realm=self.active_realm,
         )
         self.analyst = AnalystFaculty(
             model_url=self.config.model_url,
             model_name=self.config.model_name,
             api_key=self.config.api_key,
+            realm=self.active_realm,
         )
         self.guardian = GuardianFaculty()
         self.operator = OperatorFaculty()
@@ -174,6 +180,17 @@ class InterfaceServer:
             lowered = text.lower()
             if lowered == "nammu-log":
                 await self.process_command("nammu-log", {})
+            elif lowered == "realm-context":
+                await self.process_command("realm-context", {})
+            elif lowered.startswith("realm-context "):
+                created = await asyncio.to_thread(self._run_realm_context_update, text)
+                await self.broadcast(
+                    {
+                        "type": "system",
+                        "text": "realm-context > proposal required to update the active realm context.",
+                    }
+                )
+                await self.broadcast({"type": "system", "text": created["line"]})
             elif lowered.startswith("analyse"):
                 analysis_text, created, mode = await asyncio.to_thread(
                     self._run_analysis_turn, text
@@ -201,7 +218,7 @@ class InterfaceServer:
     def _run_user_turn(self, text: str) -> tuple[str, dict[str, Any]]:
         self.session.add_event("user", text)
         assistant_text = self.engine.respond(
-            context_summary=self.startup_context["summary_lines"],
+            context_summary=startup_context_items(self.startup_context),
             conversation=self.session.events,
         )
         self.session.add_event("assistant", assistant_text)
@@ -326,7 +343,7 @@ class InterfaceServer:
         if governance_result.faculty == "analyst":
             mode, analysis_text = self.analyst.analyse(
                 question=text,
-                context=self.startup_context["summary_lines"],
+                context=startup_context_items(self.startup_context),
             )
             self.session.add_event("user", text)
             self.session.add_event("analyst", analysis_text)
@@ -361,7 +378,7 @@ class InterfaceServer:
         question = text[len("analyse") :].strip()
         mode, analysis_text = self.analyst.analyse(
             question=question,
-            context=self.startup_context["summary_lines"],
+            context=startup_context_items(self.startup_context),
         )
         if not question:
             return analysis_text, None, mode
@@ -377,6 +394,18 @@ class InterfaceServer:
             ),
         )
         return analysis_text, created, mode
+
+    def _run_realm_context_update(self, text: str) -> dict[str, Any]:
+        governance_context = text[len("realm-context") :].strip()
+        if not governance_context:
+            return {
+                "line": "realm-context > provide governance context text to propose an update."
+            }
+        return create_realm_context_proposal(
+            proposal=self.proposal,
+            active_realm=self.active_realm,
+            governance_context=governance_context,
+        )
 
     async def process_command(self, cmd: str, payload: dict[str, Any]) -> None:
         if cmd == "reflect":
@@ -394,6 +423,16 @@ class InterfaceServer:
                 build_realms_report,
                 self.realm_manager,
                 self.active_realm.name,
+            )
+            await self.broadcast({"type": "system", "text": report})
+            await self.broadcast_state()
+        elif cmd == "realm-context":
+            report = await asyncio.to_thread(
+                build_realm_context_report,
+                load_current_realm(self.realm_manager, self.active_realm),
+                self.session_dir,
+                self.memory_dir,
+                self.proposal_dir,
             )
             await self.broadcast({"type": "system", "text": report})
             await self.broadcast_state()
@@ -468,7 +507,7 @@ class InterfaceServer:
         await self.broadcast({"type": "thinking", "active": True})
         try:
             mode, text = await asyncio.to_thread(
-                self.engine.reflect, self.startup_context["summary_lines"]
+                self.engine.reflect, startup_context_items(self.startup_context)
             )
             label = "[live reflection]" if mode == "live" else "[memory fallback]"
             await self.broadcast({"type": "assistant", "text": f"{label} {text}"})
@@ -483,7 +522,7 @@ class InterfaceServer:
             memory_log = await asyncio.to_thread(self.memory.memory_log_report)
             mode, text = await asyncio.to_thread(
                 self.engine.speak_audit, history, memory_log,
-                self.startup_context["summary_lines"]
+                startup_context_items(self.startup_context)
             )
             label = "[live audit]" if mode == "live" else "[audit summary]"
             await self.broadcast({"type": "assistant", "text": f"{label} {text}"})
@@ -512,6 +551,20 @@ class InterfaceServer:
     def apply_resolution(self, resolved: dict[str, Any]) -> str:
         payload = resolved.get("payload", {})
         if resolved["status"] == "approved":
+            if payload.get("action") == "realm_context_update":
+                realm_name = str(payload.get("realm_name", "")).strip()
+                governance_context = str(payload.get("governance_context", ""))
+                if not self.realm_manager.update_realm_governance_context(
+                    realm_name,
+                    governance_context,
+                ):
+                    return f"Approved {resolved['proposal_id']} but realm {realm_name} was not found."
+                if self.active_realm.name == realm_name:
+                    self.active_realm.governance_context = governance_context
+                return (
+                    f"Approved {resolved['proposal_id']} and updated governance context "
+                    f"for realm {realm_name}."
+                )
             if payload.get("action") == "forget":
                 mid = payload.get("memory_id", "")
                 if self.memory.delete_memory_record(str(mid)):
@@ -522,8 +575,11 @@ class InterfaceServer:
                 session_id=payload["session_id"],
                 summary_lines=payload["summary_lines"],
                 approved_at=resolved["resolved_at"],
+                realm_name=self.active_realm.name,
             )
             return f"Approved {resolved['proposal_id']} and wrote a memory record."
+        if payload.get("action") == "realm_context_update":
+            return f"Rejected {resolved['proposal_id']}."
         if payload.get("action") == "forget":
             return "Memory record retained."
         return f"Rejected {resolved['proposal_id']}."
@@ -542,7 +598,8 @@ class InterfaceServer:
             operator_messages = [build_tool_result_text(result)]
             model_connected = self.engine._connected
             assistant_text = self.engine.respond(
-                context_summary=self.startup_context["summary_lines"] + build_tool_context_lines(result),
+                context_summary=startup_context_items(self.startup_context)
+                + build_tool_context_lines(result),
                 conversation=self.session.events,
             )
             if result.success and model_connected and self.engine.mode == "fallback":
@@ -551,7 +608,7 @@ class InterfaceServer:
         else:
             operator_messages = ["tool use rejected. Proceeding without search."]
             assistant_text = self.engine.respond(
-                context_summary=self.startup_context["summary_lines"],
+                context_summary=startup_context_items(self.startup_context),
                 conversation=self.session.events,
             )
 
@@ -590,13 +647,23 @@ class InterfaceServer:
     def build_status_payload(self) -> dict[str, Any]:
         mem = self.memory.memory_count()
         pend = self.proposal.pending_count()
+        current_realm = load_current_realm(self.realm_manager, self.active_realm)
+        realm_memory_count = len(list(self.memory_dir.glob("*.json")))
+        realm_session_count = len(list(self.session_dir.glob("*.json")))
         return {
             "phase": phase_banner(),
-            "realm": self.active_realm.name,
-            "realm_purpose": self.active_realm.purpose,
+            "realm": current_realm.name if current_realm else self.active_realm.name,
+            "realm_purpose": (
+                current_realm.purpose if current_realm else self.active_realm.purpose
+            ),
+            "realm_governance_context": (
+                current_realm.governance_context if current_realm else ""
+            ),
             "mode": self.engine.mode,
             "session_id": self.session.session_id,
             "memory_count": mem,
+            "realm_memory_count": realm_memory_count,
+            "realm_session_count": realm_session_count,
             "pending_count": pend,
             "capabilities": list(STARTUP_COMMANDS),
             "report": self.state_report.render(
@@ -604,6 +671,12 @@ class InterfaceServer:
                 mode=self.engine.mode,
                 memory_count=mem,
                 pending_count=pend,
+                realm_name=current_realm.name if current_realm else self.active_realm.name,
+                realm_memory_count=realm_memory_count,
+                realm_session_count=realm_session_count,
+                realm_governance_context=(
+                    current_realm.governance_context if current_realm else ""
+                ),
             ),
         }
 

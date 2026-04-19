@@ -39,6 +39,7 @@ STARTUP_COMMANDS = (
     "audit",
     "guardian",
     "realms",
+    "realm-context",
     "history",
     "routing-log",
     "nammu-log",
@@ -126,6 +127,83 @@ def build_realms_report(
         lines.append(f"  [{name}]  {purpose}")
     lines.append(f"  Active: {active_realm_name}")
     return "\n".join(lines)
+
+
+def count_records(directory: Path, pattern: str) -> int:
+    return len(list(directory.glob(pattern)))
+
+
+def load_current_realm(
+    realm_manager: RealmManager | None,
+    active_realm: RealmConfig | None,
+) -> RealmConfig | None:
+    if active_realm is None:
+        return None
+    if realm_manager is None:
+        return active_realm
+    loaded = realm_manager.load_realm(active_realm.name)
+    return loaded or active_realm
+
+
+def build_realm_context_report(
+    realm: RealmConfig | None,
+    session_dir: Path,
+    memory_dir: Path,
+    proposal_dir: Path,
+) -> str:
+    if realm is None:
+        return (
+            "Active realm: default\n"
+            "Purpose: No purpose set.\n"
+            "Governance context: No governance context set.\n"
+            "Created: unknown\n"
+            f"Memory records: {count_records(memory_dir, '*.json')}\n"
+            f"Sessions: {count_records(session_dir, '*.json')}\n"
+            f"Proposals: {count_records(proposal_dir, '*.txt')}"
+        )
+
+    return "\n".join(
+        [
+            f"Active realm: {realm.name}",
+            f"Purpose: {realm.purpose or 'No purpose set.'}",
+            (
+                "Governance context: "
+                + (realm.governance_context or "No governance context set.")
+            ),
+            f"Created: {realm.created_at}",
+            f"Memory records: {count_records(memory_dir, '*.json')}",
+            f"Sessions: {count_records(session_dir, '*.json')}",
+            f"Proposals: {count_records(proposal_dir, '*.txt')}",
+        ]
+    )
+
+
+def format_realm_proposal_line(record: dict) -> str:
+    return (
+        f"[REALM PROPOSAL] {record['timestamp']} | {record['what']} | "
+        f"{record['why']} | status: {record['status']}"
+    )
+
+
+def create_realm_context_proposal(
+    proposal: Proposal,
+    active_realm: RealmConfig,
+    governance_context: str,
+) -> dict:
+    created = proposal.create(
+        what=f"Update governance context for realm {active_realm.name}",
+        why="Realm context changes require visible approval before they take effect.",
+        payload={
+            "action": "realm_context_update",
+            "realm_name": active_realm.name,
+            "governance_context": governance_context,
+        },
+    )
+    return {**created, "line": format_realm_proposal_line(created)}
+
+
+def startup_context_items(startup_context: dict) -> list[str | dict[str, str]]:
+    return startup_context.get("summary_items", startup_context["summary_lines"])
 
 
 def ensure_guardian_metrics(
@@ -435,7 +513,8 @@ def complete_tool_resolution(
         operator_text = build_tool_result_text(result)
         model_connected = engine._connected
         assistant_text = engine.respond(
-            context_summary=startup_context["summary_lines"] + build_tool_context_lines(result),
+            context_summary=startup_context_items(startup_context)
+            + build_tool_context_lines(result),
             conversation=session.events,
         )
         if result.success and model_connected and engine.mode == "fallback":
@@ -455,7 +534,7 @@ def complete_tool_resolution(
     else:
         operator_text = "tool use rejected. Proceeding without search."
         assistant_text = engine.respond(
-            context_summary=startup_context["summary_lines"],
+            context_summary=startup_context_items(startup_context),
             conversation=session.events,
         )
 
@@ -559,11 +638,18 @@ def handle_command(
         return None
 
     if lowered == "status":
+        current_realm = load_current_realm(realm_manager, active_realm)
         return state_report.render(
             session_id=session.session_id,
             mode=engine.mode,
             memory_count=memory.memory_count(),
             pending_count=proposal.pending_count(),
+            realm_name=current_realm.name if current_realm else DEFAULT_REALM,
+            realm_memory_count=count_records(memory.memory_dir, "*.json"),
+            realm_session_count=count_records(memory.session_dir, "*.json"),
+            realm_governance_context=(
+                current_realm.governance_context if current_realm else ""
+            ),
         )
 
     if lowered == "diagnostics":
@@ -585,6 +671,31 @@ def handle_command(
             )
         return build_realms_report(realm_manager, active_realm_name)
 
+    if lowered == "realm-context":
+        current_realm = load_current_realm(realm_manager, active_realm)
+        return build_realm_context_report(
+            current_realm,
+            memory.session_dir,
+            memory.memory_dir,
+            proposal.proposal_dir,
+        )
+
+    if lowered.startswith("realm-context "):
+        if active_realm is None:
+            return "realm-context > no active realm is available."
+        governance_context = normalized[len("realm-context") :].strip()
+        if not governance_context:
+            return "realm-context > provide governance context text to propose an update."
+        created = create_realm_context_proposal(
+            proposal=proposal,
+            active_realm=active_realm,
+            governance_context=governance_context,
+        )
+        return (
+            "realm-context > proposal required to update the active realm context.\n"
+            f"{created['line']}"
+        )
+
     if lowered == "history":
         return build_history_report(proposal.history_report())
 
@@ -604,7 +715,7 @@ def handle_command(
         question = normalized[len("analyse") :].strip()
         analysis_mode, analysis_text = analyst.analyse(
             question=question,
-            context=startup_context["summary_lines"],
+            context=startup_context_items(startup_context),
         )
         if not question:
             return f"analyst > [analysis fallback] {analysis_text}"
@@ -627,7 +738,7 @@ def handle_command(
         audit_mode, audit_text = engine.speak_audit(
             history=proposal.history_report(),
             memory_log=memory.memory_log_report(),
-            context_summary=startup_context["summary_lines"],
+            context_summary=startup_context_items(startup_context),
         )
         if audit_mode == "live":
             return f"inanna> [live audit] {audit_text}"
@@ -649,7 +760,7 @@ def handle_command(
         return f"guardian > {report}"
 
     if lowered == "reflect":
-        reflection_mode, reflection_text = engine.reflect(startup_context["summary_lines"])
+        reflection_mode, reflection_text = engine.reflect(startup_context_items(startup_context))
         if reflection_mode == "live":
             return f"inanna> [live reflection] {reflection_text}"
         return f"inanna> [memory fallback] {reflection_text}"
@@ -677,12 +788,32 @@ def handle_command(
                 guardian_metrics=guardian_metrics,
             )
 
+        if payload.get("action") == "realm_context_update":
+            realm_name = payload.get("realm_name", "")
+            governance_context = payload.get("governance_context", "")
+            if resolved["status"] == "approved":
+                if realm_manager is None or not realm_name:
+                    return f"Approved {resolved['proposal_id']} but no realm manager was available."
+                if not realm_manager.update_realm_governance_context(
+                    realm_name,
+                    governance_context,
+                ):
+                    return f"Approved {resolved['proposal_id']} but realm {realm_name} was not found."
+                if active_realm is not None and active_realm.name == realm_name:
+                    active_realm.governance_context = governance_context
+                return (
+                    f"Approved {resolved['proposal_id']} and updated governance context "
+                    f"for realm {realm_name}."
+                )
+            return f"Rejected {resolved['proposal_id']}."
+
         if resolved["status"] == "approved":
             memory.write_memory(
                 proposal_id=resolved["proposal_id"],
                 session_id=payload["session_id"],
                 summary_lines=payload["summary_lines"],
                 approved_at=resolved["resolved_at"],
+                realm_name=active_realm.name if active_realm else "",
             )
             return (
                 f"Approved {resolved['proposal_id']} and wrote a memory record for the next session."
@@ -734,7 +865,7 @@ def handle_command(
     if governance_result.faculty == "analyst":
         analysis_mode, analysis_text = analyst.analyse(
             question=normalized,
-            context=startup_context["summary_lines"],
+            context=startup_context_items(startup_context),
         )
         session.add_event("user", normalized)
         session.add_event("analyst", analysis_text)
@@ -758,7 +889,7 @@ def handle_command(
 
     session.add_event("user", normalized)
     assistant_text = engine.respond(
-        context_summary=startup_context["summary_lines"],
+        context_summary=startup_context_items(startup_context),
         conversation=session.events,
     )
     session.add_event("assistant", assistant_text)
@@ -797,11 +928,13 @@ def main() -> None:
         model_url=config.model_url,
         model_name=config.model_name,
         api_key=config.api_key,
+        realm=active_realm,
     )
     analyst = AnalystFaculty(
         model_url=config.model_url,
         model_name=config.model_name,
         api_key=config.api_key,
+        realm=active_realm,
     )
     guardian = GuardianFaculty()
     operator = OperatorFaculty()

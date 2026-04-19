@@ -77,6 +77,25 @@ class RealmTests(unittest.TestCase):
 
             self.assertEqual(set(dirs.keys()), {"sessions", "memory", "proposals", "nammu"})
 
+    def test_update_realm_governance_context_persists_new_value(self) -> None:
+        with TemporaryDirectory() as temp_dir:
+            manager = RealmManager(Path(temp_dir))
+            manager.create_realm(
+                "work",
+                purpose="Work-related conversations and analysis.",
+                governance_context="Initial context.",
+            )
+
+            updated = manager.update_realm_governance_context(
+                "work",
+                "Focus on work memory boundaries.",
+            )
+            loaded = manager.load_realm("work")
+
+            self.assertTrue(updated)
+            assert loaded is not None
+            self.assertEqual(loaded.governance_context, "Focus on work memory boundaries.")
+
 
 if __name__ == "__main__":
     unittest.main()

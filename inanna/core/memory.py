@@ -24,19 +24,26 @@ class Memory:
         # the startup context if approved memory provides fewer than
         # max_lines entries.
         summary_lines: list[str] = []
+        summary_items: list[dict[str, str]] = []
         for record in memory_records:
             for line in record.get("summary_lines", []):
-                self._append_unique(summary_lines, line)
+                self._append_unique(
+                    summary_lines,
+                    summary_items,
+                    line,
+                    record.get("realm_name", ""),
+                )
                 if len(summary_lines) >= self.max_lines:
                     return self._startup_payload(
                         summary_lines=summary_lines,
+                        summary_items=summary_items,
                         memory_count=len(memory_records),
                         session_count=len(session_records),
                     )
 
         for record in reversed(session_records):
             for line in self._session_lines(record):
-                self._append_unique(summary_lines, line)
+                self._append_unique(summary_lines, summary_items, line)
                 if len(summary_lines) >= self.max_lines:
                     break
             if len(summary_lines) >= self.max_lines:
@@ -44,6 +51,7 @@ class Memory:
 
         return self._startup_payload(
             summary_lines=summary_lines,
+            summary_items=summary_items,
             memory_count=len(memory_records),
             session_count=len(session_records),
         )
@@ -65,6 +73,7 @@ class Memory:
         session_id: str,
         summary_lines: list[str],
         approved_at: str,
+        realm_name: str = "",
     ) -> Path:
         memory_path = self.memory_dir / f"{proposal_id}.json"
         payload = {
@@ -72,6 +81,7 @@ class Memory:
             "session_id": session_id,
             "approved_at": approved_at,
             "summary_lines": summary_lines[: self.max_lines],
+            "realm_name": realm_name,
         }
         memory_path.write_text(json.dumps(payload, indent=2), encoding="utf-8")
         return memory_path
@@ -96,19 +106,28 @@ class Memory:
     def _startup_payload(
         self,
         summary_lines: list[str],
+        summary_items: list[dict[str, str]],
         memory_count: int,
         session_count: int,
     ) -> dict[str, Any]:
         return {
             "summary_lines": summary_lines[: self.max_lines],
+            "summary_items": summary_items[: self.max_lines],
             "memory_count": memory_count,
             "session_count": session_count,
         }
 
-    def _append_unique(self, lines: list[str], line: str) -> None:
+    def _append_unique(
+        self,
+        lines: list[str],
+        items: list[dict[str, str]],
+        line: str,
+        realm_name: str = "",
+    ) -> None:
         cleaned = line.strip()
         if cleaned and cleaned not in lines:
             lines.append(cleaned)
+            items.append({"text": cleaned, "realm_name": realm_name})
 
     def _candidate_lines(self, events: list[dict[str, str]]) -> list[str]:
         lines: list[str] = []

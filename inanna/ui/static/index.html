@@ -428,7 +428,7 @@
       </div>
       <div class="header-meta">
         <div class="header-phase" id="phase-text">loading phase</div>
-        <div class="realm-indicator" id="realm-text">realm: default</div>
+        <div class="realm-indicator" id="realm-indicator" title="">realm: default</div>
         <div class="mode">
           <span class="mode-dot" id="mode-dot"></span>
           <span id="mode-text">fallback</span>
@@ -483,6 +483,7 @@
       "audit",
       "guardian",
       "realms",
+      "realm-context",
       "history",
       "routing-log",
       "memory-log",
@@ -496,7 +497,7 @@
 
     const brandIndicator = document.getElementById("brand-indicator");
     const phaseText = document.getElementById("phase-text");
-    const realmText = document.getElementById("realm-text");
+    const realmIndicator = document.getElementById("realm-indicator");
     const modeDot = document.getElementById("mode-dot");
     const modeText = document.getElementById("mode-text");
     const conversationLog = document.getElementById("conversation-log");
@@ -632,7 +633,8 @@
 
     function renderHeader() {
       phaseText.textContent = state.status.phase || "loading phase";
-      realmText.textContent = `realm: ${state.status.realm || "default"}`;
+      realmIndicator.textContent = `realm: ${state.status.realm || "default"}`;
+      realmIndicator.title = state.status.realm_purpose || "";
       modeText.textContent = state.status.mode || "fallback";
       modeDot.style.color = state.status.mode === "connected" ? "var(--connected)" : "var(--fallback)";
       brandIndicator.classList.toggle("pulsing", state.thinking);

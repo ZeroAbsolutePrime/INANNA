@@ -5,9 +5,13 @@ import uuid
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
+from typing import TYPE_CHECKING
 from urllib import error, request
 
 from identity import build_analyst_prompt, build_system_prompt, phase_banner
+
+if TYPE_CHECKING:
+    from core.realm import RealmConfig
 
 
 def utc_now() -> str:
@@ -66,10 +70,12 @@ class Engine:
         model_url: str | None = None,
         model_name: str | None = None,
         api_key: str | None = None,
+        realm: "RealmConfig | None" = None,
     ) -> None:
         self.model_url = (model_url or "").strip()
         self.model_name = (model_name or "").strip()
         self.api_key = (api_key or "").strip()
+        self.realm = realm
         self.fallback_mode = not (self.model_url and self.model_name)
         self._connected = False
 
@@ -98,7 +104,7 @@ class Engine:
 
     def respond(
         self,
-        context_summary: list[str],
+        context_summary: list[str | dict[str, str]],
         conversation: list[dict[str, str]],
     ) -> str:
         latest_user = self._latest_user_message(conversation)
@@ -122,7 +128,10 @@ class Engine:
                 note=f"Model call failed, so fallback mode continued safely: {exc}",
             )
 
-    def reflect(self, context_summary: list[str]) -> tuple[str, str]:
+    def reflect(
+        self,
+        context_summary: list[str | dict[str, str]],
+    ) -> tuple[str, str]:
         if not context_summary:
             return ("fallback", "I hold no approved memory of our prior conversations yet.")
         messages = self._build_reflection_messages(context_summary)
@@ -134,17 +143,20 @@ class Engine:
         return (
             "fallback",
             "From my approved memory:\n"
-            + "\n".join(f"  {i + 1}. {line}" for i, line in enumerate(context_summary)),
+            + "\n".join(
+                f"  {i + 1}. {self._format_grounding_line(line)}"
+                for i, line in enumerate(context_summary)
+            ),
         )
 
     def speak_audit(
         self,
         history: dict,
         memory_log: dict,
-        context_summary: list[str],
+        context_summary: list[str | dict[str, str]],
     ) -> tuple[str, str]:
         messages = [
-            {"role": "system", "content": build_system_prompt()},
+            {"role": "system", "content": build_system_prompt(self.realm)},
             {
                 "role": "assistant",
                 "content": self._build_audit_context(history, memory_log),
@@ -174,10 +186,10 @@ class Engine:
 
     def _build_messages(
         self,
-        context_summary: list[str],
+        context_summary: list[str | dict[str, str]],
         conversation: list[dict[str, str]],
     ) -> list[dict[str, str]]:
-        messages = [{"role": "system", "content": build_system_prompt()}]
+        messages = [{"role": "system", "content": build_system_prompt(self.realm)}]
         messages.append(self._build_grounding_turn(context_summary))
 
         for event in conversation:
@@ -189,8 +201,11 @@ class Engine:
             )
         return messages
 
-    def _build_reflection_messages(self, context_summary: list[str]) -> list[dict[str, str]]:
-        messages = [{"role": "system", "content": build_system_prompt()}]
+    def _build_reflection_messages(
+        self,
+        context_summary: list[str | dict[str, str]],
+    ) -> list[dict[str, str]]:
+        messages = [{"role": "system", "content": build_system_prompt(self.realm)}]
         messages.append(self._build_grounding_turn(context_summary))
 
         messages.append(
@@ -222,7 +237,10 @@ class Engine:
             )
         return "\n".join(lines)
 
-    def _build_grounding_turn(self, context_summary: list[str]) -> dict[str, str]:
+    def _build_grounding_turn(
+        self,
+        context_summary: list[str | dict[str, str]],
+    ) -> dict[str, str]:
         if not context_summary:
             return {
                 "role": "assistant",
@@ -234,7 +252,8 @@ class Engine:
             }
 
         grounding_lines = "\n".join(
-            f"  {i + 1}. {line}" for i, line in enumerate(context_summary)
+            f"  {i + 1}. {self._format_grounding_line(line)}"
+            for i, line in enumerate(context_summary)
         )
         return {
             "role": "assistant",
@@ -246,6 +265,24 @@ class Engine:
                 + "If I do not know something about this person, I will say so directly."
             ),
         }
+
+    def _context_text(self, item: str | dict[str, str]) -> str:
+        if isinstance(item, dict):
+            return item.get("text", "").strip()
+        return item.strip()
+
+    def _context_realm(self, item: str | dict[str, str]) -> str:
+        if isinstance(item, dict):
+            return item.get("realm_name", "").strip()
+        return ""
+
+    def _format_grounding_line(self, item: str | dict[str, str]) -> str:
+        text = self._context_text(item)
+        realm_name = self._context_realm(item)
+        active_realm_name = self.realm.name if self.realm else ""
+        if realm_name and active_realm_name and realm_name != active_realm_name:
+            return f"{text} (from realm: {realm_name})"
+        return text
 
     def _call_openai_compatible(self, messages: list[dict[str, str]]) -> str:
         endpoint = self.model_url.rstrip("/")
@@ -274,7 +311,7 @@ class Engine:
     def _fallback_response(
         self,
         latest_user: str,
-        context_summary: list[str],
+        context_summary: list[str | dict[str, str]],
         conversation: list[dict[str, str]],
         note: str | None = None,
     ) -> str:
@@ -294,7 +331,11 @@ class Engine:
 
 
 class AnalystFaculty(Engine):
-    def analyse(self, question: str, context: list[str]) -> tuple[str, str]:
+    def analyse(
+        self,
+        question: str,
+        context: list[str | dict[str, str]],
+    ) -> tuple[str, str]:
         cleaned_question = question.strip()
         if not cleaned_question:
             return ("fallback", "Please provide a question to analyse.")
@@ -320,11 +361,14 @@ class AnalystFaculty(Engine):
     def _build_analysis_messages(
         self,
         question: str,
-        context: list[str],
+        context: list[str | dict[str, str]],
     ) -> list[dict[str, str]]:
         messages = [{"role": "system", "content": build_analyst_prompt()}]
         if context:
-            context_lines = "\n".join(f"  {index + 1}. {line}" for index, line in enumerate(context))
+            context_lines = "\n".join(
+                f"  {index + 1}. {self._format_grounding_line(line)}"
+                for index, line in enumerate(context)
+            )
             messages.append(
                 {
                     "role": "assistant",
@@ -348,7 +392,7 @@ class AnalystFaculty(Engine):
     def _fallback_analysis(
         self,
         question: str,
-        context: list[str],
+        context: list[str | dict[str, str]],
         note: str | None = None,
     ) -> str:
         lines = [
@@ -357,7 +401,7 @@ class AnalystFaculty(Engine):
             f"Approved context lines: {len(context)}",
         ]
         for index, line in enumerate(context, start=1):
-            lines.append(f"  {index}. {line}")
+            lines.append(f"  {index}. {self._format_grounding_line(line)}")
         if not context:
             lines.append("No approved context is available yet.")
         lines.append("Model connection is unavailable, so this is a bounded analytical summary.")

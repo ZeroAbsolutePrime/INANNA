@@ -64,6 +64,27 @@ class RealmManager:
         data = json.loads(path.read_text(encoding="utf-8"))
         return RealmConfig(**data)
 
+    def update_realm_governance_context(
+        self,
+        name: str,
+        governance_context: str,
+    ) -> bool:
+        config = self.load_realm(name)
+        if config is None:
+            return False
+
+        updated = RealmConfig(
+            name=config.name,
+            purpose=config.purpose,
+            created_at=config.created_at,
+            governance_context=governance_context,
+        )
+        (self.realms_root / name / "realm.json").write_text(
+            json.dumps(updated.__dict__, indent=2),
+            encoding="utf-8",
+        )
+        return True
+
     def realm_data_dirs(self, name: str) -> dict[str, Path]:
         base = self.realms_root / name
         return {
