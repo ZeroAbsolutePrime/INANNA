@@ -450,8 +450,7 @@
 
     function connect() {
       const protocol = window.location.protocol === "https:" ? "wss" : "ws";
-      state.ws = new WebSocket(`${protocol}://${window.location.host}/ws`);
-
+      state.ws = new WebSocket(`${protocol}://localhost:8081`);
       state.ws.addEventListener("message", (event) => {
         const payload = JSON.parse(event.data);
         handleServerMessage(payload);
