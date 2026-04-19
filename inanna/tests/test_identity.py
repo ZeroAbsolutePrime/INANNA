@@ -4,6 +4,7 @@ import unittest
 
 from identity import (
     CURRENT_PHASE,
+    CYCLE2_SUMMARY,
     build_analyst_prompt,
     build_nammu_prompt,
     build_system_prompt,
@@ -105,8 +106,13 @@ class IdentityTests(unittest.TestCase):
     def test_current_phase_constant_matches_phase_banner(self) -> None:
         self.assertEqual(CURRENT_PHASE, phase_banner())
 
-    def test_current_phase_names_nammu_memory(self) -> None:
-        self.assertIn("NAMMU Memory", CURRENT_PHASE)
+    def test_current_phase_names_multi_faculty_proof(self) -> None:
+        self.assertIn("Multi-Faculty Proof", CURRENT_PHASE)
+
+    def test_cycle2_summary_describes_completed_kernel(self) -> None:
+        self.assertIn("NAMMU Kernel", CYCLE2_SUMMARY)
+        self.assertIn("two Faculties", CYCLE2_SUMMARY)
+        self.assertIn("Guardian monitoring", CYCLE2_SUMMARY)
 
 
 if __name__ == "__main__":

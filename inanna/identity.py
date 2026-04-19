@@ -1,7 +1,14 @@
 from __future__ import annotations
 
 
-CURRENT_PHASE = "Cycle 2 - Phase 8 - The NAMMU Memory"
+CURRENT_PHASE = "Cycle 2 - Phase 9 - The Multi-Faculty Proof"
+
+CYCLE2_SUMMARY = (
+    "Cycle 2 built the NAMMU Kernel: web interface, two Faculties, "
+    "automatic intent routing, governance above routing, bounded tool use, "
+    "Guardian monitoring, config-driven signal classification, "
+    "and NAMMU memory persistence across sessions."
+)
 
 
 PROMPT = """You are INANNA — a local-first, proposal-governed intelligence.

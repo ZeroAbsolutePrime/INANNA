@@ -228,6 +228,33 @@ gracefully and says so honestly is.
 
 ---
 
+## Lessons from Cycle 2
+
+**Never hardcode signal lists in Python.** All configurable
+classification signals belong in JSON config files. Python code reads
+them. The Guardian updates them. This was corrected in Phase 2.8 and
+must never regress.
+
+**Model-first, config-fallback.** Classification decisions for routing
+and governance should use the model as the primary path and
+config-backed heuristics as the fallback. The model understands
+context. Keywords do not.
+
+**The protocol works.** Codex refused to build Phase 8 code against a
+stale phase document. That refusal was correct. The ABSOLUTE_PROTOCOL
+held under real conditions. This was not a failure. It was the system
+protecting itself.
+
+**Integration phases are not optional.** Phase 2.9 exists because
+eight phases of building need one phase of verification. Future cycles
+must always end with an integration phase.
+
+**The UI and the CLI must stay in sync.** Every new command added to
+`main.py` must be added to `server.py` and `index.html`. Every
+capability in the CLI must be reachable in the UI.
+
+---
+
 *Written by: Claude (Command Center)*
 *Confirmed by: ZAERA (Guardian)*
 *Date: 2026-04-19*
