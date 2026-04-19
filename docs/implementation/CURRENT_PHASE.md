@@ -1,205 +1,168 @@
-﻿# CURRENT PHASE: Cycle 4 - Phase 4.4 - The User Memory
+﻿# CURRENT PHASE: Cycle 4 - Phase 4.5 - The User Log
 **Status: ACTIVE**
 **Authorized by: ZAERA (Guardian) + Claude (Command Center)**
 **Date opened: 2026-04-19**
 **Cycle: 4 - The Civic Layer**
-**Replaces: Cycle 4 Phase 4.3 - The Privilege Map (COMPLETE)**
+**Replaces: Cycle 4 Phase 4.4 - The User Memory (COMPLETE)**
 
 ---
 
 ## What This Phase Is
 
-Phase 4.4 has four goals that belong together:
+Phase 4.4 gave memory a user identity.
+Phase 4.5 gives interactions a personal record.
 
-**Goal 1 - User-scoped memory.**
-Memory records now carry a user_id. When ZAERA approves a memory,
-it is tagged as ZAERA's. When Alice approves a memory, it is Alice's.
-The grounding turn only injects memory that belongs to the active user.
+Every conversation turn a user has with INANNA is now logged
+to that user's personal interaction log. The log is:
+  - Private: readable only by that user and the Guardian
+  - Persistent: survives across sessions
+  - Honest: contains the actual input and response, not a summary
+  - Governed: the user can read it, but cannot alter it
 
-**Goal 2 - Guardian user management actions.**
-Beyond inspect, the Guardian can now: clear governance event history,
-dismiss all current alerts, and switch active user context.
-The Guardian Room panel gains these actions as small buttons.
+This is Law 4 (Readable System Truth) applied to the user:
+a person should be able to ask what INANNA has done with
+their words, and receive a clear, bounded, honest answer.
 
-**Goal 3 - switch-user command.**
-ZAERA (guardian role only) can type "switch-user Alice" to experience
-the system as Alice — her memory, her privileges, her context.
-A clear banner shows when operating as another user.
-Switch back with "switch-user ZAERA" or "switch-user off".
-
-**Goal 4 - UI button sizing.**
-All panel action buttons reduced to compact size.
-More breathing room. Less visual weight.
+This phase also fixes the noted issue from Phase 4.4:
+create-user now records the actual Guardian user_id as created_by,
+not the string "system".
 
 ---
 
-## GOAL 1: User-Scoped Memory
+## What You Are Building
 
-### Task 1.1 - Add user_id to memory records
+### Task 1 - inanna/core/user_log.py
 
-Update Memory.write_memory() in memory.py to accept user_id parameter.
-Store it in the memory record JSON alongside realm_name.
+Create: inanna/core/user_log.py
+
+One class: UserLog
+
+UserLog:
+  __init__(logs_dir: Path)
+  - logs_dir: inanna/data/user_logs/
+  - One JSONL file per user: {user_id}.jsonl
+
+  append(user_id, session_id, role, content, response_preview) -> None
+  - Appends one entry to the user's log file
+  - Entry format:
+    {
+      "timestamp": "ISO",
+      "session_id": "...",
+      "role": "user",
+      "content": "full input text",
+      "response_preview": "first 200 chars of INANNA response"
+    }
+
+  load(user_id, limit=50) -> list[dict]
+  - Loads the last N entries from the user log
+  - Returns [] if no log exists
+
+  entry_count(user_id) -> int
+  - Returns total number of log entries for a user
+
+  clear(user_id) -> int
+  - Clears all entries for a user
+  - Returns count of cleared entries
+  - Requires Guardian approval via proposal (handled in main.py/server.py)
+
+### Task 2 - Log every conversation turn
+
+In main.py and server.py, after every successful Faculty response
+(crown or analyst), append to the active user's log:
 
 ```python
-def write_memory(self, session_id, summary_lines, proposal_id,
-                 realm_name="", user_id="") -> str:
+if active_token:
+    user_log.append(
+        user_id=active_token.user_id,
+        session_id=session_id,
+        role="user",
+        content=user_input,
+        response_preview=response_text[:200],
+    )
 ```
 
-Existing records without user_id are treated as belonging to
-the guardian (backward compatible).
+Logging is silent — it does not generate a proposal.
+It does not appear in the conversation.
+It is infrastructure, not governance.
 
-### Task 1.2 - Filter memory by active user in grounding
+### Task 3 - The "my-log" command
 
-In Engine._build_grounding_turn() and startup_context(),
-filter loaded memory records to only those matching the active user_id.
+Add command: my-log
 
-If no user_id is set (no active session), load all records
-(preserves existing behavior for backward compat).
+Privilege required: read_own_log
 
-Pass active user_id through from main.py and server.py when
-building the startup context and grounding turn.
+Output (newest first):
+```
+Your interaction log (N entries):
 
-### Task 1.3 - Pass user_id when writing memory
+  Apr 19 22:15  Hello, I am ZAERA
+    inanna > Hello ZAERA! It is wonderful to have you here...
 
-In main.py and server.py, when a memory proposal is approved
-and write_memory() is called, pass the active_token.user_id
-(or "" if no active token).
-
----
-
-## GOAL 2: Guardian Room Actions
-
-### Task 2.1 - "guardian-clear-events" command
-
-Add command: guardian-clear-events
-
-Requires privilege: all
-
-Clears the governance event log file on disk:
-  inanna/data/nammu/governance_log.jsonl -> truncated to empty
-
-Creates a proposal first:
-  [GUARDIAN PROPOSAL] | Clear governance event log | status: pending
-
-After approval, truncate the file and broadcast:
-  guardian > Governance event log cleared.
-
-Add to STARTUP_COMMANDS and capabilities.
-
-### Task 2.2 - "guardian-dismiss" command
-
-Add command: guardian-dismiss
-
-Clears the in-memory alert list in the server's guardian state.
-The next inspection will re-populate if conditions still exist.
-
-No proposal needed — dismissing alerts is a read action,
-not a data mutation.
-
-Broadcast:
-  guardian > Alerts dismissed. Next inspection will re-evaluate.
-
-Add [ clear events ] and [ dismiss ] buttons to Guardian Room panel.
-These appear below the [ inspect ] button.
-
-### Task 2.3 - Guardian Room panel button layout
-
-Replace the current single [ inspect ] button with a row of three:
-  [ inspect ]  [ dismiss ]  [ clear events ]
-
-All three are small compact buttons (see Goal 4 for sizing).
-
----
-
-## GOAL 3: switch-user Command
-
-### Task 3.1 - switch-user in main.py and server.py
-
-Add command: switch-user [display_name]
-
-Requires privilege: all (guardian only)
-
-Flow:
-1. Validate requester has "all" privilege
-2. Look up target user by display_name
-3. If not found: "switch-user > No user found: [name]"
-4. Issue a new SessionToken for the target user
-5. Set self.active_token to the new token
-6. Broadcast:
-   switch-user > Now operating as: Alice (user)
-   switch-user > Type "switch-user ZAERA" to return to Guardian.
-
-"switch-user off" or "switch-user [guardian_name]" returns to Guardian.
-
-When operating as another user:
-- The UI header shows: USER: Alice [as ZAERA]
-- The status payload includes:
-    "acting_as": {"display_name": "Alice", "role": "user"},
-    "original_user": {"display_name": "ZAERA", "role": "guardian"}
-- Memory grounding uses Alice's memory
-- Privilege checks use Alice's privileges
-- A warning banner appears in the conversation area:
-    "⚠ Operating as Alice (user) — Guardian context suspended"
-
-Add switch-user to STARTUP_COMMANDS and capabilities.
-
----
-
-## GOAL 4: Button Size Reduction
-
-### Task 4.1 - Compact button CSS
-
-Update all panel action buttons to compact size:
-
-```css
-.panel-btn {
-    padding: 3px 10px;
-    font-size: 0.75rem;
-    letter-spacing: 0.08em;
-    border: 1px solid var(--border);
-    background: transparent;
-    color: var(--dim);
-    cursor: pointer;
-    border-radius: 2px;
-    transition: color 0.15s, border-color 0.15s;
-}
-.panel-btn:hover {
-    color: var(--voice);
-    border-color: var(--voice);
-}
-.panel-btn.warn:hover {
-    color: var(--fallback);
-    border-color: var(--fallback);
-}
+  Apr 19 21:45  What is the nature of consciousness?
+    inanna > That is one of the deepest questions in philosophy...
 ```
 
-Apply .panel-btn class to:
-  [ inspect ] [ dismiss ] [ clear events ]  (Guardian Room)
-  [ approve ] [ reject ]                    (Proposals)
-  [ load full history ]                     (Proposals)
-  [ clear all ]                             (Memory)
-  [ forget ]                                (Memory records)
+Show last 20 entries by default.
 
----
+### Task 4 - Guardian log access
 
-## Update identity.py and state.py
+Add command: user-log [display_name]
 
-CURRENT_PHASE = "Cycle 4 - Phase 4.4 - The User Memory"
+Privilege required: all (Guardian only)
 
-Add "guardian-clear-events", "guardian-dismiss", "switch-user"
-to STARTUP_COMMANDS and capabilities in state.py.
+Shows the interaction log for any named user.
+Same format as my-log.
 
----
+Output header:
+```
+Interaction log for Alice (user_abc12345) — N entries:
+```
 
-## Tests
+This is the Guardian's window into any user's history.
+It is not surveillance — it is accountability.
+The user knows their log exists (Law 4).
+The Guardian can read it (Law 3 — governance above the model).
 
-Update inanna/tests/test_memory.py:
-- write_memory() accepts user_id parameter
-- Memory record contains user_id field when written
-- load_memory_records() filters by user_id when provided
+### Task 5 - Log entry count in status payload
 
-Add to inanna/tests/test_user.py:
-- check_privilege() returns False for switch-user when role is user
+Add to the status payload:
+  "user_log_count": N   (entries for the active user)
+
+### Task 6 - Fix create-user created_by
+
+In main.py and server.py, when processing a create_user proposal
+approval, pass the active_token.user_id as created_by instead of
+the string "system":
+
+```python
+created_by = active_token.user_id if active_token else "system"
+```
+
+### Task 7 - UserLog in the data directory
+
+User logs live at: inanna/data/user_logs/{user_id}.jsonl
+
+This directory is created automatically on first log write.
+It is realm-agnostic for now — one global log per user.
+(Realm-scoped logs are a future enhancement.)
+
+### Task 8 - Update identity.py and state.py
+
+CURRENT_PHASE = "Cycle 4 - Phase 4.5 - The User Log"
+
+Add "my-log" and "user-log" to STARTUP_COMMANDS and capabilities.
+
+### Task 9 - Tests
+
+Create inanna/tests/test_user_log.py:
+  - UserLog can be instantiated with a temp directory
+  - append() creates the log file if absent
+  - load() returns empty list for missing file
+  - load() returns correct entries after append
+  - entry_count() returns 0 for missing file
+  - entry_count() returns correct count after appends
+  - clear() removes all entries and returns count
+  - Multiple users have separate log files
 
 Update test_identity.py: update CURRENT_PHASE assertion.
 Update test_state.py and test_commands.py: add new commands.
@@ -209,29 +172,23 @@ Update test_state.py and test_commands.py: add new commands.
 ## Permitted file changes
 
 inanna/identity.py              <- MODIFY: update CURRENT_PHASE
-inanna/main.py                  <- MODIFY: pass user_id to write_memory,
-                                           pass user_id to startup_context,
-                                           guardian-clear-events command,
-                                           guardian-dismiss command,
-                                           switch-user command
+inanna/main.py                  <- MODIFY: instantiate UserLog,
+                                           log every conversation turn,
+                                           my-log command,
+                                           user-log command,
+                                           fix create-user created_by
 inanna/core/
-  memory.py                     <- MODIFY: write_memory() user_id param,
-                                           filter by user_id in load
-  session.py                    <- MODIFY: pass user_id to grounding
+  user_log.py                   <- NEW: UserLog class
   state.py                      <- MODIFY: add new commands
-  user.py                       <- no changes
-  guardian.py                   <- no changes
 inanna/ui/
-  server.py                     <- MODIFY: same as main.py goals,
-                                           acting_as in status payload
-  static/index.html             <- MODIFY: compact .panel-btn class,
-                                           Guardian Room 3-button row,
-                                           acting-as banner in conversation,
-                                           USER: Alice [as ZAERA] in header,
-                                           acting_as in status handler
+  server.py                     <- MODIFY: instantiate UserLog,
+                                           log every conversation turn,
+                                           my-log and user-log commands,
+                                           user_log_count in status payload,
+                                           fix create-user created_by
+  static/index.html             <- no changes
 inanna/tests/
-  test_memory.py                <- MODIFY: user_id tests
-  test_user.py                  <- MODIFY: switch-user privilege test
+  test_user_log.py              <- NEW
   test_identity.py              <- MODIFY: update phase assertion
   test_state.py                 <- MODIFY: add capabilities
   test_commands.py              <- MODIFY: add capabilities
@@ -240,28 +197,26 @@ inanna/tests/
 
 ## What You Are NOT Building
 
-- No per-user interaction log (Phase 4.5)
-- No user management UI panel (Phase 4.8)
-- No cross-user memory sharing
-- No memory export or import
-- Do not change the proposal flow or governance rules
-- Do not add new Faculty classes
-- The switch-user command is Guardian-only (privilege: all)
+- No UI panel for the user log (Phase 4.8)
+- No log export or download
+- No log search or filtering
+- No log encryption
+- No per-realm log scoping
+- Do not log governance blocks (those stay in the governance log)
+- Do not log tool execution details (those stay in the audit surface)
+- Do not add log entries for commands — only conversation turns
 
 ---
 
-## Definition of Done for Phase 4.4
+## Definition of Done for Phase 4.5
 
-- [ ] Memory records carry user_id field
-- [ ] Grounding turn filters memory by active user_id
-- [ ] write_memory() passes active user_id from token
-- [ ] guardian-clear-events creates proposal then clears log
-- [ ] guardian-dismiss clears in-memory alerts
-- [ ] Guardian Room has 3 compact buttons: inspect/dismiss/clear events
-- [ ] switch-user works for guardian role only
-- [ ] UI header shows "USER: Alice [as ZAERA]" when switched
-- [ ] Warning banner appears in conversation when switched
-- [ ] All panel buttons use compact .panel-btn class
+- [ ] core/user_log.py exists with UserLog class
+- [ ] Every conversation turn appended to active user log
+- [ ] "my-log" shows last 20 entries for the active user
+- [ ] "user-log [name]" shows any user log (Guardian only)
+- [ ] Log entries include timestamp, content, response preview
+- [ ] user_log_count in status payload
+- [ ] create-user now records actual Guardian user_id as created_by
 - [ ] CURRENT_PHASE updated
 - [ ] All tests pass: py -3 -m unittest discover -s tests
 
@@ -270,14 +225,14 @@ inanna/tests/
 ## Handoff to Command Center
 
 When Definition of Done is met, Codex must:
-1. Commit with message: cycle4-phase4-complete
-2. Write docs/implementation/CYCLE4_PHASE4_REPORT.md
-3. Stop. Do not begin Phase 4.5 without a new CURRENT_PHASE.md.
+1. Commit with message: cycle4-phase5-complete
+2. Write docs/implementation/CYCLE4_PHASE5_REPORT.md
+3. Stop. Do not begin Phase 4.6 without a new CURRENT_PHASE.md.
 
 ---
 
 *Written by: Claude (Command Center)*
 *Guardian approval: ZAERA*
 *Date: 2026-04-19*
-*Memory is personal. The Guardian can walk in other shoes.*
-*But she always knows whose shoes she is wearing.*
+*A person should be able to ask what was done with their words.*
+*Phase 4.5 makes that question answerable.*
