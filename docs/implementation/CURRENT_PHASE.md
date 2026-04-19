@@ -1,273 +1,204 @@
-﻿# CURRENT PHASE: Cycle 3 - Phase 1 - The Realm Boundary
+﻿# CURRENT PHASE: Cycle 3 - Phase 2 - The Realm Memory
 **Status: ACTIVE**
 **Authorized by: ZAERA (Guardian) + Claude (Command Center)**
 **Date opened: 2026-04-19**
 **Cycle: 3 - The Commander Room**
-**Replaces: Cycle 2 - Phase 9 - The Multi-Faculty Proof (COMPLETE)**
-
----
-
-## What Cycle 3 Is
-
-Cycle 2 built the NAMMU Kernel: routing, governance, two Faculties,
-bounded tool use, Guardian monitoring, and persistent NAMMU memory.
-
-Cycle 3 builds the Commander Room: the constitutional observability
-surface where the full system becomes visible and stewardable.
-
-The Master Cycle Plan describes Cycle 3 as nine phases:
-3.1 The Realm Boundary
-3.2 The Realm Memory
-3.3 The Body Report
-3.4 The Proposal Dashboard
-3.5 The Faculty Monitor
-3.6 The Memory Map
-3.7 The Guardian Room
-3.8 The Audit Surface
-3.9 The Commander Room
-
-Phase 3.1 begins with the foundation: Realms.
+**Replaces: Cycle 3 Phase 1 - The Realm Boundary (COMPLETE)**
 
 ---
 
 ## What This Phase Is
 
-The system ontology defines a Realm as:
-"A bounded operational domain with its own governance context,
-memory scope, and embodied meaning. A realm is more than a folder
-or namespace. It is a meaningful domain of life or operation."
+Phase 3.1 gave every conversation a named home — a Realm.
+All data is now scoped to the active realm.
 
-Currently INANNA has one implicit realm: the default session.
-Everything that happens — conversations, memories, proposals,
-routing decisions — flows into one undifferentiated space.
+But INANNA does not yet know which realm she is in.
+Her identity prompt contains no realm awareness.
+Her memory grounding turn contains no realm context.
+When she reflects, she does not know she is speaking from
+within a specific domain of meaning.
 
-Phase 3.1 makes Realms explicit. The user can name a realm,
-switch between realms, and INANNA carries different memory and
-context depending on which realm is active. Proposals, memory
-records, and NAMMU history are scoped to their realm.
+Phase 3.2 makes memory realm-aware in three ways:
 
-This is the first step toward the Commander Room: you cannot
-observe a system that has no structure to observe.
+1. The identity prompt carries the active realm name and purpose
+   so INANNA knows where she is speaking from.
 
----
+2. The memory grounding turn labels its lines with the realm
+   they came from — important when memory was migrated from
+   a pre-realm session.
 
-## What a Realm Is in This Phase
-
-A Realm in Phase 3.1 is:
-- A named operational context with its own data directory
-- Its own session files, memory files, and proposal files
-- Its own NAMMU routing and governance log
-- A governance context file that names the realm and its purpose
-- Switchable at session start — not mid-session
-
-A Realm is NOT in this phase:
-- Not a separate model endpoint
-- Not a separate Faculty configuration
-- Not a separate user account
-- Not a network-distributed context
-- Not a security boundary — that is a later phase
+3. A new "realm-context" command lets the user read and set
+   the governance context of the active realm — a short
+   text that describes what this realm is for and what
+   kind of conversations belong here.
 
 ---
 
 ## What You Are Building
 
-### Task 1 - inanna/core/realm.py
+### Task 1 - Realm-aware identity prompt
 
-Create a new file: inanna/core/realm.py
+Update build_system_prompt() in identity.py to accept an optional
+realm parameter:
 
 ```python
-from __future__ import annotations
-import json
-from dataclasses import dataclass
-from pathlib import Path
-from datetime import datetime, timezone
-
-
-DEFAULT_REALM = "default"
-
-
-@dataclass
-class RealmConfig:
-    name: str
-    purpose: str
-    created_at: str
-    governance_context: str = ""
-
-
-class RealmManager:
-    def __init__(self, data_root: Path) -> None:
-        self.data_root = data_root
-        self.realms_root = data_root / "realms"
-        self.realms_root.mkdir(parents=True, exist_ok=True)
-
-    def list_realms(self) -> list[str]:
-        return sorted([
-            d.name for d in self.realms_root.iterdir()
-            if d.is_dir() and (d / "realm.json").exists()
-        ])
-
-    def realm_exists(self, name: str) -> bool:
-        return (self.realms_root / name / "realm.json").exists()
-
-    def create_realm(self, name: str, purpose: str = "",
-                     governance_context: str = "") -> RealmConfig:
-        realm_dir = self.realms_root / name
-        realm_dir.mkdir(parents=True, exist_ok=True)
-        for sub in ("sessions", "memory", "proposals", "nammu"):
-            (realm_dir / sub).mkdir(exist_ok=True)
-        config = RealmConfig(
-            name=name,
-            purpose=purpose,
-            created_at=datetime.now(timezone.utc).isoformat(),
-            governance_context=governance_context,
+def build_system_prompt(realm: RealmConfig | None = None) -> str:
+    base = PROMPT
+    if realm and realm.name != "default":
+        realm_section = (
+            f"\nYou are currently operating within the realm: {realm.name}."
+            f"\nRealm purpose: {realm.purpose}"
         )
-        (realm_dir / "realm.json").write_text(
-            json.dumps(config.__dict__, indent=2), encoding="utf-8"
+        if realm.governance_context:
+            realm_section += f"\nGovernance context: {realm.governance_context}"
+        realm_section += (
+            "\nKeep your responses relevant to this realm's purpose. "
+            "Memory and proposals in this realm belong to this context."
         )
-        return config
-
-    def load_realm(self, name: str) -> RealmConfig | None:
-        path = self.realms_root / name / "realm.json"
-        if not path.exists():
-            return None
-        data = json.loads(path.read_text(encoding="utf-8"))
-        return RealmConfig(**data)
-
-    def realm_data_dirs(self, name: str) -> dict[str, Path]:
-        base = self.realms_root / name
-        return {
-            "sessions": base / "sessions",
-            "memory": base / "memory",
-            "proposals": base / "proposals",
-            "nammu": base / "nammu",
-        }
-
-    def ensure_default_realm(self) -> RealmConfig:
-        if not self.realm_exists(DEFAULT_REALM):
-            return self.create_realm(
-                name=DEFAULT_REALM,
-                purpose="The default operational context.",
-                governance_context="Standard governance applies.",
-            )
-        return self.load_realm(DEFAULT_REALM)
+        return base + realm_section
+    return base
 ```
 
-### Task 2 - Realm-scoped data directories in main.py
+The realm parameter is passed in from main.py and server.py when
+building messages. Engine._build_messages() already calls
+build_system_prompt() — update that call to pass the active realm.
 
-Update main.py to:
-1. Instantiate RealmManager at startup
-2. Call ensure_default_realm() to create default realm if absent
-3. Read active realm from env var INANNA_REALM (default: "default")
-4. Use realm data directories for SESSION_DIR, MEMORY_DIR,
-   PROPOSAL_DIR, and NAMMU_DIR instead of the flat data/ paths
-
-The startup banner must show the active realm:
-```
-Phase: Cycle 3 - Phase 1 - The Realm Boundary
-Realm: default
-Session ID: ...
-```
-
-Add a "realms" command that lists available realms:
-```
-realms > Available realms (2):
-  [default]  The default operational context.
-  [work]     Work-related conversations and analysis.
-  Active: default
-```
-
-### Task 3 - Realm-scoped data in server.py
-
-Same as main.py — InterfaceServer uses realm data directories.
-INANNA_REALM env var determines active realm at server startup.
-
-Add "realms" command to the WebSocket protocol.
-Broadcast realm info in the initial status payload:
-```json
-{"type": "status", "data": {"realm": "default", "realm_purpose": "...", ...}}
-```
-
-### Task 4 - Realm display in index.html
-
-Add a realm indicator to the header bar, between the phase name
-and the mode indicator:
-
-```
-INANNA NYX    [phase name]  [realm: default]  [mode dot] CONNECTED
-```
-
-CSS for realm indicator:
-```css
-.realm-indicator {
-    color: #7a6a5a;  /* warm dim — earthy, grounded */
-    font-size: 0.78rem;
-    letter-spacing: 0.14em;
-    text-transform: uppercase;
-}
-```
-
-The realm name updates when the status payload includes realm data.
-
-### Task 5 - Migrate existing flat data to default realm
-
-On first startup after Phase 3.1, if flat data directories
-(inanna/data/sessions/, inanna/data/memory/, etc.) contain files
-AND the default realm is empty, migrate those files into the
-default realm automatically.
-
-This preserves all existing session history, memory, and proposals.
-
-Migration logic in main.py and server.py:
+Engine must accept and store the active realm:
 ```python
-def migrate_flat_data_to_default_realm(
-    data_root: Path,
-    realm_dirs: dict[str, Path],
-) -> int:
-    migrated = 0
-    for key in ("sessions", "memory", "proposals"):
-        flat_dir = data_root / key
-        realm_dir = realm_dirs[key]
-        if flat_dir.exists():
-            for f in flat_dir.iterdir():
-                if f.is_file():
-                    dest = realm_dir / f.name
-                    if not dest.exists():
-                        f.rename(dest)
-                        migrated += 1
-    return migrated
+class Engine:
+    def __init__(self, model_url, model_name, api_key, realm=None):
+        ...
+        self.realm = realm
 ```
 
-If migration occurs, print:
+Same for AnalystFaculty.
+
+### Task 2 - Realm-labeled memory grounding
+
+Update Engine._build_grounding_turn() in session.py to label
+memory lines with their realm origin when available.
+
+Each memory record on disk contains a session_id. The realm name
+is not currently stored in the memory record itself.
+
+Add realm_name: str = "" to the memory write call in
+Memory.write_memory() and store it in the record JSON.
+
+When loading memory records, if realm_name is present and differs
+from the active realm, prefix the line with [realm: name]:
+
 ```
-Migrated N files to default realm.
+From my approved memory of our prior conversations:
+  1. user: I am ZAERA. (from realm: default)
+  2. assistant: Greetings ZAERA.
+I will ground my responses in this approved memory.
+I will not add, invent, or infer anything beyond these lines.
+If I do not know something about this person, I will say so directly.
 ```
 
-### Task 6 - Update identity.py
+If realm_name matches the active realm or is empty, no prefix needed.
+
+### Task 3 - The "realm-context" command
+
+Add a new command: "realm-context"
+
+When the user types "realm-context", show the current realm config:
+```
+realm-context > Active realm: default
+  Purpose: The default operational context.
+  Governance context: Standard governance applies.
+  Created: 2026-04-19T...
+  Memory records: 19
+  Sessions: 17
+  Proposals: 24
+```
+
+When the user types "realm-context [text]", update the governance
+context of the active realm:
+```
+realm-context > Governance context updated.
+```
+
+This update writes to the realm.json file via RealmManager.
+
+The update must generate a proposal before writing:
+```
+[REALM PROPOSAL] timestamp | Update governance context for realm: default |
+User requested governance context change | status: pending
+```
+
+After approval, the realm.json is updated.
+
+Add update_realm_governance_context() to RealmManager:
+```python
+def update_realm_governance_context(
+    self, name: str, governance_context: str
+) -> bool:
+    config = self.load_realm(name)
+    if config is None:
+        return False
+    config.governance_context = governance_context
+    (self.realms_root / name / "realm.json").write_text(
+        json.dumps(config.__dict__, indent=2), encoding="utf-8"
+    )
+    return True
+```
+
+### Task 4 - Realm context in status payload
+
+Update the status payload in both main.py and server.py to include:
+- realm_memory_count: number of memory records in active realm
+- realm_session_count: number of sessions in active realm
+- realm_governance_context: the governance context string
+
+These are read from disk at status time, not cached.
+
+### Task 5 - Realm indicator in UI enriched
+
+The header currently shows "[realm: default]".
+Update it to show realm purpose on hover (title attribute):
+
+```html
+<div class="realm-indicator" id="realm-indicator" title="">
+  realm: default
+</div>
+```
+
+Update the JavaScript to set both textContent and title when
+status payload includes realm data:
+```javascript
+realmIndicator.textContent = `realm: ${data.realm}`;
+realmIndicator.title = data.realm_purpose || '';
+```
+
+### Task 6 - Update identity.py and state.py
 
 Update CURRENT_PHASE:
 ```python
-CURRENT_PHASE = "Cycle 3 - Phase 1 - The Realm Boundary"
+CURRENT_PHASE = "Cycle 3 - Phase 2 - The Realm Memory"
 ```
 
-Add to STARTUP_COMMANDS in main.py: "realms"
-Add to capabilities line in state.py: "realms"
+Add "realm-context" to STARTUP_COMMANDS and capabilities in state.py.
 
 ### Task 7 - Tests
 
-Create inanna/tests/test_realm.py:
-- RealmManager can be instantiated with a temp directory
-- ensure_default_realm() creates default realm if absent
-- create_realm() creates all required subdirectories
-- list_realms() returns correct realm names
-- realm_exists() returns True/False correctly
-- load_realm() returns RealmConfig with correct fields
-- realm_data_dirs() returns dict with all four keys
+Update inanna/tests/test_realm.py:
+- update_realm_governance_context() updates realm.json correctly
+- load_realm() reflects updated governance context
+
+Create inanna/tests/test_realm_memory.py:
+- build_system_prompt() with realm returns prompt containing realm name
+- build_system_prompt() with default realm returns base prompt unchanged
+- build_system_prompt() with None returns base prompt unchanged
+- Memory.write_memory() accepts realm_name parameter
+- Memory record contains realm_name field when written
 
 Update test_identity.py:
+- build_system_prompt() signature accepts realm parameter
 - Update CURRENT_PHASE assertion
 
 Update test_state.py and test_commands.py:
-- Add "realms" to capabilities assertions
+- Add "realm-context" to capabilities assertions
 
 ---
 
@@ -275,79 +206,88 @@ Update test_state.py and test_commands.py:
 
 ```
 inanna/
-  identity.py              <- MODIFY: update CURRENT_PHASE
+  identity.py              <- MODIFY: update build_system_prompt()
+                                      signature and realm injection,
+                                      update CURRENT_PHASE
   config/                  <- no changes
-  main.py                  <- MODIFY: realm manager, realm dirs,
-                                      realms command, migration
+  main.py                  <- MODIFY: pass realm to Engine/AnalystFaculty,
+                                      add realm-context command,
+                                      pass realm_name to write_memory()
   core/
-    session.py             <- no changes
-    memory.py              <- no changes
+    session.py             <- MODIFY: Engine/AnalystFaculty accept realm,
+                                      pass realm to build_system_prompt(),
+                                      label cross-realm memory lines
+    memory.py              <- MODIFY: write_memory() accepts realm_name,
+                                      stores it in record
     proposal.py            <- no changes
-    state.py               <- MODIFY: add realms to capabilities
+    state.py               <- MODIFY: add realm-context to capabilities,
+                                      add realm fields to render()
     nammu.py               <- no changes
     governance.py          <- no changes
     operator.py            <- no changes
     guardian.py            <- no changes
     nammu_memory.py        <- no changes
-    realm.py               <- NEW: RealmManager, RealmConfig
+    realm.py               <- MODIFY: add update_realm_governance_context()
   ui/
-    server.py              <- MODIFY: realm manager, realm dirs,
-                                      realm in status payload,
-                                      realms command, migration
+    server.py              <- MODIFY: pass realm to Engine/AnalystFaculty,
+                                      add realm-context command,
+                                      enrich status payload with realm data
     static/
-      index.html           <- MODIFY: add realm indicator to header
+      index.html           <- MODIFY: realm indicator title/hover,
+                                      update status handler
   tests/
-    test_realm.py          <- NEW
-    test_identity.py       <- MODIFY: update phase assertion
-    test_state.py          <- MODIFY: add realms to capabilities
-    test_commands.py       <- MODIFY: add realms to capabilities
+    test_realm.py          <- MODIFY: add governance context update test
+    test_realm_memory.py   <- NEW
+    test_identity.py       <- MODIFY: test realm prompt injection,
+                                      update phase assertion
+    test_state.py          <- MODIFY: add realm-context to capabilities
+    test_commands.py       <- MODIFY: add realm-context to capabilities
     (all others)           <- no changes
-  data/
-    realms/                <- NEW directory (auto-created)
-      default/             <- auto-created by ensure_default_realm()
 ```
 
 ---
 
 ## What You Are NOT Building in This Phase
 
-- No mid-session realm switching — realm is set at startup
+- No realm creation via UI or command (that is Phase 3.3+)
+- No realm switching mid-session
+- No cross-realm memory search
+- No realm deletion
 - No realm-specific Faculty configuration
-- No realm security or access control
-- No realm sharing or network distribution
-- No realm deletion (that is a future phase with a consent flow)
-- No change to core Faculty, governance, or NAMMU logic
-- No new Faculty classes
+- No realm-specific governance rules (governance.json is global)
+- Do not change the data migration logic from Phase 3.1
 
 ---
 
-## Definition of Done for Phase 3.1
+## Definition of Done for Phase 3.2
 
-- [ ] inanna/core/realm.py exists with RealmManager and RealmConfig
-- [ ] All data directories are realm-scoped at startup
-- [ ] INANNA_REALM env var selects active realm
-- [ ] Default realm created automatically if absent
-- [ ] Existing flat data migrated to default realm on first run
-- [ ] Realm name shown in CLI banner and UI header
-- [ ] "realms" command lists available realms
-- [ ] All tests pass: py -3 -m unittest discover -s tests
+- [ ] build_system_prompt() injects realm name and purpose for
+      non-default realms
+- [ ] Engine and AnalystFaculty store and use active realm
+- [ ] Memory records store realm_name when written
+- [ ] Cross-realm memory lines are labeled in grounding turn
+- [ ] "realm-context" shows active realm config with counts
+- [ ] "realm-context [text]" updates governance context via proposal
+- [ ] Status payload includes realm_memory_count, realm_session_count,
+      realm_governance_context
+- [ ] Realm indicator in UI header shows purpose on hover
 - [ ] CURRENT_PHASE updated
+- [ ] All tests pass: py -3 -m unittest discover -s tests
 
 ---
 
 ## Handoff to Command Center
 
 When Definition of Done is met, Codex must:
-1. Commit with message: cycle3-phase1-complete
-2. Write docs/implementation/CYCLE3_PHASE1_REPORT.md
-3. Stop. Do not begin Phase 3.2 without a new CURRENT_PHASE.md.
+1. Commit with message: cycle3-phase2-complete
+2. Write docs/implementation/CYCLE3_PHASE2_REPORT.md
+3. Stop. Do not begin Phase 3.3 without a new CURRENT_PHASE.md.
 
 ---
 
 *Written by: Claude (Command Center)*
 *Guardian approval: ZAERA*
 *Date: 2026-04-19*
-*A realm is not a folder.*
-*It is a domain of meaning.*
-*Every conversation happens somewhere.*
-*Phase 3.1 makes that somewhere named.*
+*A conversation in the work realm stays in the work realm.*
+*Memory knows where it came from.*
+*INANNA knows where she is.*
