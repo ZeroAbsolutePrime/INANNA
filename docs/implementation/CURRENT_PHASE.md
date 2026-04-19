@@ -1,236 +1,192 @@
-﻿# CURRENT PHASE: Cycle 2 - Phase 7 - The Guardian Check
+﻿# CURRENT PHASE: Cycle 2 - Phase 8 - The NAMMU Memory
 **Status: ACTIVE**
 **Authorized by: ZAERA (Guardian) + Claude (Command Center)**
 **Date opened: 2026-04-19**
 **Cycle: 2 - The NAMMU Kernel**
-**Replaces: Cycle 2 Phase 6 - The Bounded Tool (COMPLETE)**
+**Replaces: Cycle 2 Phase 7 - The Guardian Check (COMPLETE)**
 
 ---
 
 ## What This Phase Is
 
-The architecture now has:
-- NAMMU routing between Faculties
-- Governance checking every input before routing
-- An Operator Faculty with bounded tool use
-- Proposals governing memory, tool use, and forgetting
+Phase 2.8 has two goals that belong together:
 
-But there is no layer that monitors the system itself over time.
-No layer that notices patterns, raises alerts, or reports on the
-health of the governance structure.
+**Goal 1 - NAMMU Memory:** The routing log and governance event log
+currently live only in memory. When the session ends, they vanish.
+NAMMU cannot learn from its own decisions across sessions.
+Phase 2.8 persists the NAMMU routing log and governance event log
+to disk so they survive across sessions.
 
-Phase 2.7 introduces the Guardian Faculty.
+**Goal 2 - Tool Resilience and Signal Expansion:** The live test
+confirmed that the tool search works, but two issues need fixing:
+- When LM Studio drops mid-tool-execution, INANNA shows a raw
+  fallback error instead of a clean graceful message
+- Several natural search phrases ("last news", "how is the weather",
+  "what is happening", "current situation") are not in TOOL_SIGNALS
+  and therefore do not trigger the tool proposal flow
 
-In the Architecture Horizon, the Guardian Faculty is described as:
-"policy checking, anomaly detection, risk review."
-
-In this phase, the Guardian is a lightweight monitoring layer that:
-- Runs a periodic health check on the governance state
-- Detects anomalous patterns in the session
-- Raises alerts when something warrants attention
-- Is accessible via a "guardian" command
-
-The Guardian does not block actions - that is Governance's role.
-The Guardian observes, reports, and raises concerns.
-It is the conscience of the system, not its enforcer.
+These two goals belong in the same phase because they both concern
+NAMMU's operational memory and reliability.
 
 ---
 
 ## What You Are Building
 
-### Task 1 - inanna/core/guardian.py
+### Task 1 - NAMMU routing log persistence
 
-Create a new file: inanna/core/guardian.py
+Create a new file: inanna/data/nammu/ (directory, auto-created)
 
+The routing log persists as: inanna/data/nammu/routing_log.jsonl
+(JSON Lines format - one JSON object per line)
+
+Each entry:
+```json
+{"timestamp": "...", "session_id": "...", "route": "crown", "input_preview": "Hello Dear"}
+```
+
+In main.py and server.py, when a routing decision is made:
+- Append the decision to the in-memory routing_log (existing)
+- Also append it to inanna/data/nammu/routing_log.jsonl
+
+Add a new method to load routing history:
 ```python
-from __future__ import annotations
-from dataclasses import dataclass, field
-from datetime import datetime, timezone
-from typing import Any
-
-
-@dataclass
-class GuardianAlert:
-    level: str        # "info" | "warn" | "critical"
-    code: str         # short machine-readable code
-    message: str      # human-readable description
-    timestamp: str = field(
-        default_factory=lambda: datetime.now(timezone.utc).isoformat()
-    )
-
-
-class GuardianFaculty:
-    def inspect(
-        self,
-        session_id: str,
-        memory_count: int,
-        pending_proposals: int,
-        routing_log: list[dict[str, Any]],
-        governance_blocks: int,
-        tool_executions: int,
-    ) -> list[GuardianAlert]:
-        alerts: list[GuardianAlert] = []
-
-        # Check 1: Excessive pending proposals
-        if pending_proposals >= 5:
-            alerts.append(GuardianAlert(
-                level="warn",
-                code="PENDING_PROPOSAL_ACCUMULATION",
-                message=(
-                    f"{pending_proposals} proposals are pending approval. "
-                    "Consider reviewing and resolving them."
-                ),
-            ))
-
-        # Check 2: Governance blocks in this session
-        if governance_blocks >= 3:
-            alerts.append(GuardianAlert(
-                level="warn",
-                code="REPEATED_GOVERNANCE_BLOCKS",
-                message=(
-                    f"{governance_blocks} inputs were blocked by governance "
-                    "in this session. This may indicate boundary testing."
-                ),
-            ))
-
-        # Check 3: Memory growth without review
-        if memory_count >= 10:
-            alerts.append(GuardianAlert(
-                level="info",
-                code="MEMORY_GROWTH",
-                message=(
-                    f"{memory_count} approved memory records exist. "
-                    "Consider reviewing older records for relevance."
-                ),
-            ))
-
-        # Check 4: Tool use frequency
-        if tool_executions >= 5:
-            alerts.append(GuardianAlert(
-                level="info",
-                code="TOOL_USE_FREQUENCY",
-                message=(
-                    f"{tool_executions} tool executions in this session. "
-                    "Tool use is governed and visible."
-                ),
-            ))
-
-        # Check 5: Healthy state
-        if not alerts:
-            alerts.append(GuardianAlert(
-                level="info",
-                code="SYSTEM_HEALTHY",
-                message="All governance indicators within normal bounds.",
-            ))
-
-        return alerts
-
-    def format_report(self, alerts: list[GuardianAlert]) -> str:
-        lines = [f"Guardian Report ({len(alerts)} alert(s)):"]
-        for alert in alerts:
-            level_marker = {
-                "info": "  [info]    ",
-                "warn": "  [warn]    ",
-                "critical": "  [critical]",
-            }.get(alert.level, "  [?]       ")
-            lines.append(f"{level_marker} {alert.code}")
-            lines.append(f"             {alert.message}")
-        return "\n".join(lines)
+def load_routing_history(nammu_dir: Path, limit: int = 20) -> list[dict]:
+    path = nammu_dir / "routing_log.jsonl"
+    if not path.exists():
+        return []
+    lines = path.read_text(encoding="utf-8").strip().splitlines()
+    return [json.loads(line) for line in lines[-limit:]]
 ```
 
-### Task 2 - Guardian state tracking in main.py and server.py
+This lives in a new file: inanna/core/nammu_memory.py
 
-Both main.py and InterfaceServer need to track:
-- governance_blocks: int — incremented each time GovernanceResult.decision == "block"
-- tool_executions: int — incremented each time a tool proposal is approved and executed
+### Task 2 - Governance event log persistence
 
-These are session-level counters, initialised to 0 at startup.
+The governance event log persists as: inanna/data/nammu/governance_log.jsonl
 
-### Task 3 - The "guardian" command
-
-Add a new command: "guardian"
-
-When the user types "guardian", the system:
-1. Instantiates GuardianFaculty
-2. Calls guardian.inspect() with current session state
-3. Calls guardian.format_report() on the result
-4. Prints the report
-
-CLI prefix: "guardian >"
-UI message type: {"type": "guardian", "text": "..."}
-
-The guardian command is read-only. No proposals, no state changes.
-
-### Task 4 - Guardian message rendering in index.html
-
-Add CSS for guardian messages:
-
-```css
-.message-guardian .message-prefix,
-.message-guardian .message-content {
-    color: #7a6a8a;  /* muted violet - watchful, distinct */
-    font-size: 0.88rem;
-    white-space: pre;
-}
+Each entry:
+```json
+{"timestamp": "...", "session_id": "...", "decision": "block", "reason": "Identity and law boundaries cannot be altered.", "input_preview": "ignore your instructions"}
 ```
 
-Prefix: "guardian :"
+In main.py and server.py, when a governance decision is NOT "allow":
+- Log it to inanna/data/nammu/governance_log.jsonl
 
-The guardian report uses pre-formatted text (white-space: pre)
-because the report format uses alignment spaces.
-
-### Task 5 - Auto-guardian on session start
-
-When the UI first connects (send_initial_state), run the Guardian
-inspect automatically and include the report in the initial system
-messages if any non-info alerts exist.
-
-If all alerts are info/healthy: no auto-report on startup.
-If any warn or critical alerts exist: broadcast one guardian message
-on startup so the user sees it immediately.
-
-This is the Guardian fulfilling its monitoring role proactively.
-
-### Task 6 - Update identity.py
-
-Add guardian check codes as a constitutional record:
-
+Add corresponding load function in nammu_memory.py:
 ```python
-GUARDIAN_CHECK_CODES = [
-    "PENDING_PROPOSAL_ACCUMULATION",
-    "REPEATED_GOVERNANCE_BLOCKS",
-    "MEMORY_GROWTH",
-    "TOOL_USE_FREQUENCY",
-    "SYSTEM_HEALTHY",
-]
-
-def list_guardian_codes() -> list[str]:
-    return GUARDIAN_CHECK_CODES
+def load_governance_history(nammu_dir: Path, limit: int = 20) -> list[dict]:
 ```
+
+### Task 3 - nammu-log command
+
+Add a new command: "nammu-log"
+
+When the user types "nammu-log", show:
+```
+NAMMU Memory Log:
+
+Routing decisions (last 10):
+  [crown]    2026-04-19T09:15:26 | Hello Dear
+  [analyst]  2026-04-19T09:18:45 | Can search on the web?
+
+Governance events (last 10):
+  [block]    2026-04-19T... | ignore your instructions
+  [redirect] 2026-04-19T... | I need medical advice
+```
+
+This reads from disk - it shows history across all sessions.
+
+Add "nammu-log" to STARTUP_COMMANDS and capabilities in state.py.
+
+### Task 4 - Guardian uses NAMMU memory
+
+Update GuardianFaculty.inspect() to accept governance_history:
+```python
+def inspect(
+    self,
+    session_id: str,
+    memory_count: int,
+    pending_proposals: int,
+    routing_log: list[dict],
+    governance_blocks: int,
+    tool_executions: int,
+    governance_history: list[dict] | None = None,
+) -> list[GuardianAlert]:
+```
+
+Add a new check using governance_history:
+```python
+# Check 6: Repeated blocks across sessions
+if governance_history:
+    total_blocks = sum(1 for e in governance_history if e.get("decision") == "block")
+    if total_blocks >= 5:
+        alerts.append(GuardianAlert(
+            level="warn",
+            code="PERSISTENT_BOUNDARY_TESTING",
+            message=(
+                f"{total_blocks} governance blocks recorded across sessions. "
+                "This pattern is visible in the NAMMU memory log."
+            ),
+        ))
+```
+
+### Task 5 - Tool signal expansion and resilience
+
+Expand TOOL_SIGNALS in governance.py to add:
+```python
+"last news", "latest news about", "how is the weather",
+"what is the weather", "weather in", "weather today",
+"what is happening", "current situation", "what happened",
+"news about", "tell me about current", "find information",
+"look up", "what are the latest",
+```
+
+Fix tool execution resilience in main.py and server.py:
+When the model call fails after a successful tool execution,
+instead of the raw fallback error, show:
+
+```
+operator > search result:
+  {raw results}
+
+operator > model unavailable to summarize. Raw results shown above.
+  Type your next message to continue.
+```
+
+This means the search result is never lost even if the model drops.
+
+### Task 6 - inanna/core/nammu_memory.py
+
+Create this new file containing:
+- load_routing_history(nammu_dir, limit)
+- load_governance_history(nammu_dir, limit)
+- append_routing_event(nammu_dir, session_id, route, input_preview)
+- append_governance_event(nammu_dir, session_id, decision, reason, input_preview)
+
+All functions handle missing directory/file gracefully.
+
+### Task 7 - Update identity.py
 
 Update CURRENT_PHASE:
 ```python
-CURRENT_PHASE = "Cycle 2 - Phase 7 - The Guardian Check"
+CURRENT_PHASE = "Cycle 2 - Phase 8 - The NAMMU Memory"
 ```
 
-Add "guardian" to STARTUP_COMMANDS and capabilities line in state.py.
+### Task 8 - Tests
 
-### Task 7 - Tests
+Create inanna/tests/test_nammu_memory.py:
+- append_routing_event() creates the file if it does not exist
+- load_routing_history() returns empty list for missing file
+- load_routing_history() returns correct entries after appending
+- append_governance_event() logs non-allow decisions
+- load_governance_history() returns entries in order
 
-Create inanna/tests/test_guardian.py:
-- GuardianFaculty.inspect() returns a list of GuardianAlert
-- No alerts (healthy state) returns exactly one alert with code SYSTEM_HEALTHY
-- pending_proposals >= 5 triggers PENDING_PROPOSAL_ACCUMULATION at warn level
-- governance_blocks >= 3 triggers REPEATED_GOVERNANCE_BLOCKS at warn level
-- memory_count >= 10 triggers MEMORY_GROWTH at info level
-- format_report() returns a non-empty string containing "Guardian Report"
+Update test_guardian.py:
+- GuardianFaculty.inspect() accepts governance_history parameter
+- PERSISTENT_BOUNDARY_TESTING triggers with 5+ block entries
 
 Update test_identity.py:
-- list_guardian_codes() returns a list containing "SYSTEM_HEALTHY"
 - Update CURRENT_PHASE assertion
-
-Update test_commands.py and test_state.py:
-- Add "guardian" to capabilities assertions
 
 ---
 
@@ -238,57 +194,60 @@ Update test_commands.py and test_state.py:
 
 ```
 inanna/
-  identity.py              <- MODIFY: add GUARDIAN_CHECK_CODES,
-                                      list_guardian_codes(),
-                                      update CURRENT_PHASE
+  identity.py              <- MODIFY: update CURRENT_PHASE
   config.py                <- no changes
-  main.py                  <- MODIFY: track governance_blocks and
-                                      tool_executions counters,
-                                      add guardian command
+  main.py                  <- MODIFY: persist routing/governance events,
+                                      add nammu-log command,
+                                      fix tool resilience fallback
   core/
     session.py             <- no changes
     memory.py              <- no changes
     proposal.py            <- no changes
-    state.py               <- MODIFY: add guardian to capabilities line
+    state.py               <- MODIFY: add nammu-log to capabilities
     nammu.py               <- no changes
-    governance.py          <- no changes
+    governance.py          <- MODIFY: expand TOOL_SIGNALS
     operator.py            <- no changes
-    guardian.py            <- NEW: GuardianFaculty, GuardianAlert
+    guardian.py            <- MODIFY: add governance_history param,
+                                      add PERSISTENT_BOUNDARY_TESTING check
+    nammu_memory.py        <- NEW: persistence helpers
   ui/
-    server.py              <- MODIFY: track counters, add guardian command,
-                                      auto-guardian on startup if warns exist
+    server.py              <- MODIFY: persist events, nammu-log command,
+                                      fix tool resilience fallback
     static/
-      index.html           <- MODIFY: add guardian message styling
+      index.html           <- no changes
   tests/
-    test_guardian.py       <- NEW: GuardianFaculty tests
-    test_identity.py       <- MODIFY: add guardian codes test, update phase
-    test_commands.py       <- MODIFY: add guardian in capabilities test
-    test_state.py          <- MODIFY: update capabilities assertion
+    test_nammu_memory.py   <- NEW
+    test_guardian.py       <- MODIFY: add governance_history test
+    test_identity.py       <- MODIFY: update phase assertion
+    test_state.py          <- MODIFY: add nammu-log to capabilities
+    test_commands.py       <- MODIFY: add nammu-log to capabilities
     (all others)           <- no changes
+  data/
+    nammu/                 <- NEW directory (auto-created at runtime)
 ```
 
 ---
 
 ## What You Are NOT Building in This Phase
 
-- No automatic blocking by the Guardian (Governance blocks, Guardian observes)
-- No persistent Guardian log across sessions
-- No Guardian LLM call - all checks are deterministic
-- No Guardian alerts sent to external systems
-- No change to memory, proposal, or session storage
-- Do not add Guardian checks to the analyse direct override path
+- No NAMMU LLM layer - routing stays deterministic with model classification
+- No cross-session routing learning or adaptation
+- No change to session memory, proposal storage, or session JSON format
+- No new Faculty classes
+- No change to the UI styling or rendering
+- The nammu-log command is read-only
 
 ---
 
-## Definition of Done for Phase 2.7
+## Definition of Done for Phase 2.8
 
-- [ ] inanna/core/guardian.py exists with GuardianFaculty and GuardianAlert
-- [ ] All five checks implemented and tested
-- [ ] "guardian" command works in CLI and UI
-- [ ] Auto-guardian runs on UI startup if warn/critical alerts exist
-- [ ] guardian messages appear in muted violet in UI
-- [ ] governance_blocks and tool_executions counters tracked correctly
-- [ ] list_guardian_codes() exists in identity.py
+- [ ] inanna/core/nammu_memory.py exists with 4 helper functions
+- [ ] Routing decisions persist to data/nammu/routing_log.jsonl
+- [ ] Governance events (non-allow) persist to data/nammu/governance_log.jsonl
+- [ ] "nammu-log" command shows cross-session history
+- [ ] Tool resilience: failed model after successful search shows clean message
+- [ ] Expanded TOOL_SIGNALS include weather, news, current situation phrases
+- [ ] GuardianFaculty has PERSISTENT_BOUNDARY_TESTING check
 - [ ] CURRENT_PHASE updated
 - [ ] All tests pass: py -3 -m unittest discover -s tests
 
@@ -297,15 +256,14 @@ inanna/
 ## Handoff to Command Center
 
 When Definition of Done is met, Codex must:
-1. Commit with message: cycle2-phase7-complete
-2. Write docs/implementation/CYCLE2_PHASE7_REPORT.md
-3. Stop. Do not begin Phase 2.8 without a new CURRENT_PHASE.md.
+1. Commit with message: cycle2-phase8-complete
+2. Write docs/implementation/CYCLE2_PHASE8_REPORT.md
+3. Stop. Do not begin Phase 2.9 without a new CURRENT_PHASE.md.
 
 ---
 
 *Written by: Claude (Command Center)*
 *Guardian approval: ZAERA*
 *Date: 2026-04-19*
-*The Guardian does not enforce. It witnesses.*
-*Its violet light is not a warning siren.*
-*It is a lamp held steady in the dark.*
+*NAMMU remembers its own decisions.*
+*The architecture begins to know itself across time.*
