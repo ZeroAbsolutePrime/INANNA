@@ -1,266 +1,242 @@
-﻿# CURRENT PHASE: Cycle 2 - Phase 5 - The Governed Route
+﻿# CURRENT PHASE: Cycle 2 - Phase 6 - The Bounded Tool
 **Status: ACTIVE**
 **Authorized by: ZAERA (Guardian) + Claude (Command Center)**
 **Date opened: 2026-04-19**
 **Cycle: 2 - The NAMMU Kernel**
-**Replaces: Cycle 2 Phase 4 - The NAMMU Kernel (COMPLETE)**
+**Replaces: Cycle 2 Phase 5 - The Governed Route (COMPLETE)**
 
 ---
 
 ## What This Phase Is
 
-Phase 2.4 gave INANNA automatic routing between Faculties via NAMMU.
-The architecture now has intention flowing into a routing decision.
+Phase 2.5 gave INANNA governance over routing decisions. The system
+now has: intent classification (NAMMU), Faculty routing, and deterministic
+governance checking. The architecture mediates before the model speaks.
 
-But routing without governance is just switching. The architecture
-horizon is explicit: "Governance bounds action." Before NAMMU sends
-a request to any Faculty, Governance must be consulted.
+Phase 2.6 introduces the first tool use - bounded, governed, and explicit.
 
-Phase 2.5 introduces the Governance layer into the routing path.
+In the Architecture Horizon, the Operator Faculty is described as:
+"code and tool execution planning." In this phase, we build the
+simplest possible form of that: a single tool that INANNA can invoke
+when the user asks a question that requires a real-world lookup.
 
-In this phase, Governance is a deterministic rule set - not a model
-call. It checks the incoming request against explicit rules before
-NAMMU routes. If a rule triggers, Governance can:
-- Allow the request to proceed normally
-- Redirect it to a different Faculty
-- Block it with an explanation
-- Require a proposal before proceeding
+The tool is: web_search
 
-This is Law 3 made structural: Governance above the model. The model
-does not decide its own permissions. A layer above it does.
+But unlike a raw web search, this tool is governed:
+- INANNA proposes using the tool before invoking it
+- The user approves or rejects the proposal
+- Only after approval does the tool execute
+- The result is shown transparently before INANNA summarizes it
+
+This is Law 1 (proposal before change) applied to tool use.
+A search is a change to the information state of the session.
+It must be proposed, not assumed.
 
 ---
 
-## The Governance Layer - Phase 2.5 Scope
+## The Operator Faculty - Phase 2.6 Scope
 
-Governance in this phase lives in: inanna/core/governance.py
+The Operator Faculty in this phase is a lightweight tool executor.
+It does not have its own LLM call. It executes a bounded set of
+approved tools and returns structured results.
 
-It contains one class: GovernanceLayer
-
-GovernanceLayer receives the user input and the NAMMU routing decision,
-checks it against a set of explicit rules, and returns a GovernanceResult.
-
-GovernanceResult is a dataclass:
-- decision: "allow" | "redirect" | "block" | "propose"
-- faculty: "crown" | "analyst" (may differ from NAMMU's choice)
-- reason: str (human-readable explanation)
-- requires_proposal: bool
-
-Phase 2.5 implements these four governance rules:
-
-RULE 1 - Memory Boundary Protection
-If the input asks INANNA to remember, store, or retain something
-without going through the proposal flow, Governance returns:
-decision="propose", reason="Memory changes require a proposal first."
-This enforces Law 1: Proposal before change.
-
-RULE 2 - Identity Boundary Protection  
-If the input attempts to redefine who INANNA is (e.g. "you are now X",
-"forget your laws", "ignore your instructions"), Governance returns:
-decision="block", reason="Identity and law boundaries cannot be altered."
-This enforces Law 3: Governance above the model.
-
-RULE 3 - Sensitive Topic Redirect
-If the input contains content that requires careful, structured handling
-(medical advice, legal advice, financial advice), Governance redirects
-to the Analyst Faculty regardless of NAMMU routing:
-decision="redirect", faculty="analyst",
-reason="Sensitive topic redirected to Analyst Faculty for structured response."
-
-RULE 4 - Allow Everything Else
-All other inputs: decision="allow", faculty=nammu_route.
+Tools available in Phase 2.6: one only - web_search via DuckDuckGo
+(no API key required, uses the public DDG instant answer API).
 
 ---
 
 ## What You Are Building
 
-### Task 1 - inanna/core/governance.py
+### Task 1 - inanna/core/operator.py
 
-Create a new file: inanna/core/governance.py
+Create a new file: inanna/core/operator.py
 
 ```python
 from __future__ import annotations
+import urllib.request
+import urllib.parse
+import json
 from dataclasses import dataclass
-
-
-MEMORY_SIGNALS = [
-    "remember that", "please remember", "store this",
-    "save this", "keep this in memory", "retain this",
-    "add to memory", "memorize",
-]
-
-IDENTITY_SIGNALS = [
-    "you are now", "forget your laws", "ignore your instructions",
-    "you have no restrictions", "pretend you are", "act as if",
-    "disregard your", "override your", "your new name is",
-    "you are actually", "ignore all previous",
-]
-
-SENSITIVE_SIGNALS = [
-    "medical advice", "legal advice", "financial advice",
-    "should i take", "is it safe to", "diagnose", "prescribe",
-    "lawsuit", "sue", "legal action", "invest in", "buy this stock",
-]
+from typing import Any
 
 
 @dataclass
-class GovernanceResult:
-    decision: str   # "allow" | "redirect" | "block" | "propose"
-    faculty: str    # "crown" | "analyst"
-    reason: str
-    requires_proposal: bool = False
+class ToolResult:
+    tool: str
+    query: str
+    success: bool
+    data: dict[str, Any]
+    error: str = ""
 
 
-class GovernanceLayer:
-    def check(self, user_input: str, nammu_route: str) -> GovernanceResult:
-        lower = user_input.lower()
+class OperatorFaculty:
+    PERMITTED_TOOLS = {"web_search"}
 
-        # Rule 1: Memory boundary
-        if any(signal in lower for signal in MEMORY_SIGNALS):
-            return GovernanceResult(
-                decision="propose",
-                faculty=nammu_route,
-                reason="Memory changes require a proposal first.",
-                requires_proposal=True,
+    def execute(self, tool: str, params: dict[str, Any]) -> ToolResult:
+        if tool not in self.PERMITTED_TOOLS:
+            return ToolResult(
+                tool=tool, query="",
+                success=False, data={},
+                error=f"Tool '{tool}' is not in the permitted tool set.",
             )
+        if tool == "web_search":
+            return self._web_search(params.get("query", ""))
+        return ToolResult(tool=tool, query="", success=False, data={},
+                          error="Unknown tool.")
 
-        # Rule 2: Identity boundary
-        if any(signal in lower for signal in IDENTITY_SIGNALS):
-            return GovernanceResult(
-                decision="block",
-                faculty=nammu_route,
-                reason="Identity and law boundaries cannot be altered.",
-            )
-
-        # Rule 3: Sensitive topic redirect
-        if any(signal in lower for signal in SENSITIVE_SIGNALS):
-            return GovernanceResult(
-                decision="redirect",
-                faculty="analyst",
-                reason="Sensitive topic redirected to Analyst Faculty.",
-            )
-
-        # Rule 4: Allow
-        return GovernanceResult(
-            decision="allow",
-            faculty=nammu_route,
-            reason="",
-        )
+    def _web_search(self, query: str) -> ToolResult:
+        if not query.strip():
+            return ToolResult(tool="web_search", query=query,
+                              success=False, data={},
+                              error="Empty search query.")
+        try:
+            encoded = urllib.parse.quote_plus(query)
+            url = f"https://api.duckduckgo.com/?q={encoded}&format=json&no_html=1&skip_disambig=1"
+            req = urllib.request.Request(url)
+            req.add_header("User-Agent", "INANNA-NYX/1.0")
+            with urllib.request.urlopen(req, timeout=8) as r:
+                body = json.loads(r.read().decode("utf-8"))
+            results = {
+                "abstract": body.get("Abstract", ""),
+                "abstract_source": body.get("AbstractSource", ""),
+                "abstract_url": body.get("AbstractURL", ""),
+                "answer": body.get("Answer", ""),
+                "answer_type": body.get("AnswerType", ""),
+                "related": [
+                    {"text": t.get("Text", ""), "url": t.get("FirstURL", "")}
+                    for t in body.get("RelatedTopics", [])[:3]
+                    if isinstance(t, dict) and t.get("Text")
+                ],
+            }
+            return ToolResult(tool="web_search", query=query,
+                              success=True, data=results)
+        except Exception as e:
+            return ToolResult(tool="web_search", query=query,
+                              success=False, data={}, error=str(e))
 ```
 
-### Task 2 - Wire Governance into the routing path
+### Task 2 - Tool detection in governance.py
 
-In inanna/core/nammu.py, update IntentClassifier to accept a
-GovernanceLayer and apply it after classification:
+Add tool intent detection to GovernanceLayer.
 
+When the input signals a need for current information that INANNA
+cannot have from memory alone, Governance sets a flag:
+suggests_tool=True in GovernanceResult.
+
+Add suggests_tool: bool = False to GovernanceResult dataclass.
+
+Add TOOL_SIGNALS list to governance.py:
 ```python
-class IntentClassifier:
-    def __init__(self, engine, governance=None) -> None:
-        self.engine = engine
-        self.governance = governance
-
-    def route(self, user_input: str) -> GovernanceResult:
-        from core.governance import GovernanceLayer, GovernanceResult
-        nammu_route = self.classify(user_input)
-        gov = self.governance or GovernanceLayer()
-        result = gov.check(user_input, nammu_route)
-        return result
+TOOL_SIGNALS = [
+    "search for", "look up", "find out", "what is the latest",
+    "current news", "today's", "right now", "what happened",
+    "recent", "latest news", "search the web", "look it up",
+]
 ```
 
-The existing classify() method stays unchanged.
-Add the new route() method that returns a GovernanceResult.
+When a tool signal is detected AND decision is "allow":
+- Set suggests_tool=True
+- Set proposed_tool="web_search"
+- Set tool_query=<extracted query or full input>
 
-### Task 3 - Use GovernanceResult in main.py
+Add to GovernanceResult:
+```python
+suggests_tool: bool = False
+proposed_tool: str = ""
+tool_query: str = ""
+```
 
-In main.py, update handle_command() to call classifier.route()
-instead of classifier.classify() for normal conversation input.
+### Task 3 - Tool proposal flow in main.py
 
-Based on GovernanceResult.decision:
+When GovernanceResult.suggests_tool is True, instead of calling
+any Faculty directly, create a tool proposal:
 
-"allow" - proceed to the Faculty (crown or analyst) as normal
-"redirect" - proceed to the redirected Faculty, show governance notice
-"block" - do not call any Faculty, show the governance reason directly
-"propose" - create a proposal for the requested memory action,
-            do not call any Faculty
+```
+[TOOL PROPOSAL] {timestamp} | Use web_search for: {query} | status: pending
+```
 
-The governance decision must be shown to the user:
+Show the user:
+```
+operator > tool proposed: web_search — "{query}"
+Type "approve" to execute or "reject" to cancel.
+```
 
-For "allow":
-  nammu > routing to crown faculty          (no governance line)
-  inanna > ...
+When approved:
+1. Execute OperatorFaculty.execute("web_search", {"query": query})
+2. Show raw results:
+   ```
+   operator > search result:
+     Abstract: {abstract}
+     Answer: {answer}
+     Related: {related[0].text}
+   ```
+3. Then call Engine.respond() with the search result injected into context
+4. Show INANNA's response normally: inanna > ...
 
-For "redirect":
-  nammu > routing to analyst faculty
-  governance > redirected: Sensitive topic redirected to Analyst Faculty.
-  analyst > ...
+When rejected:
+- Show: operator > tool use rejected. Proceeding without search.
+- Call Engine.respond() normally without search result
 
-For "block":
-  governance > blocked: Identity and law boundaries cannot be altered.
-  (no Faculty response)
+Tool proposals use the existing Proposal system with what="web_search tool use"
 
-For "propose":
-  governance > proposal required: Memory changes require a proposal first.
-  [PROPOSAL] ... | status: pending
+### Task 4 - OperatorFaculty in the UI server
 
-### Task 4 - Governance in the UI server
+Update ui/server.py to instantiate OperatorFaculty.
 
-Update ui/server.py to use classifier.route() and handle
-GovernanceResult in process_user_input().
+When GovernanceResult.suggests_tool is True, broadcast:
+{"type": "operator", "text": "tool proposed: web_search — query"}
 
-Add a new broadcast message type for governance decisions:
-{"type": "governance", "decision": "block|redirect|propose", "text": "..."}
+Add handling for tool approval flow:
+When user approves a pending tool proposal (proposal with
+action="tool_use"), execute the tool and inject results.
 
-### Task 5 - Governance message rendering in index.html
+Broadcast tool results as:
+{"type": "operator", "text": "search result:\n  Abstract: ...\n  Answer: ..."}
 
-Add CSS for governance messages:
+### Task 5 - Operator message rendering in index.html
+
+Add CSS for operator messages:
 
 ```css
-.message-governance .message-prefix,
-.message-governance .message-content {
-    color: #8a6a6a;  /* muted rose - distinct, firm */
-    font-size: 0.85rem;
+.message-operator .message-prefix,
+.message-operator .message-content {
+    color: #7a8a6a;  /* muted olive - technical, distinct */
+    font-size: 0.88rem;
 }
 ```
 
-Prefix: "governance :"
+Prefix: "operator :"
 
-Governance messages appear between the nammu routing line and the
-Faculty response (or instead of the Faculty response if blocked).
+### Task 6 - Update identity.py
 
-### Task 6 - GovernanceLayer in identity.py
-
-Add governance rule descriptions as named constants in identity.py
-so they are part of the constitutional record:
+Add the permitted tools list as a constitutional record:
 
 ```python
-GOVERNANCE_RULES = [
-    "Rule 1 - Memory Boundary: Memory changes require proposals.",
-    "Rule 2 - Identity Boundary: Laws and identity cannot be altered.",
-    "Rule 3 - Sensitive Redirect: Medical/legal/financial to Analyst.",
-    "Rule 4 - Allow: All other input proceeds as routed.",
-]
+PERMITTED_TOOLS = ["web_search"]
 
-def list_governance_rules() -> list[str]:
-    return GOVERNANCE_RULES
+def list_permitted_tools() -> list[str]:
+    return PERMITTED_TOOLS
 ```
 
 Update CURRENT_PHASE:
 ```python
-CURRENT_PHASE = "Cycle 2 - Phase 5 - The Governed Route"
+CURRENT_PHASE = "Cycle 2 - Phase 6 - The Bounded Tool"
 ```
 
 ### Task 7 - Tests
 
-Create inanna/tests/test_governance.py:
-- GovernanceLayer.check() returns GovernanceResult
-- Memory signal returns decision="propose", requires_proposal=True
-- Identity signal returns decision="block"
-- Sensitive signal returns decision="redirect", faculty="analyst"
-- Normal input returns decision="allow"
-- Redirect preserves the reason string
+Create inanna/tests/test_operator.py:
+- OperatorFaculty.execute() with unknown tool returns success=False
+- OperatorFaculty.execute() with empty query returns success=False
+- OperatorFaculty only permits tools in PERMITTED_TOOLS
+- ToolResult is a dataclass with expected fields
+
+Update test_governance.py:
+- GovernanceResult has suggests_tool field
+- Tool signal input sets suggests_tool=True
 
 Update test_identity.py:
-- list_governance_rules() returns a list of 4 strings
+- list_permitted_tools() returns list with "web_search"
 - Update CURRENT_PHASE assertion
 
 ---
@@ -269,32 +245,30 @@ Update test_identity.py:
 
 ```
 inanna/
-  identity.py              <- MODIFY: add GOVERNANCE_RULES,
-                                      list_governance_rules(),
+  identity.py              <- MODIFY: add PERMITTED_TOOLS,
+                                      list_permitted_tools(),
                                       update CURRENT_PHASE
   config.py                <- no changes
-  main.py                  <- MODIFY: use classifier.route(),
-                                      handle GovernanceResult decisions
+  main.py                  <- MODIFY: handle suggests_tool in route result,
+                                      tool proposal flow, approve/reject tool
   core/
     session.py             <- no changes
     memory.py              <- no changes
     proposal.py            <- no changes
     state.py               <- no changes
-    nammu.py               <- MODIFY: add route() method,
-                                      accept governance parameter
-    governance.py          <- NEW: GovernanceLayer, GovernanceResult
+    nammu.py               <- no changes
+    governance.py          <- MODIFY: add suggests_tool to GovernanceResult,
+                                      add TOOL_SIGNALS detection
+    operator.py            <- NEW: OperatorFaculty, ToolResult
   ui/
-    server.py              <- MODIFY: use classifier.route(),
-                                      broadcast governance messages
+    server.py              <- MODIFY: instantiate OperatorFaculty,
+                                      handle tool proposals and results
     static/
-      index.html           <- MODIFY: add governance message styling
+      index.html           <- MODIFY: add operator message styling
   tests/
-    test_governance.py     <- NEW: GovernanceLayer tests
-    test_identity.py       <- MODIFY: add governance rules test,
-                                      update phase
-    test_nammu.py          <- MODIFY: add route() method test
-    test_state.py          <- no changes
-    test_commands.py       <- no changes
+    test_operator.py       <- NEW: OperatorFaculty tests
+    test_governance.py     <- MODIFY: add suggests_tool tests
+    test_identity.py       <- MODIFY: add permitted tools test, update phase
     (all others)           <- no changes
 ```
 
@@ -302,29 +276,26 @@ inanna/
 
 ## What You Are NOT Building in This Phase
 
-- No model-based governance (rules are deterministic only)
-- No governance UI panel (that is Cycle 3)
-- No governance audit log persisted to disk (in-memory only)
-- No risk tiers or approval paths (Phase 2.6+)
-- No change to memory, proposal, or session storage
-- Do not add governance checks to the analyse direct override path -
-  the explicit analyse prefix bypasses NAMMU and also bypasses
-  Governance for now (it is an explicit user command)
-- Do not add new commands in this phase
+- No automatic tool execution without user approval
+- No tool chaining or sequential tool calls
+- No additional tools beyond web_search
+- No persistent tool use log (in-memory only for this phase)
+- No change to Faculty LLM calls except injecting search results
+- No change to memory, proposal storage, or session storage beyond
+  the tool proposal entry
+- Do not add tool signals to the analyse direct override path
 
 ---
 
-## Definition of Done for Phase 2.5
+## Definition of Done for Phase 2.6
 
-- [ ] inanna/core/governance.py exists with GovernanceLayer and GovernanceResult
-- [ ] All four governance rules are implemented and tested
-- [ ] classifier.route() exists in nammu.py and uses GovernanceLayer
-- [ ] "governance :" messages appear in CLI for block/redirect/propose
-- [ ] "governance :" messages appear in UI in muted rose color
-- [ ] "block" prevents any Faculty response
-- [ ] "propose" creates a proposal without calling any Faculty
-- [ ] "redirect" switches Faculty and shows governance notice
-- [ ] list_governance_rules() exists in identity.py
+- [ ] inanna/core/operator.py exists with OperatorFaculty and ToolResult
+- [ ] web_search tool executes via DuckDuckGo API
+- [ ] Tool signals in input trigger a tool proposal
+- [ ] User must approve before tool executes
+- [ ] Tool results shown transparently before INANNA summarizes
+- [ ] operator messages appear in muted olive color in UI
+- [ ] list_permitted_tools() exists in identity.py
 - [ ] CURRENT_PHASE updated
 - [ ] All tests pass: py -3 -m unittest discover -s tests
 
@@ -333,14 +304,14 @@ inanna/
 ## Handoff to Command Center
 
 When Definition of Done is met, Codex must:
-1. Commit with message: cycle2-phase5-complete
-2. Write docs/implementation/CYCLE2_PHASE5_REPORT.md
-3. Stop. Do not begin Phase 2.6 without a new CURRENT_PHASE.md.
+1. Commit with message: cycle2-phase6-complete
+2. Write docs/implementation/CYCLE2_PHASE6_REPORT.md
+3. Stop. Do not begin Phase 2.7 without a new CURRENT_PHASE.md.
 
 ---
 
 *Written by: Claude (Command Center)*
 *Guardian approval: ZAERA*
 *Date: 2026-04-19*
-*The governance layer does not speak loudly either.*
-*But when it speaks, it is final.*
+*The tool is bounded. The proposal is required.*
+*INANNA does not search the world without asking first.*
