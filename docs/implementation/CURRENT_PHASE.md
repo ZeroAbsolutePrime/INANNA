@@ -1,104 +1,209 @@
-﻿# CURRENT PHASE: Cycle 2 - Phase 3 - The Second Faculty
+﻿# CURRENT PHASE: Cycle 2 - Phase 4 - The NAMMU Kernel
 **Status: ACTIVE**
 **Authorized by: ZAERA (Guardian) + Claude (Command Center)**
 **Date opened: 2026-04-19**
 **Cycle: 2 - The NAMMU Kernel**
-**Replaces: Cycle 2 Phase 2 - The Refined Interface (COMPLETE)**
+**Replaces: Cycle 2 Phase 3 - The Second Faculty (COMPLETE)**
 
 ---
 
 ## What This Phase Is
 
-The interface is alive and honest. The first proof is complete.
+Phase 2.3 gave INANNA two Faculties. The user chooses which one to invoke
+by prefixing their input with "analyse". That is explicit routing - the
+human decides.
 
-Phase 2.3 introduces the Analyst Faculty - a second, distinct cognitive surface with a different role, different identity, and different system prompt. INANNA can now route certain requests to the Analyst for deeper, more structured reasoning, while keeping the primary conversational voice with the CROWN Faculty.
+Phase 2.4 introduces NAMMU - the first layer of governed automatic routing.
 
-This is not multi-agent in the full NAMMU sense - that comes in Phase 2.4. This phase establishes the second Faculty as a working entity with its own identity.
+NAMMU is the mediation field where operator intention, Oracle interpretation,
+body truth, governance constraints, and possible action are brought into
+governed relation. It is not merely routing. It is the field where intention
+becomes structured possibility.
+
+In Phase 2.4, NAMMU takes one concrete, bounded form: an IntentClassifier
+that reads the user's input and decides whether to route it to the CROWN
+Faculty (conversational, relational) or the ANALYST Faculty (structured,
+analytical). This decision is made transparently - NAMMU logs its routing
+decision before the Faculty responds, so the user always knows which Faculty
+is speaking and why.
+
+This is NAMMU's first breath. It will deepen in future phases.
 
 ---
 
-## The Two Faculties
+## The NAMMU Layer - Phase 2.4 Scope
 
-### CROWN Faculty - Primary Voice
-The current model (Qwen via LM Studio).
-Role: conversational presence, memory grounding, relational response.
-Already exists - no changes needed to its prompt.
+NAMMU in this phase is a single Python module: inanna/core/nammu.py
 
-### ANALYST Faculty - Deep Reasoning Surface
-A second model call using the same LM Studio endpoint but a different system prompt.
-Role: structured analysis, comparative reasoning, long-form thinking.
-The ANALYST Faculty does not speak as INANNA directly. It produces structured analytical output.
+It contains one class: IntentClassifier
+
+IntentClassifier reads the user's message and returns one of two routing
+decisions: "crown" or "analyst"
+
+It does this by asking the model itself - a lightweight classification
+call that precedes the actual Faculty response. This is governed routing:
+the classification is logged, visible, and auditable.
 
 ---
 
 ## What You Are Building
 
-### Task 1 - AnalystFaculty class in core/session.py
+### Task 1 - inanna/core/nammu.py
 
-Add a new class AnalystFaculty in core/session.py alongside the existing Engine class.
+Create a new file: inanna/core/nammu.py
 
-AnalystFaculty has:
-- Its own system prompt (from identity.py)
-- A single public method: analyse(question: str, context: list[str]) -> tuple[str, str]
-  Returns (mode, text) - same pattern as reflect() and speak_audit()
-- Its own fallback response when the model is unreachable
+```python
+from __future__ import annotations
+from identity import build_system_prompt
 
-### Task 2 - Analyst system prompt in identity.py
+CLASSIFICATION_PROMPT = """You are the NAMMU routing layer of INANNA NYX.
+Your only task is to classify the user intention as one of two routes:
 
-Add ANALYST_PROMPT constant and build_analyst_prompt() function to identity.py.
+CROWN - for: conversational exchanges, personal sharing, emotional content,
+        questions about INANNA herself, memory and identity topics,
+        reflective or relational requests
 
-The prompt must state:
-- "You are the Analyst Faculty of INANNA NYX"
-- "You are not INANNA conversational voice. You are her analytical mind."
-- Role: structured reasoning, comparative analysis, precise thinking
-- Same five laws as INANNA
-- Instruction to be precise, structured, honest about limits
+ANALYST - for: requests for structured analysis, comparative reasoning,
+          technical questions, "why does X work", "explain the relationship
+          between X and Y", requests for breakdown or examination
 
-### Task 3 - The analyse command
+Reply with exactly one word: either CROWN or ANALYST.
+Nothing else. No explanation. Just the routing decision."""
 
-Add a new command: analyse
 
-When the user types "analyse [question]", the system routes to AnalystFaculty
-instead of the CROWN Faculty (Engine).
+class IntentClassifier:
+    def __init__(self, engine) -> None:
+        self.engine = engine
 
-Response prefix: analyst > [live analysis] or analyst > [analysis fallback]
+    def classify(self, user_input: str) -> str:
+        messages = [
+            {"role": "system", "content": CLASSIFICATION_PROMPT},
+            {"role": "user", "content": user_input},
+        ]
+        if not self.engine._connected:
+            return self._heuristic_classify(user_input)
+        try:
+            result = self.engine._call_openai_compatible(messages)
+            route = result.strip().upper()
+            if "ANALYST" in route:
+                return "analyst"
+            return "crown"
+        except Exception:
+            return self._heuristic_classify(user_input)
 
-The analyse command DOES generate a proposal - analytical exchanges deserve
-the same memory governance as conversational ones.
+    def _heuristic_classify(self, text: str) -> str:
+        analyst_signals = [
+            "analyse", "analyze", "explain", "why does", "how does",
+            "what is the relationship", "compare", "examine", "breakdown",
+            "structured", "reasoning", "implications", "technical",
+        ]
+        lower = text.lower()
+        if any(signal in lower for signal in analyst_signals):
+            return "analyst"
+        return "crown"
+```
 
-AnalystFaculty is instantiated in main() alongside Engine, using the same config.
+### Task 2 - Auto-routing in main.py
 
-### Task 4 - Analyst Faculty in the UI server
+Update handle_command() in main.py so that normal conversation input
+(not a recognized command) is first passed through IntentClassifier.
 
-Update ui/server.py to instantiate AnalystFaculty alongside Engine.
+When NAMMU routes to "analyst", the input is handled by AnalystFaculty.
+When NAMMU routes to "crown", the input is handled by Engine as before.
 
-When input begins with "analyse", route to AnalystFaculty.analyse().
+The routing decision must be shown to the user BEFORE the response:
 
-Broadcast analyst responses as {"type": "analyst", "text": "..."}.
+```
+nammu > routing to analyst faculty
+analyst > [live analysis] ...
 
-In index.html, add CSS for analyst messages with color #8ab4c4 (cool blue).
-Prefix: "analyst :"
+nammu > routing to crown faculty
+inanna > Hello, ZAERA...
+```
 
-### Task 5 - Update capabilities and CURRENT_PHASE
+The explicit "analyse" prefix command from Phase 2.3 must still work
+as a direct override that bypasses NAMMU classification entirely.
 
-Add analyse to STARTUP_COMMANDS in main.py and capabilities line in state.py.
+IntentClassifier is instantiated in main() alongside Engine and AnalystFaculty.
 
-Update CURRENT_PHASE in identity.py:
-CURRENT_PHASE = "Cycle 2 - Phase 3 - The Second Faculty"
+### Task 3 - NAMMU routing in the UI server
 
-### Task 6 - Tests
+Update InterfaceServer in ui/server.py to instantiate IntentClassifier.
 
-Add tests in inanna/tests/test_session.py:
-- AnalystFaculty can be instantiated with empty config
-- AnalystFaculty.analyse() returns a tuple (str, str)
-- In fallback mode, the mode string is "fallback"
+In process_user_input(), before routing to Engine or AnalystFaculty,
+call classifier.classify(text).
 
-Add tests in inanna/tests/test_identity.py:
-- build_analyst_prompt() returns a non-empty string
-- The analyst prompt contains "Analyst Faculty"
-- The analyst prompt contains "structured"
+Broadcast the routing decision as a new message type:
+{"type": "nammu", "route": "crown", "text": "routing to crown faculty"}
+or
+{"type": "nammu", "route": "analyst", "text": "routing to analyst faculty"}
 
-Update test_identity.py CURRENT_PHASE assertion to Phase 2.3.
+This message appears in the conversation panel BEFORE the Faculty response.
+
+### Task 4 - NAMMU message rendering in index.html
+
+Add CSS for nammu routing messages:
+
+```css
+.message-nammu .message-prefix,
+.message-nammu .message-content {
+    color: #6a8a7a;  /* muted sage green - distinct, subtle */
+    font-size: 0.82rem;
+    letter-spacing: 0.06em;
+}
+```
+
+Prefix: "nammu :"
+The routing message is small and subtle - it is system infrastructure,
+not conversation. It should be visually present but not dominant.
+
+### Task 5 - NAMMU audit in history
+
+Update Proposal.history_report() or add a new NAMMU log alongside proposals.
+
+Actually: keep it simple for this phase. Add a routing_log list to
+InterfaceServer that records each routing decision:
+{"timestamp": ..., "input_preview": first 60 chars, "route": "crown|analyst"}
+
+Expose this via a new command: "routing-log"
+
+When user types "routing-log", show:
+```
+NAMMU Routing Log (N decisions):
+  [crown]   2026-04-19T07:25:08 | Hello, I am ZAERA...
+  [analyst] 2026-04-19T07:25:44 | What makes a governance...
+```
+
+Add "routing-log" to STARTUP_COMMANDS and capabilities.
+
+### Task 6 - Update identity.py
+
+Add the NAMMU classification prompt as a named constant:
+
+```python
+NAMMU_CLASSIFICATION_PROMPT = """..."""  # same text as in nammu.py
+
+def build_nammu_prompt() -> str:
+    return NAMMU_CLASSIFICATION_PROMPT
+```
+
+Update CURRENT_PHASE:
+```python
+CURRENT_PHASE = "Cycle 2 - Phase 4 - The NAMMU Kernel"
+```
+
+### Task 7 - Tests
+
+Add inanna/tests/test_nammu.py:
+- IntentClassifier.classify() returns "crown" or "analyst"
+- Heuristic classify returns "analyst" for "analyse this"
+- Heuristic classify returns "analyst" for "explain why"
+- Heuristic classify returns "crown" for "hello"
+- Heuristic classify returns "crown" for "I am ZAERA"
+
+Update test_identity.py:
+- Add test for build_nammu_prompt() non-empty
+- Update CURRENT_PHASE assertion
 
 ---
 
@@ -106,61 +211,71 @@ Update test_identity.py CURRENT_PHASE assertion to Phase 2.3.
 
 ```
 inanna/
-  identity.py          <- MODIFY: add ANALYST_PROMPT, build_analyst_prompt(), update CURRENT_PHASE
-  config.py            <- no changes
-  main.py              <- MODIFY: instantiate AnalystFaculty, add analyse command
+  identity.py              <- MODIFY: add NAMMU_CLASSIFICATION_PROMPT,
+                                      build_nammu_prompt(), update CURRENT_PHASE
+  config.py                <- no changes
+  main.py                  <- MODIFY: instantiate IntentClassifier, auto-route
+                                      in handle_command(), add routing-log command
   core/
-    session.py         <- MODIFY: add AnalystFaculty class
-    memory.py          <- no changes
-    proposal.py        <- no changes
-    state.py           <- MODIFY: add analyse to capabilities line
+    session.py             <- no changes
+    memory.py              <- no changes
+    proposal.py            <- no changes
+    state.py               <- MODIFY: add routing-log to capabilities line
+    nammu.py               <- NEW: IntentClassifier class
   ui/
-    server.py          <- MODIFY: instantiate AnalystFaculty, route analyse prefix
+    server.py              <- MODIFY: instantiate IntentClassifier, broadcast
+                                      nammu routing message, routing_log list,
+                                      handle routing-log command
     static/
-      index.html       <- MODIFY: add analyst message styling
+      index.html           <- MODIFY: add nammu message styling and rendering
   tests/
-    test_session.py    <- MODIFY: add AnalystFaculty tests
-    test_identity.py   <- MODIFY: add analyst prompt tests, update phase
-    test_commands.py   <- MODIFY: add analyse in capabilities test
-    test_state.py      <- MODIFY: update capabilities assertion
+    test_nammu.py          <- NEW: IntentClassifier tests
+    test_identity.py       <- MODIFY: add nammu prompt test, update phase
+    test_state.py          <- MODIFY: update capabilities assertion
+    test_commands.py       <- MODIFY: add routing-log in capabilities test
+    (all others)           <- no changes
 ```
 
 ---
 
 ## What You Are NOT Building in This Phase
 
-- No routing logic between Faculties (that is Phase 2.4 - NAMMU)
-- No automatic Faculty selection - user explicitly types analyse
-- No separate model endpoints - both Faculties use the same LM Studio URL
-- No change to memory, proposal, or governance logic
-- Do not name anything "NAMMU" - that layer comes in Phase 2.4
+- No multi-step NAMMU mediation (that is Phase 2.5+)
+- No governance tier checking in NAMMU (Phase 2.6)
+- No NAMMU memory layer (Phase 2.7)
+- No persistent routing log across sessions (flat in-memory only for now)
+- No Faculty chaining or sequential routing
+- No change to proposal, memory, or session storage logic
+- The explicit "analyse" prefix must remain as a direct override
 
 ---
 
-## Definition of Done for Phase 2.3
+## Definition of Done for Phase 2.4
 
-- [ ] AnalystFaculty class exists in core/session.py
-- [ ] build_analyst_prompt() exists in identity.py
-- [ ] analyse [question] command works in CLI
-- [ ] analyse [question] command works in UI with blue analyst : prefix
-- [ ] Analyst responses generate proposals
-- [ ] status capabilities line includes analyse
-- [ ] CURRENT_PHASE updated to "Cycle 2 - Phase 3 - The Second Faculty"
+- [ ] inanna/core/nammu.py exists with IntentClassifier
+- [ ] Normal conversation is auto-routed by NAMMU
+- [ ] "nammu : routing to X faculty" appears before each response
+- [ ] "analyse" prefix still works as direct override
+- [ ] "routing-log" command shows NAMMU decision history
+- [ ] UI shows nammu messages in muted sage green
+- [ ] build_nammu_prompt() exists in identity.py
+- [ ] CURRENT_PHASE updated to "Cycle 2 - Phase 4 - The NAMMU Kernel"
 - [ ] All tests pass: py -3 -m unittest discover -s tests
+- [ ] test_nammu.py exists with heuristic tests
 
 ---
 
 ## Handoff to Command Center
 
 When Definition of Done is met, Codex must:
-1. Commit with message: cycle2-phase3-complete
-2. Write docs/implementation/CYCLE2_PHASE3_REPORT.md
-3. Stop. Do not begin Phase 2.4 without a new CURRENT_PHASE.md.
+1. Commit with message: cycle2-phase4-complete
+2. Write docs/implementation/CYCLE2_PHASE4_REPORT.md
+3. Stop. Do not begin Phase 2.5 without a new CURRENT_PHASE.md.
 
 ---
 
 *Written by: Claude (Command Center)*
 *Guardian approval: ZAERA*
 *Date: 2026-04-19*
-*The second Faculty speaks in a different color.*
-*That difference is the beginning of architecture.*
+*NAMMU does not speak loudly. It routes faithfully.*
+*Its presence is felt in the small green line before every response.*
