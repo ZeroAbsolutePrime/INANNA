@@ -7,7 +7,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from urllib import error, request
 
-from identity import build_system_prompt, phase_banner
+from identity import build_analyst_prompt, build_system_prompt, phase_banner
 
 
 def utc_now() -> str:
@@ -291,3 +291,76 @@ class Engine:
         if note:
             parts.append(note)
         return " ".join(parts)
+
+
+class AnalystFaculty(Engine):
+    def analyse(self, question: str, context: list[str]) -> tuple[str, str]:
+        cleaned_question = question.strip()
+        if not cleaned_question:
+            return ("fallback", "Please provide a question to analyse.")
+
+        messages = self._build_analysis_messages(cleaned_question, context)
+        if self.model_url and self.model_name and self._connected:
+            try:
+                return ("live", self._call_openai_compatible(messages))
+            except (OSError, ValueError, error.URLError) as exc:
+                self.fallback_mode = True
+                self._connected = False
+                return (
+                    "fallback",
+                    self._fallback_analysis(
+                        question=cleaned_question,
+                        context=context,
+                        note=f"Model call failed, so fallback analysis continued safely: {exc}",
+                    ),
+                )
+
+        return ("fallback", self._fallback_analysis(cleaned_question, context))
+
+    def _build_analysis_messages(
+        self,
+        question: str,
+        context: list[str],
+    ) -> list[dict[str, str]]:
+        messages = [{"role": "system", "content": build_analyst_prompt()}]
+        if context:
+            context_lines = "\n".join(f"  {index + 1}. {line}" for index, line in enumerate(context))
+            messages.append(
+                {
+                    "role": "assistant",
+                    "content": (
+                        "Approved context available for this analysis:\n"
+                        f"{context_lines}"
+                    ),
+                }
+            )
+        else:
+            messages.append(
+                {
+                    "role": "assistant",
+                    "content": "No approved context is available for this analysis yet.",
+                }
+            )
+
+        messages.append({"role": "user", "content": question})
+        return messages
+
+    def _fallback_analysis(
+        self,
+        question: str,
+        context: list[str],
+        note: str | None = None,
+    ) -> str:
+        lines = [
+            "Structured analysis fallback:",
+            f"Question: {question}",
+            f"Approved context lines: {len(context)}",
+        ]
+        for index, line in enumerate(context, start=1):
+            lines.append(f"  {index}. {line}")
+        if not context:
+            lines.append("No approved context is available yet.")
+        lines.append("Model connection is unavailable, so this is a bounded analytical summary.")
+        if note:
+            lines.append(note)
+        return "\n".join(lines)

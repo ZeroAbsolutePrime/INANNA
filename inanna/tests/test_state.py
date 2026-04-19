@@ -31,7 +31,7 @@ class StateTests(unittest.TestCase):
                     "Memory records: 3",
                     "Pending proposals: 1",
                     (
-                        "Capabilities: respond, reflect, audit, history, "
+                        "Capabilities: respond, reflect, analyse, audit, history, "
                         "memory-log, status, diagnostics, approve, reject, "
                         "forget, exit"
                     ),

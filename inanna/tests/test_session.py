@@ -6,11 +6,37 @@ from pathlib import Path
 from tempfile import TemporaryDirectory
 from unittest.mock import patch
 
-from core.session import Engine, Session
-from identity import build_system_prompt, phase_banner
+from core.session import AnalystFaculty, Engine, Session
+from identity import build_analyst_prompt, build_system_prompt, phase_banner
 
 
 class SessionTests(unittest.TestCase):
+    def test_analyst_faculty_can_be_instantiated_with_empty_config(self) -> None:
+        analyst = AnalystFaculty()
+
+        self.assertIsInstance(analyst, AnalystFaculty)
+        self.assertEqual(analyst.mode, "fallback")
+
+    def test_analyst_uses_its_own_identity_prompt(self) -> None:
+        analyst = AnalystFaculty()
+
+        messages = analyst._build_analysis_messages(
+            question="What patterns do you see?",
+            context=["user: hello"],
+        )
+
+        self.assertEqual(messages[0]["role"], "system")
+        self.assertEqual(messages[0]["content"], build_analyst_prompt())
+
+    def test_analyst_analyse_returns_tuple_in_fallback_mode(self) -> None:
+        analyst = AnalystFaculty()
+
+        mode, text = analyst.analyse("What patterns do you see?", ["user: hello"])
+
+        self.assertIsInstance(mode, str)
+        self.assertIsInstance(text, str)
+        self.assertEqual(mode, "fallback")
+
     def test_session_persists_context_and_events(self) -> None:
         with TemporaryDirectory() as temp_dir:
             session_dir = Path(temp_dir)

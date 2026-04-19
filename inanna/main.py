@@ -8,7 +8,7 @@ from dotenv import load_dotenv
 from config import Config
 from core.memory import Memory
 from core.proposal import Proposal
-from core.session import Engine, Session
+from core.session import AnalystFaculty, Engine, Session
 from core.state import StateReport
 from identity import phase_banner
 
@@ -22,6 +22,7 @@ MEMORY_DIR = DATA_ROOT / "memory"
 PROPOSAL_DIR = DATA_ROOT / "proposals"
 STARTUP_COMMANDS = (
     "reflect",
+    "analyse",
     "audit",
     "history",
     "memory-log",
@@ -189,6 +190,7 @@ def handle_command(
     proposal: Proposal,
     state_report: StateReport,
     engine: Engine,
+    analyst: AnalystFaculty,
     startup_context: dict,
     config: Config,
 ) -> str | None:
@@ -219,6 +221,29 @@ def handle_command(
 
     if lowered == "forget":
         return run_forget_flow(memory=memory, proposal=proposal)
+
+    if lowered == "analyse" or lowered.startswith("analyse "):
+        question = normalized[len("analyse") :].strip()
+        analysis_mode, analysis_text = analyst.analyse(
+            question=question,
+            context=startup_context["summary_lines"],
+        )
+        if not question:
+            return f"analyst > [analysis fallback] {analysis_text}"
+
+        session.add_event("user", normalized)
+        session.add_event("analyst", analysis_text)
+        created = proposal.create(
+            what="Update the memory store from the latest session turn",
+            why="Keep the next session grounded in readable, user-approved context.",
+            payload=memory.build_candidate(
+                session_id=session.session_id,
+                events=session.events,
+            ),
+        )
+        if analysis_mode == "live":
+            return f"analyst > [live analysis] {analysis_text}\n{created['line']}"
+        return f"analyst > [analysis fallback] {analysis_text}\n{created['line']}"
 
     if lowered == "audit":
         audit_mode, audit_text = engine.speak_audit(
@@ -285,11 +310,19 @@ def main() -> None:
         model_name=config.model_name,
         api_key=config.api_key,
     )
+    analyst = AnalystFaculty(
+        model_url=config.model_url,
+        model_name=config.model_name,
+        api_key=config.api_key,
+    )
 
     if engine.verify_connection():
         print(f"Model connected: {config.model_name} at {config.model_url}")
     else:
         print("Model unreachable — fallback mode active. Set INANNA_MODEL_URL to connect.")
+
+    analyst.fallback_mode = engine.fallback_mode
+    analyst._connected = engine._connected
 
     startup_context = memory.load_startup_context()
     session = Session.create(
@@ -321,6 +354,7 @@ def main() -> None:
             proposal=proposal,
             state_report=state_report,
             engine=engine,
+            analyst=analyst,
             startup_context=startup_context,
             config=config,
         )

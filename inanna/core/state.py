@@ -18,7 +18,7 @@ class StateReport:
             f"Memory records: {memory_count}",
             f"Pending proposals: {pending_count}",
             (
-                "Capabilities: respond, reflect, audit, history, memory-log, "
+                "Capabilities: respond, reflect, analyse, audit, history, memory-log, "
                 "status, diagnostics, approve, reject, forget, exit"
             ),
         ]

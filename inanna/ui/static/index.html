@@ -8,6 +8,7 @@
     :root {
       --bg: #0a0a0f;
       --voice: #c8a96e;
+      --analyst: #8ab4c4;
       --border: #4a3a1e;
       --text: #b9b2a5;
       --user: #888888;
@@ -186,6 +187,11 @@
     .message-assistant .message-prefix,
     .message-assistant .message-content {
       color: var(--voice);
+    }
+
+    .message-analyst .message-prefix,
+    .message-analyst .message-content {
+      color: var(--analyst);
     }
 
     .message-user .message-prefix,
@@ -489,6 +495,11 @@
         return;
       }
 
+      if (payload.type === "analyst") {
+        addMessage("analyst", payload.text);
+        return;
+      }
+
       if (payload.type === "system") {
         addMessage("system", payload.text);
         return;
@@ -572,12 +583,20 @@
         prefix.className = "message-prefix";
         prefix.textContent = message.role === "assistant" ? "inanna ∴" : message.role === "user" ? "you ∴" : "∴";
 
+        if (message.role === "analyst") {
+          prefix.textContent = "analyst :";
+        }
+
         const content = document.createElement("div");
         content.className = "message-content";
         if (message.role === "assistant") {
           content.innerHTML = renderMarkdown(message.text);
         } else {
           content.textContent = message.text;
+        }
+
+        if (message.role === "analyst") {
+          content.innerHTML = renderMarkdown(message.text);
         }
 
         article.append(prefix, content);

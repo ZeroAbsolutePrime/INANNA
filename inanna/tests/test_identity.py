@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import unittest
 
-from identity import CURRENT_PHASE, build_system_prompt, phase_banner
+from identity import CURRENT_PHASE, build_analyst_prompt, build_system_prompt, phase_banner
 
 
 EXPECTED_PROMPT = """You are INANNA — a local-first, proposal-governed intelligence.
@@ -62,14 +62,20 @@ class IdentityTests(unittest.TestCase):
         self.assertIn("proposal", lowered)
         self.assertTrue("law" in lowered or "laws" in lowered)
 
+    def test_analyst_prompt_is_non_empty(self) -> None:
+        self.assertTrue(build_analyst_prompt())
+
+    def test_analyst_prompt_names_the_analyst_faculty(self) -> None:
+        self.assertIn("Analyst Faculty", build_analyst_prompt())
+
+    def test_analyst_prompt_mentions_structured_reasoning(self) -> None:
+        self.assertIn("structured", build_analyst_prompt().lower())
+
     def test_current_phase_constant_matches_phase_banner(self) -> None:
         self.assertEqual(CURRENT_PHASE, phase_banner())
 
-    # DECISION POINT: Phase 2.2 requires the shared identity phase banner to
-    # move from legacy Phase 9 to the active Cycle 2 Phase 2 name, so the
-    # phase-aligned assertion must track that source of truth.
-    def test_current_phase_names_refined_interface(self) -> None:
-        self.assertIn("Refined Interface", CURRENT_PHASE)
+    def test_current_phase_names_second_faculty(self) -> None:
+        self.assertIn("Second Faculty", CURRENT_PHASE)
 
 
 if __name__ == "__main__":

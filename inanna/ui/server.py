@@ -16,7 +16,7 @@ from websockets.exceptions import ConnectionClosed
 from config import Config
 from core.memory import Memory
 from core.proposal import Proposal
-from core.session import Engine, Session
+from core.session import AnalystFaculty, Engine, Session
 from core.state import StateReport
 from identity import phase_banner
 from main import (
@@ -85,8 +85,15 @@ class InterfaceServer:
             model_name=self.config.model_name,
             api_key=self.config.api_key,
         )
+        self.analyst = AnalystFaculty(
+            model_url=self.config.model_url,
+            model_name=self.config.model_name,
+            api_key=self.config.api_key,
+        )
         print("Verifying model connection...")
         self.engine.verify_connection()
+        self.analyst.fallback_mode = self.engine.fallback_mode
+        self.analyst._connected = self.engine._connected
         print(f"Model mode: {self.engine.mode}")
         self.startup_context = self.memory.load_startup_context()
         self.session = Session.create(
@@ -134,9 +141,18 @@ class InterfaceServer:
     async def process_user_input(self, text: str) -> None:
         await self.broadcast({"type": "thinking", "active": True})
         try:
-            assistant_text, created = await asyncio.to_thread(self._run_user_turn, text)
-            await self.broadcast({"type": "assistant", "text": assistant_text})
-            await self.broadcast({"type": "system", "text": created["line"]})
+            if text.lower().startswith("analyse"):
+                analysis_text, created, mode = await asyncio.to_thread(
+                    self._run_analysis_turn, text
+                )
+                label = "[live analysis]" if mode == "live" else "[analysis fallback]"
+                await self.broadcast({"type": "analyst", "text": f"{label} {analysis_text}"})
+                if created:
+                    await self.broadcast({"type": "system", "text": created["line"]})
+            else:
+                assistant_text, created = await asyncio.to_thread(self._run_user_turn, text)
+                await self.broadcast({"type": "assistant", "text": assistant_text})
+                await self.broadcast({"type": "system", "text": created["line"]})
             await self.broadcast_state()
         finally:
             await self.broadcast({"type": "thinking", "active": False})
@@ -157,6 +173,30 @@ class InterfaceServer:
             ),
         )
         return assistant_text, created
+
+    def _run_analysis_turn(
+        self,
+        text: str,
+    ) -> tuple[str, dict[str, Any] | None, str]:
+        question = text[len("analyse") :].strip()
+        mode, analysis_text = self.analyst.analyse(
+            question=question,
+            context=self.startup_context["summary_lines"],
+        )
+        if not question:
+            return analysis_text, None, mode
+
+        self.session.add_event("user", text)
+        self.session.add_event("analyst", analysis_text)
+        created = self.proposal.create(
+            what="Update the memory store from the latest session turn",
+            why="Keep the next session grounded in readable, user-approved context.",
+            payload=self.memory.build_candidate(
+                session_id=self.session.session_id,
+                events=self.session.events,
+            ),
+        )
+        return analysis_text, created, mode
 
     async def process_command(self, cmd: str, payload: dict[str, Any]) -> None:
         if cmd == "reflect":
