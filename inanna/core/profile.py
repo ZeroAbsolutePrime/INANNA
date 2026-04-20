@@ -272,3 +272,75 @@ class CommunicationObserver:
             normalized_topics = [topic.strip().lower() for topic in topics if topic.strip()]
             merged = list(dict.fromkeys(existing + normalized_topics))[-20:]
             self.profile_manager.update_field(user_id, "recurring_topics", merged)
+
+
+class IdentityFormatter:
+    """
+    Provides identity-aware formatting for INANNA's language.
+    Used when INANNA refers to a person in third person,
+    formats times, or constructs greetings.
+    """
+
+    PRONOUN_SETS: dict[str, dict[str, str]] = {
+        "she/her":   {"subject": "she",  "object": "her",
+                      "possessive": "her",   "reflexive": "herself"},
+        "he/him":    {"subject": "he",   "object": "him",
+                      "possessive": "his",   "reflexive": "himself"},
+        "they/them": {"subject": "they", "object": "them",
+                      "possessive": "their", "reflexive": "themselves"},
+        "ze/zir":    {"subject": "ze",   "object": "zir",
+                      "possessive": "zir",   "reflexive": "zirself"},
+        "xe/xem":    {"subject": "xe",   "object": "xem",
+                      "possessive": "xyr",   "reflexive": "xemself"},
+    }
+    _DEFAULT = "they/them"
+
+    def __init__(self, profile_manager: ProfileManager) -> None:
+        self.profile_manager = profile_manager
+
+    def address(self, user_id: str, fallback: str = "") -> str:
+        """Returns the name INANNA should use when addressing this person."""
+        return self.profile_manager.display_name_for(user_id, fallback)
+
+    def pronouns(self, user_id: str) -> dict[str, str]:
+        """Returns the full pronoun set for a user, defaulting to they/them."""
+        raw = self.profile_manager.pronouns_for(user_id).lower().strip()
+        for key, pset in self.PRONOUN_SETS.items():
+            if raw.startswith(key.split("/")[0]):
+                return pset
+        return self.PRONOUN_SETS[self._DEFAULT]
+
+    def subject(self, user_id: str) -> str:
+        """Returns the subject pronoun: she, he, they, ze, xe."""
+        return self.pronouns(user_id)["subject"]
+
+    def object_pronoun(self, user_id: str) -> str:
+        """Returns the object pronoun: her, him, them, zir, xem."""
+        return self.pronouns(user_id)["object"]
+
+    def possessive(self, user_id: str) -> str:
+        """Returns the possessive pronoun: her, his, their, zir, xyr."""
+        return self.pronouns(user_id)["possessive"]
+
+    def format_greeting(self, user_id: str, fallback: str = "") -> str:
+        """Returns a natural greeting using the person's preferred name."""
+        name = self.address(user_id, fallback)
+        return f"Welcome back, {name}." if name else "Welcome back."
+
+    def format_time(self, iso_timestamp: str, user_id: str) -> str:
+        """Formats a timestamp in the user's timezone if set."""
+        profile = self.profile_manager.load(user_id)
+        tz_name = profile.timezone if profile else ""
+        try:
+            dt = datetime.fromisoformat(iso_timestamp)
+            if tz_name:
+                try:
+                    import zoneinfo
+                    tz = zoneinfo.ZoneInfo(tz_name)
+                    dt = dt.astimezone(tz)
+                    return dt.strftime(f"%b %d %H:%M ({tz_name})")
+                except Exception:
+                    pass
+            return dt.strftime("%b %d %H:%M")
+        except Exception:
+            return iso_timestamp[:16].replace("T", " ")

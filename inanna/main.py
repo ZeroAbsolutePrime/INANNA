@@ -535,16 +535,29 @@ def build_grounding_prefix(
     active_user: UserRecord | None,
     active_token: SessionToken | None,
 ) -> str:
+    from core.profile import IdentityFormatter
     user_id, fallback = profile_subject(active_user, active_token)
     if not user_id:
         return ""
     if profile_manager is None:
         display_name = fallback.strip()
-    else:
-        display_name = profile_manager.display_name_for(user_id, fallback=fallback).strip()
-    if not display_name:
+        return f"You are speaking with {display_name}." if display_name else ""
+    formatter = IdentityFormatter(profile_manager)
+    name = formatter.address(user_id, fallback=fallback).strip()
+    if not name:
         return ""
-    return f"You are speaking with {display_name}."
+    lines = [f"You are speaking with {name}."]
+    pset = formatter.pronouns(user_id)
+    subject = pset["subject"]
+    possessive = pset["possessive"]
+    # Only add pronoun line when explicitly set (not default they/them from empty)
+    raw_pronouns = profile_manager.pronouns_for(user_id).strip()
+    if raw_pronouns:
+        lines.append(
+            f"{name} uses {subject}/{possessive} pronouns. "
+            f"Use these when referring to {name} in third person."
+        )
+    return "\n".join(lines)
 
 
 def sync_profile_grounding(
