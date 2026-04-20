@@ -26,6 +26,7 @@ from core.nammu_memory import (
     load_governance_history,
 )
 from core.operator import OperatorFaculty
+from core.process_monitor import ProcessMonitor
 from core.proposal import Proposal
 from core.session import AnalystFaculty, Engine, Session
 from core.session_token import TokenStore
@@ -56,6 +57,7 @@ from main import (
     build_realm_access_warning_lines,
     build_realm_context_report,
     build_nammu_log_report,
+    build_process_status_payload,
     build_realms_report,
     build_routing_log_report,
     build_tool_registry_payload,
@@ -71,12 +73,14 @@ from main import (
     create_memory_request_proposal,
     create_realm_context_proposal,
     create_tool_use_proposal,
+    finalize_auto_memory,
     format_user_log_report,
     has_admin_surface_access,
     initialize_realm_context,
     inspect_body_report,
     load_current_realm,
     parse_user_realm_command,
+    record_completed_turn,
     startup_context_items,
     token_preview,
 )
@@ -136,6 +140,7 @@ def run_http_server() -> None:
 
 class InterfaceServer:
     def __init__(self) -> None:
+        self.server_start_time = time.time()
         self.data_root = APP_ROOT / "data"
         self.realm_manager, self.active_realm, realm_dirs, migrated = initialize_realm_context(
             self.data_root
@@ -194,11 +199,13 @@ class InterfaceServer:
         )
         self.guardian = GuardianFaculty()
         self.operator = OperatorFaculty()
+        self.process_monitor = ProcessMonitor(self.server_start_time)
         self.governance = GovernanceLayer(engine=self.engine)
         self.classifier = IntentClassifier(self.engine, governance=self.governance)
         self.routing_log: list[dict[str, str]] = []
         self.governance_blocks = 0
         self.tool_executions = 0
+        self.conversation_state = {"turn_count": 0, "last_auto_memory_turn": 0}
         print("Verifying model connection...")
         self.engine.verify_connection()
         self.analyst.fallback_mode = self.engine.fallback_mode
@@ -242,6 +249,8 @@ class InterfaceServer:
             pass
         finally:
             self.connections.discard(connection)
+            if not self.connections:
+                await asyncio.to_thread(self._finalize_auto_memory, "session end")
             print(f"Client disconnected. Total: {len(self.connections)}")
 
     async def dispatch_message(self, payload: dict[str, Any]) -> None:
@@ -265,13 +274,11 @@ class InterfaceServer:
             if command_name in set(STARTUP_COMMANDS) - {"analyse"}:
                 await self.process_command(text, {"_raw_cmd": text})
             elif lowered.startswith("analyse"):
-                analysis_text, created, mode = await asyncio.to_thread(
+                analysis_text, mode = await asyncio.to_thread(
                     self._run_analysis_turn, text
                 )
                 label = "[live analysis]" if mode == "live" else "[analysis fallback]"
                 await self.broadcast({"type": "analyst", "text": f"{label} {analysis_text}"})
-                if created:
-                    await self.broadcast({"type": "system", "text": created["line"]})
             else:
                 outcome = await asyncio.to_thread(
                     self._run_routed_turn, text
@@ -288,7 +295,7 @@ class InterfaceServer:
         finally:
             await self.broadcast({"type": "thinking", "active": False})
 
-    def _run_user_turn(self, text: str) -> tuple[str, dict[str, Any]]:
+    def _run_user_turn(self, text: str) -> str:
         self.session.add_event("user", text)
         t0 = time.monotonic()
         assistant_text = self.engine.respond(
@@ -304,16 +311,8 @@ class InterfaceServer:
             text,
             assistant_text,
         )
-        created = self.proposal.create(
-            what="Update the memory store from the latest session turn",
-            why="Keep the next session grounded in readable, user-approved context.",
-            payload=self.memory.build_candidate(
-                session_id=self.session.session_id,
-                events=self.session.events,
-                user_id=self.active_token.user_id if self.active_token is not None else "",
-            ),
-        )
-        return assistant_text, created
+        self._record_completed_turn()
+        return assistant_text
 
     def _refresh_session_users(self) -> None:
         if self.active_user is not None:
@@ -341,6 +340,29 @@ class InterfaceServer:
 
     def _visible_memory_report(self) -> dict[str, Any]:
         return self.memory.memory_log_report(user_id=self._memory_scope_user_id())
+
+    def _record_completed_turn(self) -> None:
+        record_completed_turn(
+            conversation_state=self.conversation_state,
+            memory=self.memory,
+            session=self.session,
+            active_realm_name=self.active_realm.name,
+            active_token=self.active_token,
+            user_log=self.user_log,
+            session_audit=self.session_audit,
+        )
+
+    def _finalize_auto_memory(self, reason: str = "session end") -> None:
+        finalize_auto_memory(
+            conversation_state=self.conversation_state,
+            memory=self.memory,
+            session=self.session,
+            active_realm_name=self.active_realm.name,
+            active_token=self.active_token,
+            user_log=self.user_log,
+            reason=reason,
+            session_audit=self.session_audit,
+        )
 
     def _active_user_payload(self) -> dict[str, Any] | None:
         if self.active_user is None:
@@ -484,35 +506,25 @@ class InterfaceServer:
                 text,
                 analysis_text,
             )
-            created = self.proposal.create(
-                what="Update the memory store from the latest session turn",
-                why="Keep the next session grounded in readable, user-approved context.",
-                payload=self.memory.build_candidate(
-                    session_id=self.session.session_id,
-                    events=self.session.events,
-                    user_id=self.active_token.user_id if self.active_token is not None else "",
-                ),
-            )
+            self._record_completed_turn()
             label = "[live analysis]" if mode == "live" else "[analysis fallback]"
             return {
                 "nammu": nammu_message,
                 "governance": governance_message,
                 "response": {"type": "analyst", "text": f"{label} {analysis_text}"},
-                "proposal": created,
             }
 
-        assistant_text, created = self._run_user_turn(text)
+        assistant_text = self._run_user_turn(text)
         return {
             "nammu": nammu_message,
             "governance": governance_message,
             "response": {"type": "assistant", "text": assistant_text},
-            "proposal": created,
         }
 
     def _run_analysis_turn(
         self,
         text: str,
-    ) -> tuple[str, dict[str, Any] | None, str]:
+    ) -> tuple[str, str]:
         question = text[len("analyse") :].strip()
         t0 = time.monotonic()
         mode, analysis_text = self.analyst.analyse(
@@ -521,7 +533,7 @@ class InterfaceServer:
         )
         self.faculty_monitor.record_call("analyst", (time.monotonic() - t0) * 1000, True)
         if not question:
-            return analysis_text, None, mode
+            return analysis_text, mode
 
         self.session.add_event("user", text)
         self.session.add_event("analyst", analysis_text)
@@ -532,16 +544,8 @@ class InterfaceServer:
             text,
             analysis_text,
         )
-        created = self.proposal.create(
-            what="Update the memory store from the latest session turn",
-            why="Keep the next session grounded in readable, user-approved context.",
-            payload=self.memory.build_candidate(
-                session_id=self.session.session_id,
-                events=self.session.events,
-                user_id=self.active_token.user_id if self.active_token is not None else "",
-            ),
-        )
-        return analysis_text, created, mode
+        self._record_completed_turn()
+        return analysis_text, mode
 
     def _run_realm_context_update(self, text: str) -> dict[str, Any]:
         governance_context = text[len("realm-context") :].strip()
@@ -630,6 +634,7 @@ class InterfaceServer:
                     )
                     await self.broadcast_state()
                     return
+                await asyncio.to_thread(self._finalize_auto_memory, "session end")
                 self.token_store.revoke_all_for_user(target.user_id)
                 token = self.token_store.issue(target.user_id, target.display_name, target.role)
                 self.active_user = target
@@ -657,6 +662,7 @@ class InterfaceServer:
             if self.active_token is None:
                 await self.broadcast({"type": "system", "text": "No active session."})
             else:
+                await asyncio.to_thread(self._finalize_auto_memory, "session end")
                 ended = self.active_token
                 self.token_store.revoke(ended.token)
                 append_audit_event(
@@ -812,6 +818,7 @@ class InterfaceServer:
                 await self.broadcast({"type": "system", "text": text})
                 await self.broadcast_state()
                 return
+            await asyncio.to_thread(self._finalize_auto_memory, "session end")
             self.token_store.revoke_all_for_user(created.user_id)
             token = self.token_store.issue(created.user_id, created.display_name, created.role)
             self.active_user = created
@@ -896,6 +903,10 @@ class InterfaceServer:
         elif command_name == "network-status":
             await self.broadcast(
                 await asyncio.to_thread(build_network_status_payload, self.session_audit)
+            )
+        elif command_name == "process-status":
+            await self.broadcast(
+                await asyncio.to_thread(build_process_status_payload, self.process_monitor)
             )
         elif command_name == "reflect":
             await self.run_reflect()
@@ -1038,6 +1049,7 @@ class InterfaceServer:
                 await self.broadcast_state()
                 return
             if target_name.lower() in {"off", guardian_record.display_name.lower()}:
+                await asyncio.to_thread(self._finalize_auto_memory, "session end")
                 self.active_user = guardian_record
                 self.original_user = None
                 self._refresh_startup_context()
@@ -1056,6 +1068,7 @@ class InterfaceServer:
                 )
                 await self.broadcast_state()
                 return
+            await asyncio.to_thread(self._finalize_auto_memory, "session end")
             self.active_user = target
             self.original_user = guardian_record
             self._refresh_startup_context()
@@ -1201,7 +1214,6 @@ class InterfaceServer:
                         await self.broadcast(operator_payload)
                     if outcome["assistant_text"]:
                         await self.broadcast({"type": "assistant", "text": outcome["assistant_text"]})
-                    await self.broadcast({"type": "system", "text": outcome["proposal_line"]})
                 else:
                     result = await asyncio.to_thread(self.apply_resolution, resolved)
                     await self.broadcast({"type": "system", "text": result})
@@ -1468,19 +1480,10 @@ class InterfaceServer:
                 original_input,
                 assistant_text,
             )
-        created = self.proposal.create(
-            what="Update the memory store from the latest session turn",
-            why="Keep the next session grounded in readable, user-approved context.",
-            payload=self.memory.build_candidate(
-                session_id=self.session.session_id,
-                events=self.session.events,
-                user_id=self.active_token.user_id if self.active_token is not None else "",
-            ),
-        )
+        self._record_completed_turn()
         return {
             "operator_payloads": operator_payloads,
             "assistant_text": assistant_text,
-            "proposal_line": created["line"],
         }
 
     def inspect_guardian(self) -> tuple[list[Any], str]:

@@ -63,7 +63,7 @@ class StateReport:
                     "reflect, analyse, audit, guardian, faculties, realms, create-realm, "
                     "realm-context, "
                     "switch-user, assign-realm, unassign-realm, my-log, user-log, invite, "
-                    "join, invites, admin-surface, tool-registry, network-status, history, proposal-history, routing-log, "
+                    "join, invites, admin-surface, tool-registry, network-status, process-status, history, proposal-history, routing-log, "
                     "nammu-log, "
                     "memory-log, body, status, diagnostics, guardian-dismiss, "
                     "guardian-clear-events, approve, reject, forget, exit"

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import io
 import json
+import time
 import unittest
 from contextlib import redirect_stdout
 from pathlib import Path
@@ -13,6 +14,7 @@ from core.faculty_monitor import FacultyMonitor
 from core.memory import Memory
 from core.nammu import IntentClassifier
 from core.operator import ToolResult
+from core.process_monitor import ProcessMonitor
 from core.proposal import Proposal
 from core.realm import RealmManager
 from core.session import AnalystFaculty, Engine, Session
@@ -20,7 +22,7 @@ from core.session_token import TokenStore
 from core.state import StateReport
 from core.user import UserManager, ensure_guardian_exists
 from core.user_log import UserLog
-from main import STARTUP_COMMANDS, handle_command, startup_commands_line
+from main import STARTUP_COMMANDS, finalize_auto_memory, handle_command, startup_commands_line
 
 
 ROLES_PAYLOAD = {
@@ -504,6 +506,7 @@ class CommandTests(unittest.TestCase):
                 "admin-surface",
                 "tool-registry",
                 "network-status",
+                "process-status",
                 "history",
                 "proposal-history",
                 "routing-log",
@@ -526,7 +529,7 @@ class CommandTests(unittest.TestCase):
                 "Commands: users, create-user, login, logout, whoami, reflect, analyse, "
                 "audit, guardian, faculties, realms, create-realm, realm-context, switch-user, "
                 "assign-realm, unassign-realm, my-log, user-log, invite, join, invites, "
-                "admin-surface, tool-registry, network-status, history, proposal-history, routing-log, nammu-log, "
+                "admin-surface, tool-registry, network-status, process-status, history, proposal-history, routing-log, nammu-log, "
                 "memory-log, body, status, diagnostics, guardian-dismiss, "
                 "guardian-clear-events, approve, reject, forget, exit"
             ),
@@ -623,6 +626,40 @@ class CommandTests(unittest.TestCase):
         self.assertIn("network-status > Recent network activity (2 total):", result)
         self.assertIn("[resolve_host] google.com -> 142.250.0.1", result)
         self.assertIn("[ping] 8.8.8.8 -> reachable", result)
+
+    def test_process_status_command_reports_live_processes(self) -> None:
+        (
+            session,
+            memory,
+            proposal,
+            state_report,
+            engine,
+            analyst,
+            classifier,
+            routing_log,
+            startup_context,
+            config,
+        ) = self.make_runtime()
+
+        result = handle_command(
+            "process-status",
+            session,
+            memory,
+            proposal,
+            state_report,
+            engine,
+            analyst,
+            classifier,
+            routing_log,
+            startup_context,
+            config,
+            process_monitor=ProcessMonitor(time.time() - 90),
+        )
+
+        self.assertIn("process-status > Live process view:", result)
+        self.assertIn("[running] INANNA NYX Server", result)
+        self.assertIn("uptime: 1m 30s", result)
+        self.assertIn("LM Studio", result)
 
     def test_guardian_dismiss_returns_acknowledgement(self) -> None:
         (
@@ -1922,8 +1959,116 @@ class CommandTests(unittest.TestCase):
 
         self.assertTrue(result.startswith("analyst > [analysis fallback] "))
         self.assertNotIn("nammu >", result)
-        self.assertEqual(proposal.pending_count(), 1)
+        self.assertEqual(proposal.pending_count(), 0)
         self.assertEqual(len(routing_log), 0)
+
+    def test_conversation_turn_auto_writes_memory_at_threshold(self) -> None:
+        (
+            session,
+            memory,
+            proposal,
+            state_report,
+            engine,
+            analyst,
+            classifier,
+            routing_log,
+            startup_context,
+            config,
+        ) = self.make_runtime()
+        conversation_state = {"turn_count": 19, "last_auto_memory_turn": 0}
+        session_audit: list[dict[str, object]] = []
+
+        result = handle_command(
+            "hello there",
+            session,
+            memory,
+            proposal,
+            state_report,
+            engine,
+            analyst,
+            classifier,
+            routing_log,
+            startup_context,
+            config,
+            conversation_state=conversation_state,
+            session_audit=session_audit,  # type: ignore[arg-type]
+        )
+
+        self.assertIn("inanna >", result)
+        self.assertEqual(conversation_state["turn_count"], 20)
+        self.assertEqual(conversation_state["last_auto_memory_turn"], 20)
+        self.assertEqual(memory.memory_count(), 1)
+        self.assertEqual(proposal.pending_count(), 0)
+        record = memory.memory_log_report()["records"][0]
+        self.assertTrue(
+            record["memory_id"].startswith(f"auto-memory-{session.session_id}-threshold-20-")
+        )
+        self.assertTrue(any("hello there" in line for line in record["summary_lines"]))
+        self.assertTrue(
+            any(
+                event["event_type"] == "auto_memory"
+                and "threshold" in str(event["summary"])
+                for event in session_audit
+            )
+        )
+
+    def test_finalize_auto_memory_writes_remaining_turns_on_session_end(self) -> None:
+        (
+            session,
+            memory,
+            proposal,
+            state_report,
+            engine,
+            analyst,
+            classifier,
+            routing_log,
+            startup_context,
+            config,
+        ) = self.make_runtime()
+        conversation_state = {"turn_count": 0, "last_auto_memory_turn": 0}
+        session_audit: list[dict[str, object]] = []
+
+        handle_command(
+            "hello there",
+            session,
+            memory,
+            proposal,
+            state_report,
+            engine,
+            analyst,
+            classifier,
+            routing_log,
+            startup_context,
+            config,
+            conversation_state=conversation_state,
+            session_audit=session_audit,  # type: ignore[arg-type]
+        )
+
+        written = finalize_auto_memory(
+            conversation_state=conversation_state,
+            memory=memory,
+            session=session,
+            active_realm_name="default",
+            active_token=None,
+            user_log=None,
+            session_audit=session_audit,
+        )
+
+        self.assertIsNotNone(written)
+        self.assertEqual(conversation_state["last_auto_memory_turn"], 1)
+        self.assertEqual(memory.memory_count(), 1)
+        self.assertEqual(proposal.pending_count(), 0)
+        record = memory.memory_log_report()["records"][0]
+        self.assertTrue(
+            record["memory_id"].startswith(f"auto-memory-{session.session_id}-session-end-1-")
+        )
+        self.assertTrue(
+            any(
+                event["event_type"] == "auto_memory"
+                and "session end" in str(event["summary"])
+                for event in session_audit
+            )
+        )
 
     def test_unknown_input_is_auto_routed_to_crown_and_logged(self) -> None:
         (
@@ -1955,7 +2100,7 @@ class CommandTests(unittest.TestCase):
 
         self.assertIn("nammu > routing to crown faculty", result)
         self.assertIn("inanna >", result)
-        self.assertEqual(proposal.pending_count(), 1)
+        self.assertEqual(proposal.pending_count(), 0)
         self.assertEqual(len(routing_log), 1)
         self.assertEqual(routing_log[0]["route"], "crown")
 
@@ -1989,7 +2134,7 @@ class CommandTests(unittest.TestCase):
 
         self.assertIn("nammu > routing to analyst faculty", result)
         self.assertIn("analyst > [analysis fallback] ", result)
-        self.assertEqual(proposal.pending_count(), 1)
+        self.assertEqual(proposal.pending_count(), 0)
         self.assertEqual(len(routing_log), 1)
         self.assertEqual(routing_log[0]["route"], "analyst")
 

@@ -1016,6 +1016,48 @@ html, body {
   color: var(--faded);
 }
 .proc-uptime { color: var(--gold3); }
+.proc-stack {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  width: 100%;
+}
+.proc-topline {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 14px;
+}
+.proc-secondary {
+  font-size: 8px;
+  letter-spacing: 2px;
+  color: var(--faded);
+  text-transform: uppercase;
+}
+.proc-meta {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.proc-meta-item {
+  font-size: 8px;
+  letter-spacing: 2px;
+  color: var(--faded);
+  border: 1px solid var(--dust);
+  padding: 2px 7px;
+}
+.proc-meta-item strong {
+  color: var(--cream);
+  font-weight: 400;
+}
+.proc-empty {
+  font-size: 9px;
+  letter-spacing: 2px;
+  color: var(--dim);
+  text-align: center;
+  padding: 28px 0;
+  font-style: italic;
+}
 
 /* ─── BUTTON BASE ─── */
 .uruk-btn {
@@ -1383,39 +1425,7 @@ html, body {
           </div>
         </div>
         <div class="process-grid" id="process-grid">
-          <div class="process-row">
-            <div class="proc-indicator running"></div>
-            <div class="proc-info">
-              <div class="proc-name">INANNA NYX Server</div>
-              <div class="proc-detail">HTTP :8080 · WebSocket :8081 · Python 3.x</div>
-            </div>
-            <div class="proc-stats">
-              <div class="proc-uptime" id="proc-uptime">—</div>
-              <div>running</div>
-            </div>
-          </div>
-          <div class="process-row">
-            <div class="proc-indicator ready"></div>
-            <div class="proc-info">
-              <div class="proc-name">LM Studio</div>
-              <div class="proc-detail">http://localhost:1234/v1 · model connected</div>
-            </div>
-            <div class="proc-stats">
-              <div class="proc-uptime" id="lm-status">connected</div>
-              <div>inference</div>
-            </div>
-          </div>
-          <div class="process-row">
-            <div class="proc-indicator offline" id="nixos-ind"></div>
-            <div class="proc-info">
-              <div class="proc-name">INANNA NYXOS</div>
-              <div class="proc-detail">Sovereign OS substrate · Cycle 7</div>
-            </div>
-            <div class="proc-stats">
-              <div style="color:var(--dim)">horizon</div>
-              <div>planned</div>
-            </div>
-          </div>
+          <div class="proc-empty">Open the Process Monitor to inspect running services.</div>
         </div>
       </div>
 
@@ -1522,6 +1532,7 @@ html, body {
 const S = {
   ws: null,
   connected: false,
+  activePanel: 'tools',
   phase: '',
   realm: '',
   user: '',
@@ -1535,6 +1546,8 @@ const S = {
   networkHosts: {},
   networkRecent: [],
   networkTotal: 0,
+  processes: [],
+  processRefreshTimer: null,
 };
 
 function ts() {
@@ -1613,16 +1626,7 @@ function openGate() {
 // ═══════════════════════════════
 function initConsole() {
   connectWS();
-  updateUptime();
-  setInterval(updateUptime, 5000);
-}
-
-function updateUptime() {
-  const s = Math.floor((Date.now() - S.startTime) / 1000);
-  const m = Math.floor(s / 60);
-  const h = Math.floor(m / 60);
-  const el = document.getElementById('proc-uptime');
-  if (el) el.textContent = h > 0 ? `${h}h ${m%60}m` : `${m}m ${s%60}s`;
+  updateProcessRefresh();
 }
 
 // ═══════════════════════════════
@@ -1702,6 +1706,12 @@ function handleMsg(msg) {
 
   if (t === 'network_status') {
     ingestNetworkStatus(msg);
+    return;
+  }
+
+  if (t === 'process_status') {
+    S.processes = msg.processes || [];
+    renderProcessMonitor();
     return;
   }
 
@@ -1808,11 +1818,14 @@ function switchPanel(name, el) {
   document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'));
   document.getElementById('panel-' + name).classList.add('active');
   el.classList.add('active');
+  S.activePanel = name;
 
   // Load data when switching
   if (name === 'tools' && S.tools.length === 0) sendCmd('tool-registry');
   if (name === 'network') refreshNetwork();
+  if (name === 'processes') refreshProcesses();
   if (name === 'proposals') loadProposals();
+  updateProcessRefresh();
 }
 
 // ═══════════════════════════════
@@ -2288,6 +2301,87 @@ function loadProposals() {
   addActivity('sys', 'CONSOLE', 'Loading proposal history…');
 }
 
+function processStatusClass(status) {
+  if (status === 'running') return 'running';
+  if (status === 'ready' || status === 'degraded') return 'ready';
+  return 'offline';
+}
+
+function processStatusText(status) {
+  if (!status) return 'unknown';
+  return String(status).toLowerCase();
+}
+
+function processLocator(proc) {
+  if (proc.pid !== undefined && proc.pid !== null) return `pid: ${proc.pid}`;
+  if (proc.endpoint) {
+    return `endpoint: ${String(proc.endpoint).replace(/^https?:\/\//, '')}`;
+  }
+  return 'endpoint: unknown';
+}
+
+function processMetric(value, suffix) {
+  if (value === undefined || value === null || value === '') return 'unknown';
+  return `${value}${suffix}`;
+}
+
+function renderProcessMonitor() {
+  const grid = document.getElementById('process-grid');
+  if (!grid) return;
+
+  const live = Array.isArray(S.processes) ? S.processes : [];
+  const records = [...live, {
+    name: 'INANNA NYXOS',
+    pid: null,
+    status: 'offline',
+    uptime: 'horizon',
+    description: 'Sovereign OS substrate · Cycle 7',
+    endpoint: null,
+    memory_mb: null,
+    cpu_percent: null,
+    subtitle: 'status: horizon',
+  }];
+
+  if (!records.length) {
+    grid.innerHTML = `<div class="proc-empty">No process records available yet.</div>`;
+    return;
+  }
+
+  grid.innerHTML = records.map(proc => `
+    <div class="process-row">
+      <div class="proc-indicator ${processStatusClass(proc.status)}"></div>
+      <div class="proc-stack">
+        <div class="proc-topline">
+          <div class="proc-info">
+            <div class="proc-name">${escapeHtml(proc.name || 'Process')}</div>
+            <div class="proc-detail">${escapeHtml(proc.description || '')}</div>
+          </div>
+          <div class="proc-stats">
+            <div class="proc-uptime">${escapeHtml(proc.uptime || 'unknown')}</div>
+            <div class="proc-secondary">${escapeHtml(proc.subtitle || processStatusText(proc.status))}</div>
+          </div>
+        </div>
+        <div class="proc-meta">
+          <div class="proc-meta-item"><strong>${escapeHtml(processLocator(proc))}</strong></div>
+          <div class="proc-meta-item">status: <strong>${escapeHtml(processStatusText(proc.status))}</strong></div>
+          <div class="proc-meta-item">memory: <strong>${escapeHtml(processMetric(proc.memory_mb, ' MB'))}</strong></div>
+          <div class="proc-meta-item">cpu: <strong>${escapeHtml(processMetric(proc.cpu_percent, '%'))}</strong></div>
+        </div>
+      </div>
+    </div>`).join('');
+}
+
+function updateProcessRefresh() {
+  if (S.processRefreshTimer) {
+    clearInterval(S.processRefreshTimer);
+    S.processRefreshTimer = null;
+  }
+  if (S.activePanel !== 'processes') return;
+  S.processRefreshTimer = setInterval(() => {
+    if (S.activePanel === 'processes' && S.connected) sendCmd('process-status');
+  }, 30000);
+}
+
 // ═══════════════════════════════
 //  REFRESH ACTIONS
 // ═══════════════════════════════
@@ -2303,7 +2397,8 @@ function refreshFaculties() {
   addActivity('sys', 'CONSOLE', 'Faculty data loaded from status.');
 }
 function refreshProcesses() {
-  addActivity('sys', 'CONSOLE', 'Process monitor updated.');
+  sendCmd('process-status');
+  addActivity('sys', 'PROCESS', 'Refreshing Process Monitor…');
 }
 
 // ═══════════════════════════════

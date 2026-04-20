@@ -22,6 +22,7 @@ from core.nammu_memory import (
     load_routing_history,
 )
 from core.operator import OperatorFaculty, ToolResult
+from core.process_monitor import ProcessMonitor
 from core.proposal import Proposal
 from core.realm import DEFAULT_REALM, RealmConfig, RealmManager
 from core.session import AnalystFaculty, Engine, Session
@@ -74,6 +75,7 @@ STARTUP_COMMANDS = (
     "admin-surface",
     "tool-registry",
     "network-status",
+    "process-status",
     "history",
     "proposal-history",
     "routing-log",
@@ -89,6 +91,7 @@ STARTUP_COMMANDS = (
     "forget",
     "exit",
 )
+AUTO_MEMORY_TURN_THRESHOLD = 20
 
 
 def get_active_realm_name() -> str:
@@ -1011,6 +1014,191 @@ def create_memory_request_proposal(
     )
 
 
+def build_auto_memory_events(
+    session: Session,
+    user_log: UserLog | None,
+    active_token: SessionToken | None,
+) -> list[dict[str, str]]:
+    if user_log is None or active_token is None:
+        return list(session.events)
+
+    entries = [
+        entry
+        for entry in user_log.load(active_token.user_id, limit=200)
+        if entry.get("session_id") == session.session_id
+    ]
+    if not entries:
+        return list(session.events)
+
+    events: list[dict[str, str]] = []
+    for entry in entries[-20:]:
+        content = str(entry.get("content", "")).strip()
+        response = str(entry.get("response_preview", "")).strip()
+        if content:
+            events.append({"role": "user", "content": content})
+        if response:
+            role = "analyst" if content.lower().startswith("analyse") else "assistant"
+            events.append({"role": role, "content": response})
+    return events or list(session.events)
+
+
+def maybe_auto_write_memory(
+    *,
+    memory: Memory,
+    session: Session,
+    active_realm_name: str,
+    active_token: SessionToken | None,
+    user_log: UserLog | None,
+    turn_count: int,
+    last_written_turn: int,
+    reason: str,
+    session_audit: list[dict[str, object]] | None = None,
+) -> dict[str, object] | None:
+    pending_turns = turn_count - last_written_turn
+    if pending_turns <= 0:
+        return None
+
+    candidate = memory.build_candidate(
+        session_id=session.session_id,
+        events=build_auto_memory_events(session, user_log, active_token),
+        user_id=active_token.user_id if active_token is not None else "",
+    )
+    summary_lines = list(candidate.get("summary_lines", []))
+    if not summary_lines:
+        return None
+
+    approved_at = datetime.now(timezone.utc).isoformat()
+    memory_id = (
+        f"auto-memory-{session.session_id}-{reason.replace(' ', '-')}-{turn_count}-"
+        f"{int(time.time() * 1000)}"
+    )
+    memory.write_memory(
+        proposal_id=memory_id,
+        session_id=session.session_id,
+        summary_lines=summary_lines,
+        approved_at=approved_at,
+        realm_name=active_realm_name,
+        user_id=active_token.user_id if active_token is not None else "",
+    )
+    append_audit_event(
+        session_audit,
+        "auto_memory",
+        f"auto-memory: {pending_turns} turns written at {reason}",
+        {
+            "memory_id": memory_id,
+            "turns_written": pending_turns,
+            "reason": reason,
+        },
+    )
+    return {
+        "memory_id": memory_id,
+        "turns_written": pending_turns,
+        "approved_at": approved_at,
+    }
+
+
+def record_completed_turn(
+    *,
+    conversation_state: dict[str, int] | None,
+    memory: Memory,
+    session: Session,
+    active_realm_name: str,
+    active_token: SessionToken | None,
+    user_log: UserLog | None,
+    session_audit: list[dict[str, object]] | None = None,
+) -> dict[str, object] | None:
+    if conversation_state is None:
+        return None
+    turn_count = int(conversation_state.get("turn_count", 0)) + 1
+    conversation_state["turn_count"] = turn_count
+    conversation_state.setdefault("last_auto_memory_turn", 0)
+    if turn_count % AUTO_MEMORY_TURN_THRESHOLD != 0:
+        return None
+    written = maybe_auto_write_memory(
+        memory=memory,
+        session=session,
+        active_realm_name=active_realm_name,
+        active_token=active_token,
+        user_log=user_log,
+        turn_count=turn_count,
+        last_written_turn=int(conversation_state.get("last_auto_memory_turn", 0)),
+        reason="threshold",
+        session_audit=session_audit,
+    )
+    if written is not None:
+        conversation_state["last_auto_memory_turn"] = turn_count
+    return written
+
+
+def finalize_auto_memory(
+    *,
+    conversation_state: dict[str, int] | None,
+    memory: Memory,
+    session: Session,
+    active_realm_name: str,
+    active_token: SessionToken | None,
+    user_log: UserLog | None,
+    reason: str = "session end",
+    session_audit: list[dict[str, object]] | None = None,
+) -> dict[str, object] | None:
+    if conversation_state is None:
+        return None
+    conversation_state.setdefault("turn_count", 0)
+    conversation_state.setdefault("last_auto_memory_turn", 0)
+    written = maybe_auto_write_memory(
+        memory=memory,
+        session=session,
+        active_realm_name=active_realm_name,
+        active_token=active_token,
+        user_log=user_log,
+        turn_count=int(conversation_state["turn_count"]),
+        last_written_turn=int(conversation_state["last_auto_memory_turn"]),
+        reason=reason,
+        session_audit=session_audit,
+    )
+    if written is not None:
+        conversation_state["last_auto_memory_turn"] = int(conversation_state["turn_count"])
+    return written
+
+
+def build_process_status_payload(process_monitor: ProcessMonitor) -> dict[str, object]:
+    processes = []
+    for record in process_monitor.all_records():
+        uptime = (
+            process_monitor.format_uptime(record.uptime_seconds)
+            if record.uptime_seconds > 0
+            else ("0s" if record.name == "INANNA NYX Server" else "unknown")
+        )
+        processes.append(
+            {
+                "name": record.name,
+                "pid": record.pid,
+                "status": record.status,
+                "uptime": uptime,
+                "description": record.description,
+                "endpoint": record.endpoint,
+                "memory_mb": record.memory_mb,
+                "cpu_percent": record.cpu_percent,
+            }
+        )
+    return {"type": "process_status", "processes": processes}
+
+
+def build_process_status_report(payload: dict[str, object]) -> str:
+    lines = ["process-status > Live process view:"]
+    for record in list(payload.get("processes", [])):
+        lines.append(
+            f"  [{record.get('status', 'unknown')}] {record.get('name', 'process')}"
+        )
+        lines.append(f"    {record.get('description', '')}")
+        lines.append(
+            f"    uptime: {record.get('uptime', 'unknown')}  "
+            f"memory: {record.get('memory_mb', 'unknown')}  "
+            f"cpu: {record.get('cpu_percent', 'unknown')}"
+        )
+    return "\n".join(lines)
+
+
 def create_tool_use_proposal(
     proposal: Proposal,
     session: Session,
@@ -1298,6 +1486,8 @@ def complete_tool_resolution(
     user_log: UserLog | None = None,
     faculty_monitor: FacultyMonitor | None = None,
     session_audit: list[dict[str, object]] | None = None,
+    active_realm_name: str = "",
+    conversation_state: dict[str, int] | None = None,
 ) -> str:
     payload = resolved["payload"]
     original_input = payload.get("original_input", "")
@@ -1331,19 +1521,18 @@ def complete_tool_resolution(
         if faculty_monitor is not None:
             faculty_monitor.record_call("crown", (time.monotonic() - t0) * 1000, True)
         if result.success and model_connected and engine.mode == "fallback":
-            created = proposal.create(
-                what="Update the memory store from the latest session turn",
-                why="Keep the next session grounded in readable, user-approved context.",
-                payload=memory.build_candidate(
-                    session_id=session.session_id,
-                    events=session.events,
-                    user_id=active_token.user_id if active_token is not None else "",
-                ),
+            record_completed_turn(
+                conversation_state=conversation_state,
+                memory=memory,
+                session=session,
+                active_realm_name=active_realm_name,
+                active_token=active_token,
+                user_log=user_log,
+                session_audit=session_audit,
             )
             return (
                 f"operator > {operator_text}\n"
-                "operator > model unavailable to summarize. Raw results shown above.\n"
-                f"{created['line']}"
+                "operator > model unavailable to summarize. Raw results shown above."
             )
     else:
         operator_text = "tool use rejected. Proceeding without tool execution."
@@ -1357,16 +1546,16 @@ def complete_tool_resolution(
 
     session.add_event("assistant", assistant_text)
     append_user_log_entry(user_log, active_token, session.session_id, original_input, assistant_text)
-    created = proposal.create(
-        what="Update the memory store from the latest session turn",
-        why="Keep the next session grounded in readable, user-approved context.",
-        payload=memory.build_candidate(
-            session_id=session.session_id,
-            events=session.events,
-            user_id=active_token.user_id if active_token is not None else "",
-        ),
+    record_completed_turn(
+        conversation_state=conversation_state,
+        memory=memory,
+        session=session,
+        active_realm_name=active_realm_name,
+        active_token=active_token,
+        user_log=user_log,
+        session_audit=session_audit,
     )
-    return f"operator > {operator_text}\ninanna > {assistant_text}\n{created['line']}"
+    return f"operator > {operator_text}\ninanna > {assistant_text}"
 
 
 def _resolve_inline_proposal(
@@ -1451,6 +1640,8 @@ def handle_command(
     user_log: UserLog | None = None,
     faculty_monitor: FacultyMonitor | None = None,
     session_audit: list[dict[str, str]] | None = None,
+    process_monitor: ProcessMonitor | None = None,
+    conversation_state: dict[str, int] | None = None,
 ) -> str | None:
     normalized = command.strip()
     if not normalized:
@@ -1510,6 +1701,16 @@ def handle_command(
         target = user_manager.get_user_by_display_name(display_name)
         if target is None:
             return f"No user found with name: {display_name}"
+        finalize_auto_memory(
+            conversation_state=conversation_state,
+            memory=memory,
+            session=session,
+            active_realm_name=active_realm_name,
+            active_token=active_token,
+            user_log=user_log,
+            reason="session end",
+            session_audit=session_audit,
+        )
         token_store.revoke_all_for_user(target.user_id)
         token = token_store.issue(target.user_id, target.display_name, target.role)
         session_state["active_token"] = token
@@ -1538,6 +1739,16 @@ def handle_command(
     if lowered == "logout":
         if token_store is None or session_state is None or active_token is None:
             return "No active session."
+        finalize_auto_memory(
+            conversation_state=conversation_state,
+            memory=memory,
+            session=session,
+            active_realm_name=active_realm_name,
+            active_token=active_token,
+            user_log=user_log,
+            reason="session end",
+            session_audit=session_audit,
+        )
         token_store.revoke(active_token.token)
         append_audit_event(
             session_audit,
@@ -1626,6 +1837,16 @@ def handle_command(
             if refreshed is not None and refreshed.status == "expired":
                 return "join > This invite has expired."
             return "join > This invite could not be accepted."
+        finalize_auto_memory(
+            conversation_state=conversation_state,
+            memory=memory,
+            session=session,
+            active_realm_name=active_realm_name,
+            active_token=active_token,
+            user_log=user_log,
+            reason="session end",
+            session_audit=session_audit,
+        )
         token_store.revoke_all_for_user(created.user_id)
         token = token_store.issue(created.user_id, created.display_name, created.role)
         session_state["active_token"] = token
@@ -1688,6 +1909,10 @@ def handle_command(
 
     if lowered == "network-status":
         return build_network_status_report(build_network_status_payload(session_audit))
+
+    if lowered == "process-status":
+        process_monitor = process_monitor or ProcessMonitor(time.time())
+        return build_process_status_report(build_process_status_payload(process_monitor))
 
     if lowered == "status":
         history = proposal.history_report()
@@ -1797,6 +2022,16 @@ def handle_command(
     if lowered.startswith("switch-user"):
         if user_manager is None or session_state is None:
             return "switch-user > user management is unavailable."
+        finalize_auto_memory(
+            conversation_state=conversation_state,
+            memory=memory,
+            session=session,
+            active_realm_name=active_realm_name,
+            active_token=active_token,
+            user_log=user_log,
+            reason="session end",
+            session_audit=session_audit,
+        )
         controller = original_user or current_user
         allowed, reason = check_privilege(controller, user_manager, "all")
         if not allowed:
@@ -1910,18 +2145,18 @@ def handle_command(
         session.add_event("user", normalized)
         session.add_event("analyst", analysis_text)
         append_user_log_entry(user_log, active_token, session.session_id, normalized, analysis_text)
-        created = proposal.create(
-            what="Update the memory store from the latest session turn",
-            why="Keep the next session grounded in readable, user-approved context.",
-            payload=memory.build_candidate(
-                session_id=session.session_id,
-                events=session.events,
-                user_id=active_token.user_id if active_token is not None else "",
-            ),
+        record_completed_turn(
+            conversation_state=conversation_state,
+            memory=memory,
+            session=session,
+            active_realm_name=active_realm_name,
+            active_token=active_token,
+            user_log=user_log,
+            session_audit=session_audit,
         )
         if analysis_mode == "live":
-            return f"analyst > [live analysis] {analysis_text}\n{created['line']}"
-        return f"analyst > [analysis fallback] {analysis_text}\n{created['line']}"
+            return f"analyst > [live analysis] {analysis_text}"
+        return f"analyst > [analysis fallback] {analysis_text}"
 
     if lowered == "audit":
         audit_mode, audit_text = engine.speak_audit(
@@ -1991,6 +2226,8 @@ def handle_command(
                 user_log=user_log,
                 faculty_monitor=faculty_monitor,
                 session_audit=session_audit,
+                active_realm_name=active_realm_name,
+                conversation_state=conversation_state,
             )
 
         if payload.get("action") == "realm_context_update":
@@ -2166,21 +2403,20 @@ def handle_command(
         session.add_event("user", normalized)
         session.add_event("analyst", analysis_text)
         append_user_log_entry(user_log, active_token, session.session_id, normalized, analysis_text)
-        created = proposal.create(
-            what="Update the memory store from the latest session turn",
-            why="Keep the next session grounded in readable, user-approved context.",
-            payload=memory.build_candidate(
-                session_id=session.session_id,
-                events=session.events,
-                user_id=active_token.user_id if active_token is not None else "",
-            ),
+        record_completed_turn(
+            conversation_state=conversation_state,
+            memory=memory,
+            session=session,
+            active_realm_name=active_realm_name,
+            active_token=active_token,
+            user_log=user_log,
+            session_audit=session_audit,
         )
         label = "[live analysis]" if analysis_mode == "live" else "[analysis fallback]"
         lines = [f"nammu > routing to {governance_result.faculty} faculty"]
         if governance_result.decision == "redirect":
             lines.append(f"governance > redirected: {governance_result.reason}")
         lines.append(f"analyst > {label} {analysis_text}")
-        lines.append(created["line"])
         return (
             "\n".join(lines)
         )
@@ -2195,21 +2431,19 @@ def handle_command(
         faculty_monitor.record_call("crown", (time.monotonic() - t0) * 1000, True)
     session.add_event("assistant", assistant_text)
     append_user_log_entry(user_log, active_token, session.session_id, normalized, assistant_text)
-
-    created = proposal.create(
-        what="Update the memory store from the latest session turn",
-        why="Keep the next session grounded in readable, user-approved context.",
-        payload=memory.build_candidate(
-            session_id=session.session_id,
-            events=session.events,
-            user_id=active_token.user_id if active_token is not None else "",
-        ),
+    record_completed_turn(
+        conversation_state=conversation_state,
+        memory=memory,
+        session=session,
+        active_realm_name=active_realm_name,
+        active_token=active_token,
+        user_log=user_log,
+        session_audit=session_audit,
     )
     lines = [f"nammu > routing to {governance_result.faculty} faculty"]
     if governance_result.decision == "redirect":
         lines.append(f"governance > redirected: {governance_result.reason}")
     lines.append(f"inanna > {assistant_text}")
-    lines.append(created["line"])
     return "\n".join(lines)
 
 
@@ -2239,6 +2473,8 @@ def main() -> None:
     user_log = UserLog(USER_LOG_DIR)
     faculty_monitor = FacultyMonitor()
     session_audit: list[dict[str, str]] = []
+    process_monitor = ProcessMonitor(time.time())
+    conversation_state = {"turn_count": 0, "last_auto_memory_turn": 0}
     append_audit_event(
         session_audit,
         "login",
@@ -2308,10 +2544,30 @@ def main() -> None:
         try:
             user_input = input("you> ")
         except EOFError:
+            finalize_auto_memory(
+                conversation_state=conversation_state,
+                memory=memory,
+                session=session,
+                active_realm_name=active_realm.name,
+                active_token=session_state.get("active_token"),
+                user_log=user_log,
+                reason="session end",
+                session_audit=session_audit,
+            )
             print()
             print("Session closed.")
             break
         except KeyboardInterrupt:
+            finalize_auto_memory(
+                conversation_state=conversation_state,
+                memory=memory,
+                session=session,
+                active_realm_name=active_realm.name,
+                active_token=session_state.get("active_token"),
+                user_log=user_log,
+                reason="session end",
+                session_audit=session_audit,
+            )
             print()
             print("Session closed.")
             break
@@ -2340,8 +2596,20 @@ def main() -> None:
             user_log=user_log,
             faculty_monitor=faculty_monitor,
             session_audit=session_audit,
+            process_monitor=process_monitor,
+            conversation_state=conversation_state,
         )
         if result is None:
+            finalize_auto_memory(
+                conversation_state=conversation_state,
+                memory=memory,
+                session=session,
+                active_realm_name=active_realm.name,
+                active_token=session_state.get("active_token"),
+                user_log=user_log,
+                reason="session end",
+                session_audit=session_audit,
+            )
             print("Session closed.")
             break
         if result:
