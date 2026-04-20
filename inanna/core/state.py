@@ -1,6 +1,9 @@
 from __future__ import annotations
 
-from identity import CURRENT_PHASE
+from identity import CURRENT_PHASE as IDENTITY_CURRENT_PHASE
+
+
+CURRENT_PHASE = IDENTITY_CURRENT_PHASE
 
 
 class StateReport:

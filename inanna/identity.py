@@ -6,7 +6,7 @@ if TYPE_CHECKING:
     from core.realm import RealmConfig
 
 
-CURRENT_PHASE = "Cycle 5 - Phase 5.6 - The Faculty Router"
+CURRENT_PHASE = "Cycle 5 - Phase 5.7 - The Domain Faculty"
 
 CYCLE2_SUMMARY = (
     "Cycle 2 built the NAMMU Kernel: web interface, two Faculties, "

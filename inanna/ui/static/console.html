@@ -2061,9 +2061,10 @@ function facultyLastCalled(faculty) {
   return 'never';
 }
 
-function facultyGovernanceText(faculty) {
+function facultyGovernanceMarkup(faculty) {
   const rules = Array.isArray(faculty.governance_rules) ? faculty.governance_rules : [];
-  return rules.length ? rules[0] : '';
+  if (!rules.length) return '';
+  return `<div class="faculty-governance">Governance rules:${rules.map(rule => `<div>&bull; ${escapeHtml(rule)}</div>`).join('')}</div>`;
 }
 
 function toggleFacultyCharter(name) {
@@ -2077,7 +2078,7 @@ function renderFacultyCards(faculties) {
     const icon = FACULTY_ICONS[name] || FACULTY_ICONS.default;
     const calls = faculty.call_count !== undefined ? faculty.call_count : 0;
     const charterOpen = !!S.openFacultyCharters[name];
-    const governanceText = facultyGovernanceText(faculty);
+    const governanceMarkup = facultyGovernanceMarkup(faculty);
     return `
       <div class="faculty-card ${facultyCardClass(faculty)}">
         <div class="faculty-icon">${icon}</div>
@@ -2094,10 +2095,10 @@ function renderFacultyCards(faculties) {
             <span class="faculty-status-chip" style="border-color:var(--dust);color:var(--dim)">last: ${escapeHtml(facultyLastCalled(faculty))}</span>
             <span class="faculty-status-chip" style="border-color:var(--dust);color:var(--faded)">${faculty.built_in ? 'built-in' : 'domain'}</span>
           </div>
-          ${governanceText ? `<div class="faculty-governance">Governance: ${escapeHtml(governanceText)}</div>` : ''}
+          ${governanceMarkup}
           <div class="faculty-actions">
             <button class="uruk-btn" onclick="toggleFacultyCharter('${escapeHtml(name)}')">[ ${charterOpen ? 'hide charter' : 'view charter'} ]</button>
-            ${faculty.built_in ? '' : '<button class="uruk-btn" disabled title="Domain Faculty activation coming in Phase 5.7">[ activate ]</button>'}
+            ${faculty.built_in || faculty.active !== false ? '' : '<button class="uruk-btn" disabled title="Domain Faculty activation coming in Phase 5.7">[ activate ]</button>'}
           </div>
           ${charterOpen ? `<div class="faculty-charter">${escapeHtml(faculty.charter_preview || '')}</div>` : ''}
         </div>

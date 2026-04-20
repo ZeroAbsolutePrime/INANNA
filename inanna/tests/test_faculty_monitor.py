@@ -11,12 +11,12 @@ class FacultyMonitorTests(unittest.TestCase):
 
         self.assertIsInstance(monitor, FacultyMonitor)
 
-    def test_all_records_returns_four_faculties(self) -> None:
+    def test_all_records_returns_five_faculties(self) -> None:
         records = FacultyMonitor().all_records()
 
-        self.assertEqual(len(records), 4)
+        self.assertEqual(len(records), 5)
         self.assertTrue(all(isinstance(record, FacultyRecord) for record in records))
-        self.assertNotIn("sentinel", {record.name for record in records})
+        self.assertIn("sentinel", {record.name for record in records})
 
     def test_monitor_loads_display_name_domain_and_charter_from_config(self) -> None:
         record = FacultyMonitor().get_record("crown")
@@ -36,6 +36,7 @@ class FacultyMonitorTests(unittest.TestCase):
         self.assertEqual(monitor.get_record("analyst").mode, "connected")
         self.assertEqual(monitor.get_record("operator").mode, "ready")
         self.assertEqual(monitor.get_record("guardian").mode, "ready")
+        self.assertEqual(monitor.get_record("sentinel").mode, "ready")
 
     def test_record_call_increments_count_and_updates_timestamp(self) -> None:
         monitor = FacultyMonitor()
@@ -63,12 +64,12 @@ class FacultyMonitorTests(unittest.TestCase):
         self.assertIn("ANALYST", report)
         self.assertIn("OPERATOR", report)
         self.assertIn("GUARDIAN", report)
-        self.assertNotIn("SENTINEL", report)
+        self.assertIn("SENTINEL", report)
 
     def test_summary_returns_required_keys(self) -> None:
         summary = FacultyMonitor().summary()
 
-        self.assertEqual(len(summary), 4)
+        self.assertEqual(len(summary), 5)
         self.assertTrue(
             {
                 "name",
@@ -90,13 +91,14 @@ class FacultyMonitorTests(unittest.TestCase):
             }.issubset(summary[0].keys())
         )
 
-    def test_registry_summary_includes_inactive_sentinel(self) -> None:
+    def test_registry_summary_includes_active_sentinel(self) -> None:
         summary = FacultyMonitor().registry_summary()
 
         self.assertEqual(len(summary), 5)
         sentinel = next(record for record in summary if record["name"] == "sentinel")
-        self.assertFalse(sentinel["active"])
+        self.assertTrue(sentinel["active"])
         self.assertEqual(sentinel["domain"], "security")
+        self.assertEqual(sentinel["mode"], "ready")
 
 
 if __name__ == "__main__":

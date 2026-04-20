@@ -374,6 +374,7 @@ html,body{
 .msg-row.operator{justify-content:flex-start;}
 .msg-row.governance{justify-content:flex-start;}
 .msg-row.analyst {justify-content:flex-start;}
+.msg-row.sentinel{justify-content:flex-start;}
 .msg-row.guardian{justify-content:flex-start;}
 .msg-row.access  {justify-content:flex-start;}
 
@@ -388,6 +389,7 @@ html,body{
 .msg-row.operator  .msg-label{color:var(--am2);}
 .msg-row.governance .msg-label{color:var(--danger);}
 .msg-row.analyst   .msg-label{color:var(--faded);}
+.msg-row.sentinel  .msg-label{color:var(--danger);}
 .msg-row.guardian  .msg-label{color:var(--lap3);}
 
 /* Bubble base */
@@ -481,6 +483,16 @@ html,body{
   border:1px solid var(--dust);
   border-left:2px solid var(--faded);
   font-size:12px;color:var(--ivory);line-height:1.8;
+}
+
+/* SENTINEL */
+.msg-row.sentinel .msg-bubble{
+  background:rgba(170,48,32,.07);
+  border:1px solid rgba(170,48,32,.35);
+  border-left:2px solid var(--danger);
+  font-size:13px;
+  color:rgba(240,190,180,.9);
+  line-height:1.85;
 }
 
 /* GUARDIAN */
@@ -1124,6 +1136,7 @@ function handleMsg(m){
   if(t==='status')       {handleStatus(m.data||m);return;}
   if(t==='assistant')    {addMessage('inanna',m.text);return;}
   if(t==='analyst')      {addMessage('analyst',m.text);return;}
+  if(t==='sentinel')     {addMessage('sentinel',m.text);return;}
   if(t==='nammu')        {addMessage('nammu',m.text);return;}
   if(t==='governance')   {addMessage('governance',m.text);return;}
   if(t==='operator')     {addMessage('operator',m.text);return;}
@@ -1233,6 +1246,9 @@ function addMessage(type,text){
   }else if(type==='analyst'){
     row.className='msg-row analyst';
     row.innerHTML=`<div class="msg-label">analyst</div><div class="msg-bubble">${esc(text)}</div>`;
+  }else if(type==='sentinel'){
+    row.className='msg-row sentinel';
+    row.innerHTML=`<div class="msg-label">sentinel</div><div class="msg-bubble">${esc(text)}</div>`;
   }else if(type==='guardian'){
     row.className='msg-row guardian';
     row.innerHTML=`<div class="msg-label">guardian</div><div class="msg-bubble">${esc(text)}</div>`;

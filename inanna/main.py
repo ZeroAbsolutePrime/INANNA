@@ -1,9 +1,11 @@
 from __future__ import annotations
 
+import json
 import os
 import time
 from datetime import datetime, timezone
 from pathlib import Path
+from typing import Any
 
 from dotenv import load_dotenv
 
@@ -97,6 +99,7 @@ AUTO_MEMORY_TURN_THRESHOLD = 20
 SENTINEL_STUB_RESPONSE = (
     "SENTINEL Faculty is registered but not yet deployed. Activate it in the Faculty Registry."
 )
+SENTINEL_FALLBACK_PREFIX = "[sentinel fallback]"
 
 
 def get_active_realm_name() -> str:
@@ -106,6 +109,96 @@ def get_active_realm_name() -> str:
 
 def build_sentinel_stub_response() -> str:
     return SENTINEL_STUB_RESPONSE
+
+
+def build_sentinel_system_prompt(
+    grounding: str | list[str | dict[str, str]] | None,
+    faculties_path: Path,
+) -> str:
+    default_charter = (
+        "I am SENTINEL. I analyze security posture. I reason about threats "
+        "and vulnerabilities. I perform passive analysis only. Any offensive "
+        "or active capability requires explicit Guardian proposal approval."
+    )
+    default_rules = [
+        "Passive analysis only without explicit Guardian approval",
+        "All offensive actions require Guardian proposal",
+        "Never recommend exploiting a vulnerability without consent",
+    ]
+
+    try:
+        fac_data = json.loads(faculties_path.read_text(encoding="utf-8"))
+        sentinel_cfg = fac_data.get("faculties", {}).get("sentinel", {})
+        charter = str(sentinel_cfg.get("charter_preview", "")).strip()
+        gov_rules = [
+            str(rule).strip()
+            for rule in sentinel_cfg.get("governance_rules", [])
+            if isinstance(rule, str) and str(rule).strip()
+        ]
+    except Exception:
+        charter = ""
+        gov_rules = []
+
+    if not charter:
+        charter = default_charter
+    if not gov_rules:
+        gov_rules = default_rules
+
+    grounding_text = grounding.strip() if isinstance(grounding, str) else ""
+    if not grounding_text:
+        grounding_items = list(grounding or []) if isinstance(grounding, list) else []
+        grounding_text = Engine()._build_grounding_turn(grounding_items)["content"]
+
+    rules_text = "\n".join(f"- {rule}" for rule in gov_rules)
+    return (
+        "You are SENTINEL, the cybersecurity Faculty of INANNA NYX.\n\n"
+        f"Charter: {charter}\n\n"
+        "Your domain: network security, threat analysis, vulnerability assessment,\n"
+        "risk reasoning, defensive security posture.\n\n"
+        "Governance rules (enforced, not negotiable):\n"
+        f"{rules_text}\n\n"
+        "You reason carefully, cite known frameworks (MITRE ATT&CK, CVE, OWASP)\n"
+        "where relevant, and always distinguish between what is known and what is\n"
+        "inferred. You are honest about the limits of your knowledge.\n\n"
+        f"{grounding_text}"
+    ).strip()
+
+
+def run_sentinel_response(
+    user_input: str,
+    grounding: str | list[str | dict[str, str]] | None,
+    lm_url: str,
+    model_name: str,
+    faculties_path: Path,
+) -> str:
+    system_prompt = build_sentinel_system_prompt(grounding, faculties_path)
+    engine = Engine(
+        model_url=lm_url,
+        model_name=model_name,
+        api_key=os.getenv("INANNA_API_KEY", "").strip(),
+    )
+    fallback = (
+        f"{SENTINEL_FALLBACK_PREFIX} Model endpoint unavailable. "
+        "I can still offer bounded defensive guidance: confirm scope, preserve logs, "
+        "validate exposure, and pursue responsible disclosure or defensive action."
+    )
+
+    if not (engine.model_url and engine.model_name):
+        return fallback
+
+    try:
+        return engine._call_openai_compatible(
+            [
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": user_input.strip()},
+            ]
+        )
+    except Exception:
+        return fallback
+
+
+def sentinel_response_mode(response_text: str) -> str:
+    return "fallback" if response_text.startswith(SENTINEL_FALLBACK_PREFIX) else "connected"
 
 
 def realm_is_empty(realm_dirs: dict[str, Path]) -> bool:
@@ -2406,6 +2499,13 @@ def handle_command(
         return f"Rejected {resolved['proposal_id']}."
 
     governance_result = classifier.route(normalized)
+    if governance_result.faculty == "sentinel":
+        append_audit_event(
+            session_audit,
+            "routing",
+            "sentinel: routed to SENTINEL Faculty - input classified as security domain",
+            {"route": "sentinel", "input_preview": normalized[:60]},
+        )
     append_routing_decision(
         routing_log,
         session,
@@ -2477,9 +2577,22 @@ def handle_command(
         )
 
     if governance_result.faculty == "sentinel":
-        sentinel_text = build_sentinel_stub_response()
+        t0 = time.monotonic()
+        sentinel_text = run_sentinel_response(
+            user_input=normalized,
+            grounding=startup_context_items(startup_context),
+            lm_url=config.model_url,
+            model_name=config.model_name,
+            faculties_path=FACULTIES_CONFIG_PATH,
+        )
+        mode = sentinel_response_mode(sentinel_text)
         if faculty_monitor is not None:
-            faculty_monitor.record_call("sentinel", 0.0, True)
+            faculty_monitor.record_call(
+                "sentinel",
+                (time.monotonic() - t0) * 1000,
+                mode == "connected",
+            )
+            faculty_monitor.set_mode("sentinel", mode)
         session.add_event("user", normalized)
         session.add_event("assistant", sentinel_text)
         append_user_log_entry(user_log, active_token, session.session_id, normalized, sentinel_text)

@@ -606,9 +606,9 @@ class CommandTests(unittest.TestCase):
         )
 
         self.assertIn("faculty-registry > Faculties (5 total):", result)
-        self.assertIn("active: 4  inactive: 1", result)
+        self.assertIn("active: 5  inactive: 0", result)
         self.assertIn("CROWN [unavailable]", result)
-        self.assertIn("SENTINEL [inactive]", result)
+        self.assertIn("SENTINEL [ready]", result)
         self.assertIn("security · Cybersecurity analysis", result)
 
     def test_network_status_command_summarizes_recent_network_activity(self) -> None:

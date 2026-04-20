@@ -75,7 +75,6 @@ from main import (
     create_memory_request_proposal,
     create_realm_context_proposal,
     create_tool_use_proposal,
-    build_sentinel_stub_response,
     finalize_auto_memory,
     format_user_log_report,
     has_admin_surface_access,
@@ -84,6 +83,8 @@ from main import (
     load_current_realm,
     parse_user_realm_command,
     record_completed_turn,
+    run_sentinel_response as run_sentinel_backend_response,
+    sentinel_response_mode,
     startup_context_items,
     token_preview,
 )
@@ -100,6 +101,22 @@ WS_PORT = int(os.getenv("INANNA_WS_PORT", "8081"))
 
 def utc_now() -> str:
     return datetime.now(timezone.utc).isoformat()
+
+
+def run_sentinel_response(
+    user_input: str,
+    grounding: str | list[str | dict[str, str]] | None,
+    lm_url: str,
+    model_name: str,
+    faculties_path: Path,
+) -> str:
+    return run_sentinel_backend_response(
+        user_input=user_input,
+        grounding=grounding,
+        lm_url=lm_url,
+        model_name=model_name,
+        faculties_path=faculties_path,
+    )
 
 
 class StaticHandler(BaseHTTPRequestHandler):
@@ -418,6 +435,13 @@ class InterfaceServer:
         text: str,
     ) -> dict[str, Any]:
         governance_result = self.classifier.route(text)
+        if governance_result.faculty == "sentinel":
+            append_audit_event(
+                self.session_audit,
+                "routing",
+                "sentinel: routed to SENTINEL Faculty - input classified as security domain",
+                {"route": "sentinel", "input_preview": text[:60]},
+            )
         self._record_routing_decision(governance_result.faculty, text)
 
         if governance_result.decision == "block":
@@ -524,8 +548,21 @@ class InterfaceServer:
             }
 
         if governance_result.faculty == "sentinel":
-            sentinel_text = build_sentinel_stub_response()
-            self.faculty_monitor.record_call("sentinel", 0.0, True)
+            t0 = time.monotonic()
+            sentinel_text = run_sentinel_response(
+                user_input=text,
+                grounding=startup_context_items(self.startup_context),
+                lm_url=self.config.model_url,
+                model_name=self.config.model_name,
+                faculties_path=FACULTIES_CONFIG_PATH,
+            )
+            mode = sentinel_response_mode(sentinel_text)
+            self.faculty_monitor.record_call(
+                "sentinel",
+                (time.monotonic() - t0) * 1000,
+                mode == "connected",
+            )
+            self.faculty_monitor.set_mode("sentinel", mode)
             self.session.add_event("user", text)
             self.session.add_event("assistant", sentinel_text)
             append_user_log_entry(
@@ -539,7 +576,7 @@ class InterfaceServer:
             return {
                 "nammu": nammu_message,
                 "governance": governance_message,
-                "response": {"type": "assistant", "text": sentinel_text},
+                "response": {"type": "sentinel", "text": sentinel_text},
             }
 
         assistant_text = self._run_user_turn(text)

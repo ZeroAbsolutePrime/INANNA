@@ -79,6 +79,14 @@ class FacultyMonitor:
         for name in ("crown", "analyst"):
             if name in self._records:
                 self._records[name].mode = mode
+        sentinel = self._records.get("sentinel")
+        if sentinel is not None and sentinel.active:
+            sentinel.mode = "ready" if mode == "connected" and sentinel.call_count == 0 else mode
+
+    def set_mode(self, faculty: str, mode: str) -> None:
+        if faculty not in self._records:
+            return
+        self._records[faculty].mode = mode
 
     def record_call(self, faculty: str, response_ms: float, success: bool) -> None:
         if faculty not in self._records:
