@@ -1,264 +1,225 @@
-# CURRENT PHASE: Cycle 6 - Phase 6.2 - The Onboarding Survey
+# CURRENT PHASE: Cycle 6 - Phase 6.3 - The Profile Command
 **Status: ACTIVE**
 **Authorized by: ZAERA (Guardian) + Claude (Command Center)**
 **Date opened: 2026-04-20**
 **Cycle: 6 - The Relational Memory**
-**Replaces: Cycle 6 Phase 6.1 - The User Profile (COMPLETE)**
+**Replaces: Cycle 6 Phase 6.2 - The Onboarding Survey (COMPLETE)**
 
 ---
 
 ## What This Phase Is
 
-Phase 6.1 created the profile — an empty vessel waiting to be filled.
-Phase 6.2 is the first filling: the onboarding survey.
+Phase 6.1 created the profile infrastructure.
+Phase 6.2 filled it through the onboarding conversation.
+Phase 6.3 makes the profile visible and editable.
 
-The first time an operator opens a session with INANNA,
-she notices they have not yet been welcomed properly.
-She pauses the normal conversation flow and asks five questions —
-gently, conversationally, as though meeting someone for the first time.
+After this phase, any user can type `my-profile` and see
+their profile rendered beautifully in the conversation —
+not as raw JSON, but as a warm, human-readable portrait.
 
-Not a form. A meeting.
+They can update any field with `my-profile edit [field] [value]`.
+They can clear sensitive fields with `my-profile clear [field]`.
+The Guardian can view any user's profile with `view-profile [name]`.
 
-After the survey completes (or is skipped), it never repeats.
-The answers live in the profile. INANNA uses them silently
-to address the person as they wish to be addressed.
-
-This phase also implements the first active use of the profile:
-INANNA greets the user by their preferred_name after onboarding
-and uses their pronouns correctly in the conversation.
+This is Law IV expressed at the user level:
+you should be able to ask what INANNA knows about you
+and receive a clear, honest, readable answer.
 
 ---
 
 ## What You Are Building
 
-### Task 1 - Onboarding detection in server.py and main.py
+### Task 1 - "my-profile" command
 
-After the active session starts (user logged in, profile loaded),
-check if onboarding is needed:
+Add command: my-profile
 
-```python
-def needs_onboarding(profile: UserProfile | None) -> bool:
-    if profile is None:
-        return False
-    return not profile.onboarding_completed
-```
+Privilege required: converse (any logged-in user)
 
-If onboarding is needed, inject a special system message into
-the conversation BEFORE the user's first input reaches CROWN:
+Output format (rendered as a "profile" message type in the UI):
 
 ```
-{"type": "onboarding", "text": "...survey intro message..."}
+Your profile
+
+  Name         ZAERA
+  Preferred    ZAERA
+  Pronouns     she/her
+  Languages    es, en, pt
+  Location     Barcelona, Catalonia, Spain
+
+  Organization
+  Departments  —
+  Groups       —
+
+  Communication
+  Style        —
+  Formality    —
+  Patterns     —
+
+  Interests
+  Domains      —
+  Topics       —
+  Projects     —
+
+  Trust
+  Session      —
+  Persistent   —
+
+  Onboarding   completed Apr 19 22:15
+
+Type "my-profile edit [field] [value]" to update any field.
+Type "my-profile clear [field]" to remove a field.
 ```
 
-This triggers the onboarding flow in the UI.
+Empty fields show "—". Missing sections are shown but empty.
+The output is a single "system" message with clean formatting.
 
-### Task 2 - Onboarding state machine in server.py
+### Task 2 - "my-profile edit [field] [value]" command
 
-The onboarding survey is a 5-step conversational flow.
-Track state in the server session:
+Allows the user to update any profile field directly.
 
-```python
-self.onboarding_active = False
-self.onboarding_step = 0
-self.onboarding_responses = {}
+```
+my-profile edit preferred_name Zohar
+my-profile edit pronouns they/them
+my-profile edit location_city Lisboa
+my-profile edit location_country Portugal
+my-profile edit languages en,es,pt
 ```
 
-The five questions (asked one at a time, in order):
+For list fields (languages, departments, groups, domains):
+  The value is split on commas: "en,es,pt" → ["en", "es", "pt"]
 
-Step 1: "What would you like me to call you?"
-  Field: preferred_name
-  Skip phrase: "skip" | "no preference" | empty
+Privileged fields (readable/writable only by Guardian):
+  inanna_notes — Guardian can add notes about a user
+  (normal users cannot edit this field)
 
-Step 2: "What pronouns do you use? For example: she/her, he/him,
-  they/them — or skip this if you prefer."
-  Field: pronouns
-  Skip phrase: "skip" | "prefer not" | empty
+After updating, the profile grounding is refreshed:
+  sync_profile_grounding(engine, profile_manager, user, token)
 
-Step 3: "What brings you here? What are you working on?"
-  Field: survey_responses["purpose"]
-  Skip phrase: "skip"
+Response: "profile > [field] updated to [value]."
 
-Step 4: "Are there domains or topics you would like me to be
-  especially thoughtful about?"
-  Field: survey_responses["sensitive_domains"]
-  Skip phrase: "skip" | "none"
+### Task 3 - "my-profile clear [field]" command
 
-Step 5: "Is there anything else you would like me to know
-  about you that would help me serve you well?"
-  Field: survey_responses["additional"]
-  Skip phrase: "skip" | "nothing" | "no"
+Clears a field back to its default (empty string or empty list).
 
-After Step 5 (or after the user types "skip all"):
-  - Save all collected responses to the profile
-  - Set profile.onboarding_completed = True
-  - Set profile.onboarding_completed_at = utc_now()
-  - Broadcast a warm completion message:
-    "Thank you, [preferred_name or display_name]. I will remember
-     what you have shared. You can update your profile at any time
-     with the my-profile command. Let us begin."
-  - Resume normal conversation flow
+```
+my-profile clear pronouns
+my-profile clear location_city
+my-profile clear domains
+```
 
-### Task 3 - Onboarding message interception
+Response: "profile > [field] cleared."
 
-While onboarding_active is True, incoming user messages are
-treated as survey responses, not conversation inputs.
-They are NOT sent to NAMMU or CROWN.
+Protected fields (cannot be cleared):
+  user_id, version, created_at, onboarding_completed
 
-The response to each survey answer is the next question.
+Response for protected fields:
+  "profile > [field] cannot be cleared."
 
-If the user types "skip all" at any point:
-  Complete onboarding immediately with whatever was collected.
-  Mark as completed.
+### Task 4 - "view-profile [display_name]" command
 
-### Task 4 - "onboarding" message type in index.html
+Privilege required: all (Guardian only)
 
-Add a distinct onboarding message type to the UI:
+Shows another user's full profile in the same format as my-profile,
+prefixed with:
+  "Profile for Alice (user_abc12345):"
+
+If user not found:
+  "view-profile > No user found: [name]"
+
+### Task 5 - "profile" message type in index.html
+
+Add a distinct profile message type for profile display:
 
 ```css
-.msg-row.onboarding .msg-bubble {
-    background: rgba(120, 72, 176, .08);
-    border: 1px solid rgba(120, 72, 176, .3);
-    border-left: 3px solid var(--vio3);
-    font-family: var(--serif);
-    font-size: 14px;
+.msg-row.profile .msg-bubble {
+    background: rgba(200, 150, 42, .05);
+    border: 1px solid var(--gold1);
+    border-left: 2px solid var(--gold3);
+    font-family: var(--mono);
+    font-size: 12px;
     line-height: 2;
-    color: var(--rose5);
+    color: var(--ivory);
+    white-space: pre-wrap;
 }
-.msg-row.onboarding .msg-label {
-    color: var(--vio3);
-    font-family: var(--serif);
+.msg-row.profile .msg-label {
+    color: var(--gold2);
 }
 ```
 
-The label text: "inanna ∴"
+The label: "profile"
 
-Onboarding messages feel like INANNA speaking warmly —
-rose/pink text, violet border, Cinzel font.
-Distinct from normal conversation but unmistakably INANNA.
-
-### Task 5 - Onboarding skip button in UI
-
-When an onboarding message arrives, optionally show
-a subtle [ skip survey ] button beneath it:
-
-```html
-<div class="onboarding-skip">
-  <button onclick="sendSkipOnboarding()">[ skip survey ]</button>
-</div>
-```
-
+In handleMsg():
 ```javascript
-function sendSkipOnboarding() {
-  if (ws && ws.readyState === 1) {
-    ws.send(JSON.stringify({type: 'input', text: 'skip all'}));
-  }
-}
+if (t === 'profile') { addMessage('profile', m.text); return; }
 ```
 
-This appears only for the first onboarding message,
-not for each question.
+Server broadcasts profile output as:
+  {"type": "profile", "text": "...formatted profile..."}
 
-### Task 6 - Profile update after onboarding
+### Task 6 - Add "my-profile" and "view-profile" to capabilities
 
-After onboarding completes, the profile is updated:
+Update identity.py:
+  CURRENT_PHASE = "Cycle 6 - Phase 6.3 - The Profile Command"
 
-```python
-if response_step1:
-    profile_manager.update_field(user_id, 'preferred_name', response_step1)
-if response_step2:
-    profile_manager.update_field(user_id, 'pronouns', response_step2)
-# survey_responses dict stored as JSON
-profile_manager.update_field(user_id, 'survey_responses', collected)
-profile_manager.update_field(user_id, 'onboarding_completed', True)
-profile_manager.update_field(user_id, 'onboarding_completed_at', utc_now())
-```
+Update state.py: add my-profile, view-profile to STARTUP_COMMANDS.
 
-Immediately after saving, INANNA's grounding is refreshed
-to include the new preferred_name:
-
-```python
-sync_profile_grounding(engine, profile_manager, active_user, active_token)
-```
-
-### Task 7 - INANNA uses preferred_name in completion message
-
-The onboarding completion message uses the name the user provided:
-
-```python
-name = profile_manager.display_name_for(user_id, fallback=display_name)
-completion_msg = (
-    f"Thank you, {name}. I will remember what you have shared. "
-    f"You can update your profile at any time with the my-profile command. "
-    f"Let us begin."
-)
-```
-
-### Task 8 - Update identity.py and state.py
-
-CURRENT_PHASE = "Cycle 6 - Phase 6.2 - The Onboarding Survey"
-
-### Task 9 - Tests
+### Task 7 - Tests
 
 Update inanna/tests/test_profile.py:
-  - needs_onboarding() returns True for incomplete profile
-  - needs_onboarding() returns False for completed profile
-  - needs_onboarding() returns False for None profile
+  - format_profile_output() formats correctly for complete profile
+  - format_profile_output() shows "—" for empty fields
+  - parse_profile_edit_command() extracts field and value correctly
+  - parse_profile_edit_command() handles list values (comma-split)
+  - Protected fields cannot be cleared
 
 Update test_identity.py: update CURRENT_PHASE assertion.
-
-No new test file needed — onboarding logic is integration-level
-and is tested via the existing profile tests + manual verification.
+Update test_state.py: add my-profile, view-profile.
+Update test_commands.py: add my-profile, view-profile.
 
 ---
 
 ## Permitted file changes
 
 inanna/identity.py              <- MODIFY: update CURRENT_PHASE
-inanna/main.py                  <- MODIFY: onboarding detection,
-                                           onboarding state machine,
-                                           profile update on complete
-inanna/ui/
-  server.py                     <- MODIFY: onboarding detection,
-                                           message interception,
-                                           state machine,
-                                           profile update on complete
-  static/index.html             <- MODIFY: onboarding message type CSS,
-                                           onboarding label,
-                                           skip survey button
+inanna/main.py                  <- MODIFY: my-profile command,
+                                           my-profile edit command,
+                                           my-profile clear command,
+                                           view-profile command
 inanna/core/
-  state.py                      <- MODIFY: update phase only
+  state.py                      <- MODIFY: add commands
+inanna/ui/
+  server.py                     <- MODIFY: same commands,
+                                           broadcast as "profile" type
+  static/index.html             <- MODIFY: profile message type CSS + handler
 inanna/tests/
-  test_profile.py               <- MODIFY: add needs_onboarding tests
+  test_profile.py               <- MODIFY: add format/parse tests
   test_identity.py              <- MODIFY: update phase assertion
+  test_state.py                 <- MODIFY: add new commands
+  test_commands.py              <- MODIFY: add new commands
 
 ---
 
 ## What You Are NOT Building
 
-- No profile commands (Phase 6.3)
 - No communication learning (Phase 6.4)
-- No department/group fields (Phase 6.5)
-- No pronoun use in third-person language (Phase 6.6)
-- Do not change console.html
-- The Guardian (ZAERA) is NOT shown the onboarding survey —
-  only new non-guardian users see it on first login.
-  Guardian profile is created in Phase 6.1 but marked completed
-  to skip the survey (Guardian configured the system).
+- No department/group management (Phase 6.5)
+- No pronoun use in INANNA's language (Phase 6.6)
+- No trust persistence backend (Phase 6.7)
+- No reflective memory (Phase 6.8)
+- No changes to console.html
+- No profile export or download
 
 ---
 
 ## Definition of Done
 
-- [ ] needs_onboarding() function exists and works correctly
-- [ ] Onboarding detected on first login for non-guardian users
-- [ ] Guardian profile marked onboarding_completed on creation
-- [ ] Survey proceeds through 5 steps conversationally
-- [ ] "skip all" exits survey immediately
-- [ ] Profile updated with collected responses after survey
-- [ ] preferred_name used in completion message
-- [ ] grounding refreshed after onboarding completes
-- [ ] Onboarding message type renders distinctly in index.html
-- [ ] Skip survey button appears on first onboarding message
+- [ ] "my-profile" shows full profile as "profile" message type
+- [ ] "my-profile edit [field] [value]" updates and refreshes grounding
+- [ ] "my-profile clear [field]" clears non-protected fields
+- [ ] "view-profile [name]" works for Guardian only
+- [ ] profile message type renders distinctly in index.html
+- [ ] List fields split on commas correctly
+- [ ] Protected fields cannot be cleared
 - [ ] CURRENT_PHASE updated
 - [ ] All tests pass: py -3 -m unittest discover -s tests
 - [ ] Pushed to origin/main immediately
@@ -267,19 +228,17 @@ inanna/tests/
 
 ## Handoff
 
-Commit: cycle6-phase2-complete
+Commit: cycle6-phase3-complete
 Push immediately to origin/main.
-Report: docs/implementation/CYCLE6_PHASE2_REPORT.md
-Stop. Do not begin Phase 6.3 without new CURRENT_PHASE.md.
+Report: docs/implementation/CYCLE6_PHASE3_REPORT.md
+Stop. Do not begin Phase 6.4 without new CURRENT_PHASE.md.
 
 ---
 
 *Written by: Claude (Command Center)*
 *Guardian approval: ZAERA*
 *Date: 2026-04-20*
-*INANNA meets someone for the first time.*
-*She asks who they are.*
-*She listens.*
-*She remembers.*
-*Not because she was told to.*
-*Because she cares.*
+*INANNA knows who you are.*
+*Now you can see what she knows.*
+*And you can correct her.*
+*That is the difference between a profile and a dossier.*
