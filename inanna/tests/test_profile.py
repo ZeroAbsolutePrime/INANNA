@@ -5,17 +5,21 @@ import unittest
 from pathlib import Path
 from tempfile import TemporaryDirectory
 
+from core.operator import OperatorFaculty
 from core.profile import CommunicationObserver, NotificationStore, ProfileManager, UserProfile
 from main import (
     PROFILE_PROTECTED_CLEAR_FIELDS,
     assign_profile_membership,
+    build_trust_report,
     clear_communication_observations,
     coerce_profile_field_value,
     deliver_pending_notifications,
     format_profile_output,
+    grant_persistent_tool_trust,
     needs_onboarding,
     parse_profile_clear_command,
     parse_profile_edit_command,
+    revoke_persistent_tool_trust,
     unassign_profile_membership,
 )
 
@@ -273,6 +277,103 @@ class ProfileTests(unittest.TestCase):
                 PROFILE_PROTECTED_CLEAR_FIELDS
             )
         )
+
+    def test_grant_persistent_tool_trust_appends_normalized_tool(self) -> None:
+        _, _, manager = self.make_manager()
+        operator = OperatorFaculty()
+        manager.ensure_profile_exists("user_123")
+
+        updated, changed, tool_name = grant_persistent_tool_trust(
+            manager,
+            operator,
+            "user_123",
+            " WEB_SEARCH ",
+        )
+
+        self.assertTrue(updated)
+        self.assertTrue(changed)
+        self.assertEqual(tool_name, "web_search")
+        self.assertEqual(manager.load("user_123").persistent_trusted_tools, ["web_search"])
+
+    def test_grant_persistent_tool_trust_is_idempotent(self) -> None:
+        _, _, manager = self.make_manager()
+        operator = OperatorFaculty()
+        manager.save(UserProfile(user_id="user_123", persistent_trusted_tools=["web_search"]))
+
+        updated, changed, tool_name = grant_persistent_tool_trust(
+            manager,
+            operator,
+            "user_123",
+            "web_search",
+        )
+
+        self.assertTrue(updated)
+        self.assertFalse(changed)
+        self.assertEqual(tool_name, "web_search")
+        self.assertEqual(manager.load("user_123").persistent_trusted_tools, ["web_search"])
+
+    def test_grant_persistent_tool_trust_rejects_unknown_tool(self) -> None:
+        _, _, manager = self.make_manager()
+
+        updated, changed, tool_name = grant_persistent_tool_trust(
+            manager,
+            OperatorFaculty(),
+            "user_123",
+            "not_a_tool",
+        )
+
+        self.assertFalse(updated)
+        self.assertFalse(changed)
+        self.assertEqual(tool_name, "not_a_tool")
+
+    def test_revoke_persistent_tool_trust_removes_existing_tool(self) -> None:
+        _, _, manager = self.make_manager()
+        manager.save(
+            UserProfile(
+                user_id="user_123",
+                persistent_trusted_tools=["web_search", "resolve_host"],
+            )
+        )
+
+        updated, removed, tool_name = revoke_persistent_tool_trust(
+            manager,
+            "user_123",
+            "web_search",
+        )
+
+        self.assertTrue(updated)
+        self.assertTrue(removed)
+        self.assertEqual(tool_name, "web_search")
+        self.assertEqual(manager.load("user_123").persistent_trusted_tools, ["resolve_host"])
+
+    def test_revoke_persistent_tool_trust_reports_absent_tool_without_failure(self) -> None:
+        _, _, manager = self.make_manager()
+        manager.save(UserProfile(user_id="user_123", persistent_trusted_tools=["resolve_host"]))
+
+        updated, removed, tool_name = revoke_persistent_tool_trust(
+            manager,
+            "user_123",
+            "web_search",
+        )
+
+        self.assertTrue(updated)
+        self.assertFalse(removed)
+        self.assertEqual(tool_name, "web_search")
+        self.assertEqual(manager.load("user_123").persistent_trusted_tools, ["resolve_host"])
+
+    def test_build_trust_report_shows_session_and_persistent_patterns(self) -> None:
+        report = build_trust_report(
+            UserProfile(
+                user_id="user_123",
+                session_trusted_tools=["web_search"],
+                persistent_trusted_tools=["resolve_host"],
+            )
+        )
+
+        self.assertIn("Your trust patterns:", report)
+        self.assertIn("Session      web_search", report)
+        self.assertIn("Persistent   resolve_host", report)
+        self.assertIn('Type "governance-revoke [tool]"', report)
 
     def test_communication_observer_instantiates_with_profile_manager(self) -> None:
         _, _, manager = self.make_manager()

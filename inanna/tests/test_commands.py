@@ -11,9 +11,10 @@ from unittest.mock import patch
 
 from config import Config
 from core.faculty_monitor import FacultyMonitor
+from core.governance import GovernanceResult
 from core.memory import Memory
 from core.nammu import IntentClassifier
-from core.operator import ToolResult
+from core.operator import OperatorFaculty, ToolResult
 from core.profile import NotificationStore, ProfileManager
 from core.process_monitor import ProcessMonitor
 from core.proposal import Proposal
@@ -56,6 +57,17 @@ ROLES_PAYLOAD = {
 
 
 class SuccessfulToolOperator:
+    PERMITTED_TOOLS = {"web_search"}
+
+    def should_skip_proposal(self, tool_name: str, persistent_trusted_tools: list[str] | None) -> bool:
+        normalized_tool = str(tool_name or "").strip().lower()
+        trusted_tools = {
+            str(item or "").strip().lower()
+            for item in (persistent_trusted_tools or [])
+            if str(item or "").strip()
+        }
+        return normalized_tool in self.PERMITTED_TOOLS and normalized_tool in trusted_tools
+
     def execute(self, tool: str, params: dict[str, str]) -> ToolResult:
         return ToolResult(
             tool=tool,
@@ -490,12 +502,15 @@ class CommandTests(unittest.TestCase):
                 "whoami",
                 "my-profile",
                 "view-profile",
+                "my-trust",
                 "my-departments",
                 "assign-department",
                 "unassign-department",
                 "assign-group",
                 "unassign-group",
                 "notify-department",
+                "governance-trust",
+                "governance-revoke",
                 "reflect",
                 "analyse",
                 "audit",
@@ -536,10 +551,10 @@ class CommandTests(unittest.TestCase):
         self.assertEqual(
             startup_commands_line(),
             (
-                "Commands: users, create-user, login, logout, whoami, my-profile, view-profile, "
+                "Commands: users, create-user, login, logout, whoami, my-profile, view-profile, my-trust, "
                 "my-departments, assign-department, unassign-department, assign-group, "
-                "unassign-group, notify-department, reflect, analyse, audit, guardian, faculties, realms, create-realm, realm-context, switch-user, "
-                "assign-realm, unassign-realm, my-log, user-log, invite, join, invites, "
+                "unassign-group, notify-department, governance-trust, governance-revoke, reflect, analyse, audit, guardian, faculties, realms, "
+                "create-realm, realm-context, switch-user, assign-realm, unassign-realm, my-log, user-log, invite, join, invites, "
                 "admin-surface, tool-registry, faculty-registry, network-status, process-status, history, proposal-history, routing-log, nammu-log, "
                 "memory-log, body, status, diagnostics, guardian-dismiss, "
                 "guardian-clear-events, approve, reject, forget, exit"
@@ -766,6 +781,213 @@ class CommandTests(unittest.TestCase):
 
         self.assertIn(f"Profile for Alice ({target.user_id}):", result)
         self.assertIn("Preferred    Alicia", result)
+
+    def test_my_trust_reports_session_and_persistent_trust(self) -> None:
+        (
+            session,
+            memory,
+            proposal,
+            state_report,
+            engine,
+            analyst,
+            classifier,
+            routing_log,
+            startup_context,
+            config,
+        ) = self.make_runtime()
+        root = session.session_path.parent.parent
+        user_manager, session_state, token_store, user_log, faculty_monitor = self.make_user_context(root)
+        profile_manager = ProfileManager(root / "profiles")
+        active_user = session_state["active_user"]
+        assert active_user is not None
+        profile_manager.update_field(active_user.user_id, "session_trusted_tools", ["web_search"])
+        profile_manager.update_field(active_user.user_id, "persistent_trusted_tools", ["resolve_host"])
+
+        result = handle_command(
+            "my-trust",
+            session,
+            memory,
+            proposal,
+            state_report,
+            engine,
+            analyst,
+            classifier,
+            routing_log,
+            startup_context,
+            config,
+            user_manager=user_manager,
+            session_state=session_state,  # type: ignore[arg-type]
+            token_store=token_store,
+            user_log=user_log,
+            faculty_monitor=faculty_monitor,
+            profile_manager=profile_manager,
+        )
+
+        self.assertIn("Your trust patterns:", result)
+        self.assertIn("Session      web_search", result)
+        self.assertIn("Persistent   resolve_host", result)
+
+    def test_governance_trust_updates_profile_and_audit(self) -> None:
+        (
+            session,
+            memory,
+            proposal,
+            state_report,
+            engine,
+            analyst,
+            classifier,
+            routing_log,
+            startup_context,
+            config,
+        ) = self.make_runtime()
+        root = session.session_path.parent.parent
+        user_manager, session_state, token_store, user_log, faculty_monitor = self.make_user_context(root)
+        profile_manager = ProfileManager(root / "profiles")
+        active_user = session_state["active_user"]
+        assert active_user is not None
+        session_audit: list[dict[str, object]] = []
+
+        result = handle_command(
+            "governance-trust web_search",
+            session,
+            memory,
+            proposal,
+            state_report,
+            engine,
+            analyst,
+            classifier,
+            routing_log,
+            startup_context,
+            config,
+            operator=OperatorFaculty(),
+            user_manager=user_manager,
+            session_state=session_state,  # type: ignore[arg-type]
+            token_store=token_store,
+            user_log=user_log,
+            faculty_monitor=faculty_monitor,
+            session_audit=session_audit,  # type: ignore[arg-type]
+            profile_manager=profile_manager,
+        )
+
+        self.assertEqual(
+            "governance > web_search is now persistently trusted for you.",
+            result,
+        )
+        self.assertEqual(profile_manager.load(active_user.user_id).persistent_trusted_tools, ["web_search"])
+        self.assertEqual(session_audit[-1]["event_type"], "trust_granted")
+
+    def test_governance_revoke_removes_tool_and_logs_audit(self) -> None:
+        (
+            session,
+            memory,
+            proposal,
+            state_report,
+            engine,
+            analyst,
+            classifier,
+            routing_log,
+            startup_context,
+            config,
+        ) = self.make_runtime()
+        root = session.session_path.parent.parent
+        user_manager, session_state, token_store, user_log, faculty_monitor = self.make_user_context(root)
+        profile_manager = ProfileManager(root / "profiles")
+        active_user = session_state["active_user"]
+        assert active_user is not None
+        profile_manager.update_field(active_user.user_id, "persistent_trusted_tools", ["web_search"])
+        session_audit: list[dict[str, object]] = []
+
+        result = handle_command(
+            "governance-revoke web_search",
+            session,
+            memory,
+            proposal,
+            state_report,
+            engine,
+            analyst,
+            classifier,
+            routing_log,
+            startup_context,
+            config,
+            user_manager=user_manager,
+            session_state=session_state,  # type: ignore[arg-type]
+            token_store=token_store,
+            user_log=user_log,
+            faculty_monitor=faculty_monitor,
+            session_audit=session_audit,  # type: ignore[arg-type]
+            profile_manager=profile_manager,
+        )
+
+        self.assertEqual(
+            "governance > web_search trust revoked. Proposals will resume for this tool.",
+            result,
+        )
+        self.assertEqual(profile_manager.load(active_user.user_id).persistent_trusted_tools, [])
+        self.assertEqual(session_audit[-1]["event_type"], "trust_revoked")
+
+    def test_trusted_tool_skips_proposal_and_executes_immediately(self) -> None:
+        (
+            session,
+            memory,
+            proposal,
+            state_report,
+            _engine,
+            analyst,
+            classifier,
+            routing_log,
+            startup_context,
+            config,
+        ) = self.make_runtime()
+        engine = FlakySummaryEngine()
+        root = session.session_path.parent.parent
+        user_manager, session_state, token_store, user_log, faculty_monitor = self.make_user_context(root)
+        profile_manager = ProfileManager(root / "profiles")
+        active_user = session_state["active_user"]
+        assert active_user is not None
+        profile_manager.update_field(active_user.user_id, "persistent_trusted_tools", ["web_search"])
+        session_audit: list[dict[str, object]] = []
+
+        with patch.object(
+            classifier,
+            "route",
+            return_value=GovernanceResult(
+                decision="allow",
+                faculty="crown",
+                reason="current information requires web search",
+                suggests_tool=True,
+                proposed_tool="web_search",
+                tool_query="latest weather",
+            ),
+        ):
+            result = handle_command(
+                "what is the weather today",
+                session,
+                memory,
+                proposal,
+                state_report,
+                engine,
+                analyst,
+                classifier,
+                routing_log,
+                startup_context,
+                config,
+                operator=SuccessfulToolOperator(),
+                guardian_metrics={"governance_blocks": 0, "tool_executions": 0},
+                user_manager=user_manager,
+                session_state=session_state,  # type: ignore[arg-type]
+                token_store=token_store,
+                user_log=user_log,
+                faculty_monitor=faculty_monitor,
+                session_audit=session_audit,  # type: ignore[arg-type]
+                profile_manager=profile_manager,
+            )
+
+        self.assertIn("operator > search result:", result)
+        self.assertIn("operator > model unavailable to summarize. Raw results shown above.", result)
+        self.assertEqual(proposal.pending_count(), 0)
+        self.assertTrue(
+            any(event.get("event_type") == "tool_executed_trusted" for event in session_audit)
+        )
 
     def test_my_departments_reports_current_context(self) -> None:
         (

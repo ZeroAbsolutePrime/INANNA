@@ -72,12 +72,15 @@ STARTUP_COMMANDS = (
     "whoami",
     "my-profile",
     "view-profile",
+    "my-trust",
     "my-departments",
     "assign-department",
     "unassign-department",
     "assign-group",
     "unassign-group",
     "notify-department",
+    "governance-trust",
+    "governance-revoke",
     "reflect",
     "analyse",
     "audit",
@@ -741,6 +744,71 @@ def coerce_profile_field_value(field_name: str, value: str) -> Any:
     if is_profile_list_field(field_name):
         return [item.strip() for item in value.split(",") if item.strip()]
     return value.strip()
+
+
+def normalize_tool_name(value: str) -> str:
+    return str(value or "").strip().lower()
+
+
+def normalize_trusted_tools(values: list[str] | None) -> list[str]:
+    normalized: list[str] = []
+    for item in values or []:
+        cleaned = normalize_tool_name(item)
+        if cleaned and cleaned not in normalized:
+            normalized.append(cleaned)
+    return normalized
+
+
+def grant_persistent_tool_trust(
+    profile_manager: ProfileManager | None,
+    operator: OperatorFaculty | None,
+    user_id: str,
+    tool_name: str,
+) -> tuple[bool, bool, str]:
+    normalized = normalize_tool_name(tool_name)
+    if profile_manager is None or operator is None or not user_id or not normalized:
+        return False, False, normalized
+    if normalized not in operator.PERMITTED_TOOLS:
+        return False, False, normalized
+    profile = profile_manager.ensure_profile_exists(user_id)
+    trusted_tools = normalize_trusted_tools(profile.persistent_trusted_tools)
+    changed = normalized not in trusted_tools
+    if changed:
+        trusted_tools.append(normalized)
+    if changed or trusted_tools != list(profile.persistent_trusted_tools or []):
+        profile_manager.update_field(user_id, "persistent_trusted_tools", trusted_tools)
+    return True, changed, normalized
+
+
+def revoke_persistent_tool_trust(
+    profile_manager: ProfileManager | None,
+    user_id: str,
+    tool_name: str,
+) -> tuple[bool, bool, str]:
+    normalized = normalize_tool_name(tool_name)
+    if profile_manager is None or not user_id or not normalized:
+        return False, False, normalized
+    profile = profile_manager.ensure_profile_exists(user_id)
+    trusted_tools = normalize_trusted_tools(profile.persistent_trusted_tools)
+    removed = normalized in trusted_tools
+    next_tools = [item for item in trusted_tools if item != normalized]
+    if next_tools != list(profile.persistent_trusted_tools or []):
+        profile_manager.update_field(user_id, "persistent_trusted_tools", next_tools)
+    return True, removed, normalized
+
+
+def build_trust_report(profile: UserProfile) -> str:
+    return "\n".join(
+        [
+            "Your trust patterns:",
+            "",
+            f"  {'Session':<12} {format_profile_value(normalize_trusted_tools(profile.session_trusted_tools))}",
+            f"  {'Persistent':<12} {format_profile_value(normalize_trusted_tools(profile.persistent_trusted_tools))}",
+            "",
+            'Type "governance-trust [tool]" to persistently trust a tool.',
+            'Type "governance-revoke [tool]" to remove persistent trust.',
+        ]
+    )
 
 
 def resolve_profile_subject(
@@ -2874,6 +2942,21 @@ def handle_command(
             return "my-profile > profile management is unavailable."
         return format_profile_output(profile, display_name or current_user.display_name)
 
+    if lowered == "my-trust":
+        if user_manager is None or active_token is None or current_user is None:
+            return 'my-trust > No active session. Type "login [name]" to identify.'
+        allowed, reason = check_privilege(current_user, user_manager, "converse")
+        if not allowed:
+            return f"access > {reason}"
+        _, _, profile = resolve_profile_subject(
+            profile_manager,
+            current_user,
+            active_token,
+        )
+        if profile is None:
+            return "my-trust > profile management is unavailable."
+        return build_trust_report(profile)
+
     if lowered == "my-departments":
         if user_manager is None or active_token is None or current_user is None:
             return 'my-departments > No active session. Type "login [name]" to identify.'
@@ -2919,6 +3002,76 @@ def handle_command(
             return f"profile > unable to update {field_name}."
         sync_profile_grounding(engine, profile_manager, current_user, active_token)
         return f"profile > {field_name} updated to {format_profile_value(value)}."
+
+    if lowered.startswith("governance-trust"):
+        if user_manager is None or active_token is None or current_user is None:
+            return 'governance-trust > No active session. Type "login [name]" to identify.'
+        allowed, reason = check_privilege(current_user, user_manager, "converse")
+        if not allowed:
+            return f"access > {reason}"
+        tool_name = normalize_tool_name(normalized[len("governance-trust") :])
+        if not tool_name:
+            return "governance-trust > usage: governance-trust [tool]"
+        user_id, _, profile = resolve_profile_subject(
+            profile_manager,
+            current_user,
+            active_token,
+        )
+        if profile is None or profile_manager is None:
+            return "governance-trust > profile management is unavailable."
+        updated, changed, normalized_tool = grant_persistent_tool_trust(
+            profile_manager,
+            operator,
+            user_id,
+            tool_name,
+        )
+        if not updated:
+            return f"governance > unknown tool: {normalized_tool or tool_name}"
+        if not changed:
+            return "governance > trust not updated."
+        append_audit_event(
+            session_audit,
+            "trust_granted",
+            f"{current_user.display_name} granted persistent trust for {normalized_tool}",
+            {"tool": normalized_tool, "user_id": user_id},
+        )
+        return f"governance > {normalized_tool} is now persistently trusted for you."
+
+    if lowered.startswith("governance-revoke"):
+        if user_manager is None or active_token is None or current_user is None:
+            return 'governance-revoke > No active session. Type "login [name]" to identify.'
+        allowed, reason = check_privilege(current_user, user_manager, "converse")
+        if not allowed:
+            return f"access > {reason}"
+        tool_name = normalize_tool_name(normalized[len("governance-revoke") :])
+        if not tool_name:
+            return "governance-revoke > usage: governance-revoke [tool]"
+        user_id, _, profile = resolve_profile_subject(
+            profile_manager,
+            current_user,
+            active_token,
+        )
+        if profile is None or profile_manager is None:
+            return "governance-revoke > profile management is unavailable."
+        updated, removed, normalized_tool = revoke_persistent_tool_trust(
+            profile_manager,
+            user_id,
+            tool_name,
+        )
+        if not updated:
+            return "governance-revoke > profile management is unavailable."
+        if not removed:
+            return f"governance > {normalized_tool or tool_name} was not persistently trusted."
+        append_audit_event(
+            session_audit,
+            "trust_revoked",
+            f"{current_user.display_name} revoked persistent trust for {normalized_tool}",
+            {"tool": normalized_tool, "user_id": user_id},
+        )
+        return (
+            f"governance > {normalized_tool} trust revoked. "
+            "Proposals will resume for this tool."
+        )
 
     if lowered.startswith("my-profile clear"):
         if user_manager is None or active_token is None or current_user is None:
@@ -3858,16 +4011,62 @@ def handle_command(
         )
 
     if governance_result.suggests_tool:
+        proposed_tool = governance_result.proposed_tool
+        tool_query = governance_result.tool_query or normalized
+        persistent_trusted_tools: list[str] = []
+        if (
+            operator is not None
+            and profile_manager is not None
+            and current_user is not None
+            and active_token is not None
+        ):
+            profile = profile_manager.load(current_user.user_id)
+            if profile is not None:
+                persistent_trusted_tools = profile.persistent_trusted_tools
+        if operator is not None and operator.should_skip_proposal(
+            proposed_tool,
+            persistent_trusted_tools,
+        ):
+            if current_user is not None:
+                append_audit_event(
+                    session_audit,
+                    "tool_executed_trusted",
+                    (
+                        f"{current_user.display_name} executed trusted tool "
+                        f"{proposed_tool} without proposal"
+                    ),
+                    {
+                        "tool": proposed_tool,
+                        "query": tool_query,
+                        "user_id": current_user.user_id,
+                    },
+                )
+            return complete_tool_resolution(
+                {"payload": {"original_input": normalized, "query": tool_query, "tool": proposed_tool}},
+                "approve",
+                session,
+                proposal,
+                memory,
+                engine,
+                startup_context,
+                operator,
+                guardian_metrics,
+                active_token=active_token,
+                user_log=user_log,
+                faculty_monitor=faculty_monitor,
+                session_audit=session_audit,
+                active_realm_name=active_realm_name,
+                conversation_state=conversation_state,
+            )
         created = create_tool_use_proposal(
             proposal=proposal,
             session=session,
             user_input=normalized,
-            tool=governance_result.proposed_tool,
-            query=governance_result.tool_query or normalized,
+            tool=proposed_tool,
+            query=tool_query,
         )
         return (
-            f'operator > tool proposed: {governance_result.proposed_tool} — '
-            f'"{governance_result.tool_query or normalized}"\n'
+            f'operator > tool proposed: {proposed_tool} - "{tool_query}"\n'
             'Type "approve" to execute or "reject" to cancel.\n'
             f"{created['tool_line']}"
         )

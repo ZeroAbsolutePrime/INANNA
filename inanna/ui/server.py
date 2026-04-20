@@ -77,6 +77,7 @@ from main import (
     build_tool_registry_payload,
     build_tool_result_payload,
     build_tool_result_text,
+    build_trust_report,
     build_users_report,
     build_whoami_report,
     build_tool_context_lines,
@@ -97,12 +98,14 @@ from main import (
     format_profile_output,
     format_profile_value,
     format_user_log_report,
+    grant_persistent_tool_trust,
     has_admin_surface_access,
     has_profile_field,
     initialize_realm_context,
     inspect_body_report,
     load_current_realm,
     needs_onboarding,
+    normalize_tool_name,
     observe_session_communication,
     parse_user_realm_command,
     parse_profile_clear_command,
@@ -110,6 +113,7 @@ from main import (
     record_completed_turn,
     reset_onboarding_state,
     resolve_profile_subject,
+    revoke_persistent_tool_trust,
     run_sentinel_response as run_sentinel_backend_response,
     sentinel_response_mode,
     ensure_guardian_profile_completed,
@@ -371,6 +375,9 @@ class InterfaceServer:
                     await self.broadcast(outcome["nammu"])
                 if outcome.get("governance"):
                     await self.broadcast(outcome["governance"])
+                if outcome.get("responses"):
+                    for response in outcome["responses"]:
+                        await self.broadcast(response)
                 if outcome.get("response"):
                     await self.broadcast(outcome["response"])
                 if outcome.get("proposal"):
@@ -623,6 +630,47 @@ class InterfaceServer:
             }
 
         if governance_result.suggests_tool:
+            proposed_tool = governance_result.proposed_tool
+            tool_query = governance_result.tool_query or text
+            persistent_trusted_tools: list[str] = []
+            if self.active_user is not None:
+                profile = self.profile_manager.load(self.active_user.user_id)
+                if profile is not None:
+                    persistent_trusted_tools = profile.persistent_trusted_tools
+            if self.operator.should_skip_proposal(proposed_tool, persistent_trusted_tools):
+                self._record_governance_decision(
+                    "trusted",
+                    f"Persistent trust allowed {proposed_tool} without proposal.",
+                    text,
+                )
+                if self.active_user is not None:
+                    append_audit_event(
+                        self.session_audit,
+                        "tool_executed_trusted",
+                        (
+                            f"{self.active_user.display_name} executed trusted tool "
+                            f"{proposed_tool} without proposal"
+                        ),
+                        {
+                            "tool": proposed_tool,
+                            "query": tool_query,
+                            "user_id": self.active_user.user_id,
+                        },
+                    )
+                outcome = self.complete_tool_resolution(
+                    {
+                        "payload": {
+                            "original_input": text,
+                            "query": tool_query,
+                            "tool": proposed_tool,
+                        }
+                    },
+                    "approve",
+                )
+                responses = list(outcome["operator_payloads"])
+                if outcome["assistant_text"]:
+                    responses.append({"type": "assistant", "text": outcome["assistant_text"]})
+                return {"responses": responses}
             self._record_governance_decision(
                 "tool",
                 "Current information requires governed tool use.",
@@ -632,16 +680,13 @@ class InterfaceServer:
                 proposal=self.proposal,
                 session=self.session,
                 user_input=text,
-                tool=governance_result.proposed_tool,
-                query=governance_result.tool_query or text,
+                tool=proposed_tool,
+                query=tool_query,
             )
             return {
                 "response": {
                     "type": "operator",
-                    "text": (
-                        f'tool proposed: {governance_result.proposed_tool} — '
-                        f'"{governance_result.tool_query or text}"'
-                    ),
+                    "text": f'tool proposed: {proposed_tool} - "{tool_query}"',
                 },
                 "proposal": {**created, "line": created["tool_line"]},
             }
@@ -1136,6 +1181,184 @@ class InterfaceServer:
                         format_profile_output,
                         profile,
                         display_name or self.active_user.display_name,
+                    ),
+                }
+            )
+            await self.broadcast_state()
+        elif command_name == "my-trust":
+            allowed, reason = check_privilege(self.active_user, self.user_manager, "converse")
+            if not allowed or self.active_token is None or self.active_user is None:
+                text = (
+                    f"access > {reason}"
+                    if not allowed
+                    else 'my-trust > No active session. Type "login [name]" to identify.'
+                )
+                await self.broadcast({"type": "system", "text": text})
+                await self.broadcast_state()
+                return
+            _, _, profile = await asyncio.to_thread(
+                resolve_profile_subject,
+                self.profile_manager,
+                self.active_user,
+                self.active_token,
+            )
+            if profile is None:
+                await self.broadcast(
+                    {"type": "system", "text": "my-trust > profile management is unavailable."}
+                )
+                await self.broadcast_state()
+                return
+            await self.broadcast(
+                {
+                    "type": "profile",
+                    "text": await asyncio.to_thread(build_trust_report, profile),
+                }
+            )
+            await self.broadcast_state()
+        elif command_name == "governance-trust":
+            allowed, reason = check_privilege(self.active_user, self.user_manager, "converse")
+            if not allowed or self.active_token is None or self.active_user is None:
+                text = (
+                    f"access > {reason}"
+                    if not allowed
+                    else 'governance-trust > No active session. Type "login [name]" to identify.'
+                )
+                await self.broadcast({"type": "system", "text": text})
+                await self.broadcast_state()
+                return
+            requested_tool = normalize_tool_name(str(payload.get("tool", "")).strip() or command_args)
+            if not requested_tool:
+                await self.broadcast(
+                    {
+                        "type": "system",
+                        "text": "governance-trust > usage: governance-trust [tool]",
+                    }
+                )
+                await self.broadcast_state()
+                return
+            user_id, _, profile = await asyncio.to_thread(
+                resolve_profile_subject,
+                self.profile_manager,
+                self.active_user,
+                self.active_token,
+            )
+            if profile is None:
+                await self.broadcast(
+                    {
+                        "type": "system",
+                        "text": "governance-trust > profile management is unavailable.",
+                    }
+                )
+                await self.broadcast_state()
+                return
+            updated, changed, normalized_tool = await asyncio.to_thread(
+                grant_persistent_tool_trust,
+                self.profile_manager,
+                self.operator,
+                user_id,
+                requested_tool,
+            )
+            if not updated:
+                await self.broadcast(
+                    {
+                        "type": "system",
+                        "text": f"governance > unknown tool: {normalized_tool or requested_tool}",
+                    }
+                )
+                await self.broadcast_state()
+                return
+            if not changed:
+                await self.broadcast({"type": "system", "text": "governance > trust not updated."})
+                await self.broadcast_state()
+                return
+            append_audit_event(
+                self.session_audit,
+                "trust_granted",
+                f"{self.active_user.display_name} granted persistent trust for {normalized_tool}",
+                {"tool": normalized_tool, "user_id": user_id},
+            )
+            await self.broadcast(
+                {
+                    "type": "system",
+                    "text": f"governance > {normalized_tool} is now persistently trusted for you.",
+                }
+            )
+            await self.broadcast_state()
+        elif command_name == "governance-revoke":
+            allowed, reason = check_privilege(self.active_user, self.user_manager, "converse")
+            if not allowed or self.active_token is None or self.active_user is None:
+                text = (
+                    f"access > {reason}"
+                    if not allowed
+                    else 'governance-revoke > No active session. Type "login [name]" to identify.'
+                )
+                await self.broadcast({"type": "system", "text": text})
+                await self.broadcast_state()
+                return
+            requested_tool = normalize_tool_name(str(payload.get("tool", "")).strip() or command_args)
+            if not requested_tool:
+                await self.broadcast(
+                    {
+                        "type": "system",
+                        "text": "governance-revoke > usage: governance-revoke [tool]",
+                    }
+                )
+                await self.broadcast_state()
+                return
+            user_id, _, profile = await asyncio.to_thread(
+                resolve_profile_subject,
+                self.profile_manager,
+                self.active_user,
+                self.active_token,
+            )
+            if profile is None:
+                await self.broadcast(
+                    {
+                        "type": "system",
+                        "text": "governance-revoke > profile management is unavailable.",
+                    }
+                )
+                await self.broadcast_state()
+                return
+            updated, removed, normalized_tool = await asyncio.to_thread(
+                revoke_persistent_tool_trust,
+                self.profile_manager,
+                user_id,
+                requested_tool,
+            )
+            if not updated:
+                await self.broadcast(
+                    {
+                        "type": "system",
+                        "text": "governance-revoke > profile management is unavailable.",
+                    }
+                )
+                await self.broadcast_state()
+                return
+            if not removed:
+                await self.broadcast(
+                    {
+                        "type": "system",
+                        "text": (
+                            f"governance > {normalized_tool or requested_tool} "
+                            "was not persistently trusted."
+                        ),
+                    }
+                )
+                await self.broadcast_state()
+                return
+            append_audit_event(
+                self.session_audit,
+                "trust_revoked",
+                f"{self.active_user.display_name} revoked persistent trust for {normalized_tool}",
+                {"tool": normalized_tool, "user_id": user_id},
+            )
+            await self.broadcast(
+                {
+                    "type": "system",
+                    "text": (
+                        f"governance > {normalized_tool} trust revoked. "
+                        "Proposals will resume for this tool."
                     ),
                 }
             )

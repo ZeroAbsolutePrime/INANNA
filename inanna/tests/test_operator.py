@@ -135,6 +135,27 @@ class OperatorFacultyTests(unittest.TestCase):
         self.assertEqual(result.data["scanned"], 100)
         self.assertEqual(create_connection.call_count, 100)
 
+    def test_should_skip_proposal_returns_true_for_persistently_trusted_tool(self) -> None:
+        operator = OperatorFaculty()
+
+        should_skip = operator.should_skip_proposal("web_search", ["web_search"])
+
+        self.assertTrue(should_skip)
+
+    def test_should_skip_proposal_returns_false_for_untrusted_tool(self) -> None:
+        operator = OperatorFaculty()
+
+        should_skip = operator.should_skip_proposal("resolve_host", ["web_search"])
+
+        self.assertFalse(should_skip)
+
+    def test_should_skip_proposal_returns_false_for_unknown_tool(self) -> None:
+        operator = OperatorFaculty()
+
+        should_skip = operator.should_skip_proposal("not_a_tool", ["not_a_tool"])
+
+        self.assertFalse(should_skip)
+
     def test_tool_result_is_dataclass_with_expected_fields(self) -> None:
         field_names = [field.name for field in dataclasses.fields(ToolResult)]
 

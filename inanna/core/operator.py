@@ -78,6 +78,21 @@ class OperatorFaculty:
     def get_tool_definition(self, tool: str) -> dict[str, Any] | None:
         return self._tools.get(tool)
 
+    def should_skip_proposal(
+        self,
+        tool_name: str,
+        persistent_trusted_tools: list[str] | None,
+    ) -> bool:
+        normalized_tool = str(tool_name or "").strip().lower()
+        if normalized_tool not in self.PERMITTED_TOOLS:
+            return False
+        trusted_tools = {
+            str(item or "").strip().lower()
+            for item in (persistent_trusted_tools or [])
+            if str(item or "").strip()
+        }
+        return normalized_tool in trusted_tools
+
     def execute(self, tool: str, params: dict[str, Any]) -> ToolResult:
         tool_name = str(tool or "").strip()
         if tool_name not in self.PERMITTED_TOOLS:
