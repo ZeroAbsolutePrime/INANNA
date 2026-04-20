@@ -1,245 +1,293 @@
-﻿# CURRENT PHASE: Cycle 5 - Phase 5.3 - The Network Eye
+# CURRENT PHASE: Cycle 5 - Phase 5.4 - The Process Monitor
 **Status: ACTIVE**
 **Authorized by: ZAERA (Guardian) + Claude (Command Center)**
 **Date opened: 2026-04-20**
 **Cycle: 5 - The Operator Console**
-**Replaces: Cycle 5 Phase 5.2 - The Tool Registry (COMPLETE)**
+**Replaces: Cycle 5 Phase 5.3 - The Network Eye (COMPLETE)**
 
 ---
 
 ## What This Phase Is
 
-Phase 5.2 registered tools and governed their invocation.
-Phase 5.3 gives INANNA eyes on the network.
+This phase has two parts:
 
-The Network Eye is the first surface in INANNA NYX that reaches
-beyond the machine it runs on. Every action is proposal-governed.
-Every result is audited. The Guardian sees everything.
+PART A — Auto-Memory Fix (immediate, small)
+  Remove the friction of approving your own words being remembered.
+  Conversation turns auto-write. No proposal interrupts the flow.
+  See docs/memory_architecture.md for the full vision.
 
-Three governed capabilities are added in this phase:
-  ping_host     — already exists in operator.py, now surfaced properly
-  resolve_host  — resolve hostname to IP address
-  scan_ports    — check a range of ports on a host
-
-All three use Python standard library only. No nmap. No external deps.
-All three require approval before execution.
-All three append to the audit surface.
-
-The Network panel in the Operator Console becomes functional.
+PART B — The Process Monitor (main phase work)
+  The Processes panel in the Operator Console becomes functional.
+  INANNA can see what is running, how long it has been running,
+  and what its resource usage looks like.
 
 ---
 
-## What You Are Building
+## PART A — Auto-Memory Fix
 
-### Task 1 - Add resolve_host and scan_ports to operator.py
+### What to change
 
-Add two new tool implementations to OperatorFaculty:
+In server.py and main.py:
+
+Current behavior after a conversation turn:
+  The system calls create_memory_request_proposal() which generates
+  a [PROPOSAL] requiring Guardian approval before writing to memory.
+
+New behavior:
+  Remove the proposal call for routine conversation turns.
+  Write memory directly using write_memory() at:
+    - Session end (on WebSocket disconnect)
+    - Every 20 conversation turns (configurable threshold)
+
+Proposals REMAIN for (do not remove these):
+  - "remember this" explicit command (user-initiated)
+  - clear-memory command
+  - forget-memory command
+  - memory export (future)
+  - cross-session promotion (future)
+
+Implementation:
+
+In server.py, find where create_memory_request_proposal() is called
+after conversation turns and replace with direct write_memory() call.
+
+Add a turn counter to the session state:
+  self.turn_count = 0
+
+After each conversation turn (crown or analyst response):
+  self.turn_count += 1
+  if self.turn_count % 20 == 0:
+      self._auto_write_memory(session_id, recent_turns)
+
+Add _auto_write_memory() method:
+  Writes last N turns as a memory record without a proposal.
+  Uses the existing write_memory() infrastructure.
+  Appends an audit event: "auto-memory: N turns written at threshold"
+
+Also call _auto_write_memory() in the WebSocket close handler
+to capture the session's final turns.
+
+The memory panel in the UI continues to show all records.
+The memory bar and count continue to update.
+Nothing visible changes for the user except proposals no longer
+interrupt the conversation.
+
+---
+
+## PART B — The Process Monitor
+
+### Task 1 - ProcessMonitor in core/process_monitor.py
+
+Create: inanna/core/process_monitor.py
 
 ```python
-def _resolve_host(self, host: str) -> ToolResult:
-    if not host.strip():
-        return ToolResult(tool="resolve_host", query=host,
-                          success=False, data={}, error="Empty host.")
-    try:
-        import socket
-        ip = socket.gethostbyname(host.strip())
-        hostname = socket.getfqdn(host.strip())
-        return ToolResult(
-            tool="resolve_host", query=host, success=True,
-            data={"host": host, "ip": ip, "fqdn": hostname},
-            error="",
+import os, sys, time, platform
+from dataclasses import dataclass, field
+from typing import Optional
+
+@dataclass
+class ProcessRecord:
+    name: str
+    pid: Optional[int]
+    status: str        # "running" | "ready" | "offline" | "unknown"
+    uptime_seconds: int
+    description: str
+    endpoint: Optional[str] = None
+    memory_mb: Optional[float] = None
+    cpu_percent: Optional[float] = None
+
+class ProcessMonitor:
+    def __init__(self, server_start_time: float):
+        self.server_start_time = server_start_time
+
+    def inanna_record(self) -> ProcessRecord:
+        uptime = int(time.time() - self.server_start_time)
+        return ProcessRecord(
+            name="INANNA NYX Server",
+            pid=os.getpid(),
+            status="running",
+            uptime_seconds=uptime,
+            description=f"HTTP :8080  WebSocket :8081  Python {sys.version.split()[0]}",
+            endpoint="http://localhost:8080",
         )
-    except Exception as e:
-        return ToolResult(tool="resolve_host", query=host,
-                          success=False, data={}, error=str(e))
 
-def _scan_ports(self, host: str, port_range: str = "1-1024") -> ToolResult:
-    if not host.strip():
-        return ToolResult(tool="scan_ports", query=host,
-                          success=False, data={}, error="Empty host.")
-    try:
-        import socket, re
-        m = re.match(r"(\d+)[-–](\d+)", port_range.strip())
-        if m:
-            start, end = int(m.group(1)), int(m.group(2))
-        else:
-            start = end = int(port_range.strip())
-        # Cap range for safety
-        end = min(end, start + 99)  # max 100 ports per scan
-        open_ports = []
-        for port in range(start, end + 1):
-            try:
-                with socket.create_connection((host.strip(), port), timeout=0.3):
-                    open_ports.append(port)
-            except Exception:
-                pass
-        return ToolResult(
-            tool="scan_ports", query=f"{host}:{port_range}",
-            success=True,
-            data={"host": host, "port_range": port_range,
-                  "open_ports": open_ports,
-                  "scanned": end - start + 1},
-            error="",
+    def lm_studio_record(self) -> ProcessRecord:
+        import urllib.request
+        try:
+            req = urllib.request.Request(
+                "http://localhost:1234/v1/models",
+                headers={"User-Agent": "INANNA-monitor"}
+            )
+            with urllib.request.urlopen(req, timeout=2) as r:
+                status = "running" if r.status == 200 else "ready"
+        except Exception:
+            status = "offline"
+        return ProcessRecord(
+            name="LM Studio",
+            pid=None,
+            status=status,
+            uptime_seconds=0,
+            description="http://localhost:1234/v1  local inference",
+            endpoint="http://localhost:1234",
         )
-    except Exception as e:
-        return ToolResult(tool="scan_ports", query=host,
-                          success=False, data={}, error=str(e))
+
+    def all_records(self) -> list[ProcessRecord]:
+        records = [self.inanna_record(), self.lm_studio_record()]
+        # Try psutil for resource usage (optional — graceful if absent)
+        try:
+            import psutil
+            p = psutil.Process(os.getpid())
+            records[0].memory_mb = round(p.memory_info().rss / 1024 / 1024, 1)
+            records[0].cpu_percent = p.cpu_percent(interval=0.1)
+        except ImportError:
+            pass
+        return records
+
+    def format_uptime(self, seconds: int) -> str:
+        if seconds < 60:
+            return f"{seconds}s"
+        if seconds < 3600:
+            return f"{seconds//60}m {seconds%60}s"
+        h = seconds // 3600
+        m = (seconds % 3600) // 60
+        return f"{h}h {m}m"
 ```
 
-### Task 2 - Register resolve_host and scan_ports in tools.json
+### Task 2 - process-status WebSocket command
 
-Add to inanna/config/tools.json:
+Add command: process-status
 
-```json
-"resolve_host": {
-  "display_name": "Resolve Host",
-  "description": "Resolve a hostname to its IP address and FQDN.",
-  "category": "network",
-  "requires_approval": true,
-  "requires_privilege": "network_tools",
-  "parameters": ["host"],
-  "enabled": true
-},
-"scan_ports": {
-  "display_name": "Port Scan",
-  "description": "Scan open ports on a host (max 100 ports per scan).",
-  "category": "network",
-  "requires_approval": true,
-  "requires_privilege": "network_tools",
-  "parameters": ["host", "port_range"],
-  "enabled": true
-}
-```
-
-### Task 3 - Add tool signals to governance_signals.json
-
-Add to tool_signals:
-  "resolve ", "resolve host", "what is the ip",
-  "scan ports", "port scan", "check ports on",
-  "open ports", "what ports"
-
-### Task 4 - Network Eye panel in console.html
-
-Replace the placeholder content in the Network panel with
-a functional Network Eye surface.
-
-The panel has two sections:
-
-**Discovery section** — quick action buttons:
-  [ ping localhost ]  [ ping 8.8.8.8 ]
-  [ resolve [input] ]  [ scan ports [host] [range] ]
-
-**Results section** — a live host map:
-When a ping, resolve, or scan result arrives via WebSocket
-(operator message with tool result), parse and display it
-as a host card:
-
-```
-HOST: 127.0.0.1
-  name:    localhost
-  status:  reachable
-  latency: 0ms
-  ports:   22, 80, 443  (from scan if done)
-  last seen: 22:15
-```
-
-Host cards are added to the panel as results arrive.
-Each card has buttons: [ ping ] [ resolve ] [ scan ports ]
-
-The console.html listens for operator messages containing
-tool results (JSON in the text or structured data) and
-parses them to populate the host map.
-
-**Inline forms for resolve and scan:**
-  Resolve:   Host: [___________]  [ resolve ]
-  Scan:      Host: [___________]  Range: [1-1024]  [ scan ]
-
-These send inputs through the governed WebSocket flow.
-
-### Task 5 - "network-status" WebSocket command
-
-Add command: network-status
-
-Returns a summary of recent network activity from the audit log:
+Returns:
 ```json
 {
-  "type": "network_status",
-  "recent_scans": [
-    {"tool": "ping", "host": "8.8.8.8", "result": "reachable", "ts": "..."},
-    {"tool": "resolve_host", "host": "google.com", "result": "142.250.x.x", "ts": "..."}
-  ],
-  "total_scans": 5
+  "type": "process_status",
+  "processes": [
+    {
+      "name": "INANNA NYX Server",
+      "pid": 12345,
+      "status": "running",
+      "uptime": "2h 15m",
+      "description": "HTTP :8080  WebSocket :8081",
+      "endpoint": "http://localhost:8080",
+      "memory_mb": 145.3,
+      "cpu_percent": 2.1
+    },
+    {
+      "name": "LM Studio",
+      "pid": null,
+      "status": "running",
+      "uptime": "unknown",
+      "description": "http://localhost:1234/v1  local inference",
+      "endpoint": "http://localhost:1234",
+      "memory_mb": null,
+      "cpu_percent": null
+    }
+  ]
 }
 ```
 
-Reads from the audit log, filters for tool_use events with
-network tool names. Returns last 20.
+Add "process-status" to STARTUP_COMMANDS and capabilities.
 
-Add "network-status" to STARTUP_COMMANDS and capabilities.
+### Task 3 - Process panel in console.html
 
-### Task 6 - Update identity.py and state.py
+Replace the placeholder in the Processes panel with a live view.
 
-CURRENT_PHASE = "Cycle 5 - Phase 5.3 - The Network Eye"
+On panel activate (tab click): send process-status command.
+Auto-refresh every 30 seconds while panel is visible.
 
-Add "network-status" to capabilities.
+Display:
+```
+PROCESS MONITOR
 
-### Task 7 - Tests
+  ● INANNA NYX Server                     pid: 12345
+    HTTP :8080 · WebSocket :8081 · Python 3.x
+    uptime: 2h 15m    memory: 145 MB    cpu: 2.1%
+    [ refresh ]
 
-Update inanna/tests/test_operator.py:
-- resolve_host("localhost") returns success=True with ip field
-- resolve_host("") returns success=False
-- scan_ports("127.0.0.1", "80-80") returns success=True
-- scan_ports("", "80-80") returns success=False
-- scan_ports caps at 100 ports (start+99)
-- PERMITTED_TOOLS includes resolve_host and scan_ports
+  ● LM Studio                             endpoint: localhost:1234
+    http://localhost:1234/v1 · local inference
+    status: running    model: connected
+    [ refresh ]
 
-Update test_commands.py: add network-status to capabilities.
+  ○ INANNA NYXOS                          Cycle 7
+    Sovereign OS substrate
+    status: horizon
+```
+
+Status indicators:
+  ● green = running
+  ● amber = ready/degraded
+  ○ dim   = offline/horizon
+
+### Task 4 - Server startup time tracking
+
+In server.py __init__, record the startup time:
+  self.server_start_time = time.time()
+
+Pass to ProcessMonitor at init.
+
+### Task 5 - Update identity.py and state.py
+
+CURRENT_PHASE = "Cycle 5 - Phase 5.4 - The Process Monitor"
+Add "process-status" to STARTUP_COMMANDS and capabilities.
+
+### Task 6 - Tests
+
+Add inanna/tests/test_process_monitor.py:
+  - ProcessMonitor can be instantiated
+  - inanna_record() returns ProcessRecord with status "running"
+  - inanna_record() has correct pid
+  - format_uptime(0) returns "0s"
+  - format_uptime(90) returns "1m 30s"
+  - format_uptime(3700) returns "1h 1m"
+  - all_records() returns at least 2 records
+
 Update test_identity.py: update CURRENT_PHASE assertion.
-Update test_state.py: add network-status.
+Update test_state.py: add process-status.
+Update test_commands.py: add process-status.
 
 ---
 
 ## Permitted file changes
 
 inanna/identity.py
-inanna/main.py                  <- add network-status command
+inanna/main.py              <- auto-memory fix + process-status command
 inanna/config/
-  tools.json                    <- add resolve_host, scan_ports
-  governance_signals.json       <- add network tool signals
+  (no config changes)
 inanna/core/
-  operator.py                   <- add _resolve_host(), _scan_ports()
-  state.py                      <- add network-status
+  process_monitor.py        <- NEW
+  state.py                  <- add process-status
 inanna/ui/
-  server.py                     <- add network-status command
-  static/console.html           <- replace Network placeholder
-                                   with functional Network Eye
+  server.py                 <- auto-memory fix + process-status command
+  static/console.html       <- replace Processes placeholder
 inanna/tests/
-  test_operator.py              <- add network tests
-  test_commands.py              <- add network-status
-  test_identity.py              <- update phase
-  test_state.py                 <- add network-status
+  test_process_monitor.py   <- NEW
+  test_identity.py          <- update phase
+  test_state.py             <- add process-status
+  test_commands.py          <- add process-status
 
 ---
 
 ## What You Are NOT Building
 
-- No automated network scanning (always proposal-governed)
-- No topology visualization graph (future phase)
-- No persistent host database (session-only in Phase 5.3)
-- No service fingerprinting beyond port open/closed
-- No ICMP raw sockets (use subprocess ping only)
-- Do not modify index.html (main interface redesign is separate)
+- No process killing via the UI
+- No log streaming (future phase)
+- No custom service registration
+- No resource usage graphs
+- psutil is optional — graceful fallback if not installed
+- Do not modify index.html
 
 ---
 
 ## Definition of Done
 
-- [ ] resolve_host() and scan_ports() in operator.py
-- [ ] resolve_host and scan_ports in tools.json
-- [ ] Network Eye panel shows quick actions and host cards
-- [ ] Inline forms for resolve and scan send governed input
-- [ ] Host cards update from operator tool results
-- [ ] network-status command returns audit-filtered results
+- [ ] PART A: conversation turns no longer generate proposals
+- [ ] PART A: memory auto-written at turn threshold and session end
+- [ ] PART A: existing "remember this" and clear/forget proposals unchanged
+- [ ] PART B: core/process_monitor.py with ProcessMonitor
+- [ ] PART B: process-status command returns process data
+- [ ] PART B: Processes panel in Console shows live process records
+- [ ] PART B: panel auto-refreshes every 30s while visible
 - [ ] CURRENT_PHASE updated
 - [ ] All tests pass: py -3 -m unittest discover -s tests
 - [ ] Pushed to origin/main immediately
@@ -248,16 +296,14 @@ inanna/tests/
 
 ## Handoff
 
-Commit: cycle5-phase3-complete
+Commit: cycle5-phase4-complete
 Push immediately to origin/main.
-Report: docs/implementation/CYCLE5_PHASE3_REPORT.md
-Stop. Do not begin Phase 5.4 without new CURRENT_PHASE.md.
+Report: docs/implementation/CYCLE5_PHASE4_REPORT.md
+Stop. Do not begin Phase 5.5 without new CURRENT_PHASE.md.
 
 ---
 
 *Written by: Claude (Command Center)*
 *Guardian approval: ZAERA*
 *Date: 2026-04-20*
-*The Network Eye sees what is connected.*
-*Every host visible. Every port accountable.*
-*Nothing scanned without consent.*
+*Memory flows. The process breathes. The flow is restored.*
