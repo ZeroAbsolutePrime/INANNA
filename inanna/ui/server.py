@@ -42,6 +42,7 @@ from core.user import (
 from core.user_log import UserLog
 from identity import phase_banner
 from main import (
+    FACULTIES_CONFIG_PATH,
     STARTUP_COMMANDS,
     append_audit_event,
     append_user_log_entry,
@@ -74,6 +75,7 @@ from main import (
     create_memory_request_proposal,
     create_realm_context_proposal,
     create_tool_use_proposal,
+    build_sentinel_stub_response,
     finalize_auto_memory,
     format_user_log_report,
     has_admin_surface_access,
@@ -202,8 +204,13 @@ class InterfaceServer:
         self.operator = OperatorFaculty()
         self.process_monitor = ProcessMonitor(self.server_start_time)
         self.governance = GovernanceLayer(engine=self.engine)
-        self.classifier = IntentClassifier(self.engine, governance=self.governance)
+        self.classifier = IntentClassifier(
+            self.engine,
+            governance=self.governance,
+            faculties_path=FACULTIES_CONFIG_PATH,
+        )
         self.routing_log: list[dict[str, str]] = []
+        self.last_routed_faculty = ""
         self.governance_blocks = 0
         self.tool_executions = 0
         self.conversation_state = {"turn_count": 0, "last_auto_memory_turn": 0}
@@ -388,6 +395,7 @@ class InterfaceServer:
             "input_preview": text[:60],
             "route": route,
         }
+        self.last_routed_faculty = route
         self.routing_log.append(record)
         append_routing_event(
             self.nammu_dir,
@@ -513,6 +521,25 @@ class InterfaceServer:
                 "nammu": nammu_message,
                 "governance": governance_message,
                 "response": {"type": "analyst", "text": f"{label} {analysis_text}"},
+            }
+
+        if governance_result.faculty == "sentinel":
+            sentinel_text = build_sentinel_stub_response()
+            self.faculty_monitor.record_call("sentinel", 0.0, True)
+            self.session.add_event("user", text)
+            self.session.add_event("assistant", sentinel_text)
+            append_user_log_entry(
+                self.user_log,
+                self.active_token,
+                self.session.session_id,
+                text,
+                sentinel_text,
+            )
+            self._record_completed_turn()
+            return {
+                "nammu": nammu_message,
+                "governance": governance_message,
+                "response": {"type": "assistant", "text": sentinel_text},
             }
 
         assistant_text = self._run_user_turn(text)
@@ -1572,6 +1599,7 @@ class InterfaceServer:
             "total_proposals": history["total"],
             "approved_proposals": history["approved"],
             "rejected_proposals": history["rejected"],
+            "last_routed_faculty": self.last_routed_faculty,
             "user_log_count": (
                 self.user_log.entry_count(self.active_token.user_id)
                 if self.active_token is not None

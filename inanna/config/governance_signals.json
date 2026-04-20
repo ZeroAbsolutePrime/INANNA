@@ -87,5 +87,32 @@
     "reasoning",
     "implications",
     "technical"
-  ]
+  ],
+  "domain_hints": {
+    "security": [
+      "vulnerability",
+      "exploit",
+      "CVE",
+      "penetration",
+      "threat",
+      "firewall",
+      "intrusion",
+      "malware",
+      "network security",
+      "port scan",
+      "attack surface"
+    ],
+    "reasoning": [
+      "analyze",
+      "compare",
+      "evaluate",
+      "pros and cons",
+      "what is the difference",
+      "break down",
+      "systematically",
+      "step by step",
+      "logical",
+      "deduce"
+    ]
+  }
 }

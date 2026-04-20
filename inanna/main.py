@@ -44,6 +44,7 @@ APP_ROOT = Path(__file__).resolve().parent
 load_dotenv(APP_ROOT / ".env")
 
 DATA_ROOT = APP_ROOT / "data"
+FACULTIES_CONFIG_PATH = APP_ROOT / "config" / "faculties.json"
 ROLES_CONFIG_PATH = APP_ROOT / "config" / "roles.json"
 USER_LOG_DIR = DATA_ROOT / "user_logs"
 SESSION_DIR = DATA_ROOT / "sessions"
@@ -93,11 +94,18 @@ STARTUP_COMMANDS = (
     "exit",
 )
 AUTO_MEMORY_TURN_THRESHOLD = 20
+SENTINEL_STUB_RESPONSE = (
+    "SENTINEL Faculty is registered but not yet deployed. Activate it in the Faculty Registry."
+)
 
 
 def get_active_realm_name() -> str:
     realm_name = os.getenv("INANNA_REALM", DEFAULT_REALM).strip()
     return realm_name or DEFAULT_REALM
+
+
+def build_sentinel_stub_response() -> str:
+    return SENTINEL_STUB_RESPONSE
 
 
 def realm_is_empty(realm_dirs: dict[str, Path]) -> bool:
@@ -2468,6 +2476,28 @@ def handle_command(
             "\n".join(lines)
         )
 
+    if governance_result.faculty == "sentinel":
+        sentinel_text = build_sentinel_stub_response()
+        if faculty_monitor is not None:
+            faculty_monitor.record_call("sentinel", 0.0, True)
+        session.add_event("user", normalized)
+        session.add_event("assistant", sentinel_text)
+        append_user_log_entry(user_log, active_token, session.session_id, normalized, sentinel_text)
+        record_completed_turn(
+            conversation_state=conversation_state,
+            memory=memory,
+            session=session,
+            active_realm_name=active_realm_name,
+            active_token=active_token,
+            user_log=user_log,
+            session_audit=session_audit,
+        )
+        lines = [f"nammu > routing to {governance_result.faculty} faculty"]
+        if governance_result.decision == "redirect":
+            lines.append(f"governance > redirected: {governance_result.reason}")
+        lines.append(f"sentinel > {sentinel_text}")
+        return "\n".join(lines)
+
     session.add_event("user", normalized)
     t0 = time.monotonic()
     assistant_text = engine.respond(
@@ -2550,7 +2580,11 @@ def main() -> None:
     guardian = GuardianFaculty()
     operator = OperatorFaculty()
     governance = GovernanceLayer(engine=engine)
-    classifier = IntentClassifier(engine, governance=governance)
+    classifier = IntentClassifier(
+        engine,
+        governance=governance,
+        faculties_path=FACULTIES_CONFIG_PATH,
+    )
     routing_log: list[dict[str, str]] = []
     guardian_metrics = {"governance_blocks": 0, "tool_executions": 0}
 
