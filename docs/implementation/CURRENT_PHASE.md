@@ -1,293 +1,278 @@
-# CURRENT PHASE: Cycle 5 - Phase 5.4 - The Process Monitor
+# CURRENT PHASE: Cycle 5 - Phase 5.5 - The Faculty Registry
 **Status: ACTIVE**
 **Authorized by: ZAERA (Guardian) + Claude (Command Center)**
 **Date opened: 2026-04-20**
 **Cycle: 5 - The Operator Console**
-**Replaces: Cycle 5 Phase 5.3 - The Network Eye (COMPLETE)**
+**Replaces: Cycle 5 Phase 5.4 - The Process Monitor (COMPLETE)**
 
 ---
 
 ## What This Phase Is
 
-This phase has two parts:
+Phase 5.4 gave INANNA eyes on its own processes.
+Phase 5.5 gives INANNA a formal registry of its intelligences.
 
-PART A — Auto-Memory Fix (immediate, small)
-  Remove the friction of approving your own words being remembered.
-  Conversation turns auto-write. No proposal interrupts the flow.
-  See docs/memory_architecture.md for the full vision.
+Right now, the four Faculties (CROWN, ANALYST, OPERATOR, GUARDIAN)
+are defined in Python code and partially in FacultyMonitor.
+They cannot be extended without changing code.
+Their charters are not readable from a file.
+A domain-specialized Faculty (SENTINEL, PYTHIA, AESCULAPIUS)
+cannot be added without touching Python.
 
-PART B — The Process Monitor (main phase work)
-  The Processes panel in the Operator Console becomes functional.
-  INANNA can see what is running, how long it has been running,
-  and what its resource usage looks like.
+Phase 5.5 moves all Faculty definitions into:
+  inanna/config/faculties.json
 
----
+And builds the Faculty Registry panel in the Operator Console.
 
-## PART A — Auto-Memory Fix
-
-### What to change
-
-In server.py and main.py:
-
-Current behavior after a conversation turn:
-  The system calls create_memory_request_proposal() which generates
-  a [PROPOSAL] requiring Guardian approval before writing to memory.
-
-New behavior:
-  Remove the proposal call for routine conversation turns.
-  Write memory directly using write_memory() at:
-    - Session end (on WebSocket disconnect)
-    - Every 20 conversation turns (configurable threshold)
-
-Proposals REMAIN for (do not remove these):
-  - "remember this" explicit command (user-initiated)
-  - clear-memory command
-  - forget-memory command
-  - memory export (future)
-  - cross-session promotion (future)
-
-Implementation:
-
-In server.py, find where create_memory_request_proposal() is called
-after conversation turns and replace with direct write_memory() call.
-
-Add a turn counter to the session state:
-  self.turn_count = 0
-
-After each conversation turn (crown or analyst response):
-  self.turn_count += 1
-  if self.turn_count % 20 == 0:
-      self._auto_write_memory(session_id, recent_turns)
-
-Add _auto_write_memory() method:
-  Writes last N turns as a memory record without a proposal.
-  Uses the existing write_memory() infrastructure.
-  Appends an audit event: "auto-memory: N turns written at threshold"
-
-Also call _auto_write_memory() in the WebSocket close handler
-to capture the session's final turns.
-
-The memory panel in the UI continues to show all records.
-The memory bar and count continue to update.
-Nothing visible changes for the user except proposals no longer
-interrupt the conversation.
+This is the foundation that Phase 5.6 (Faculty Router) and
+Phase 5.7 (Domain Faculty) depend on.
 
 ---
 
-## PART B — The Process Monitor
+## What You Are Building
 
-### Task 1 - ProcessMonitor in core/process_monitor.py
+### Task 1 - inanna/config/faculties.json
 
-Create: inanna/core/process_monitor.py
+Create: inanna/config/faculties.json
 
-```python
-import os, sys, time, platform
-from dataclasses import dataclass, field
-from typing import Optional
-
-@dataclass
-class ProcessRecord:
-    name: str
-    pid: Optional[int]
-    status: str        # "running" | "ready" | "offline" | "unknown"
-    uptime_seconds: int
-    description: str
-    endpoint: Optional[str] = None
-    memory_mb: Optional[float] = None
-    cpu_percent: Optional[float] = None
-
-class ProcessMonitor:
-    def __init__(self, server_start_time: float):
-        self.server_start_time = server_start_time
-
-    def inanna_record(self) -> ProcessRecord:
-        uptime = int(time.time() - self.server_start_time)
-        return ProcessRecord(
-            name="INANNA NYX Server",
-            pid=os.getpid(),
-            status="running",
-            uptime_seconds=uptime,
-            description=f"HTTP :8080  WebSocket :8081  Python {sys.version.split()[0]}",
-            endpoint="http://localhost:8080",
-        )
-
-    def lm_studio_record(self) -> ProcessRecord:
-        import urllib.request
-        try:
-            req = urllib.request.Request(
-                "http://localhost:1234/v1/models",
-                headers={"User-Agent": "INANNA-monitor"}
-            )
-            with urllib.request.urlopen(req, timeout=2) as r:
-                status = "running" if r.status == 200 else "ready"
-        except Exception:
-            status = "offline"
-        return ProcessRecord(
-            name="LM Studio",
-            pid=None,
-            status=status,
-            uptime_seconds=0,
-            description="http://localhost:1234/v1  local inference",
-            endpoint="http://localhost:1234",
-        )
-
-    def all_records(self) -> list[ProcessRecord]:
-        records = [self.inanna_record(), self.lm_studio_record()]
-        # Try psutil for resource usage (optional — graceful if absent)
-        try:
-            import psutil
-            p = psutil.Process(os.getpid())
-            records[0].memory_mb = round(p.memory_info().rss / 1024 / 1024, 1)
-            records[0].cpu_percent = p.cpu_percent(interval=0.1)
-        except ImportError:
-            pass
-        return records
-
-    def format_uptime(self, seconds: int) -> str:
-        if seconds < 60:
-            return f"{seconds}s"
-        if seconds < 3600:
-            return f"{seconds//60}m {seconds%60}s"
-        h = seconds // 3600
-        m = (seconds % 3600) // 60
-        return f"{h}h {m}m"
-```
-
-### Task 2 - process-status WebSocket command
-
-Add command: process-status
-
-Returns:
 ```json
 {
-  "type": "process_status",
-  "processes": [
-    {
-      "name": "INANNA NYX Server",
-      "pid": 12345,
-      "status": "running",
-      "uptime": "2h 15m",
-      "description": "HTTP :8080  WebSocket :8081",
-      "endpoint": "http://localhost:8080",
-      "memory_mb": 145.3,
-      "cpu_percent": 2.1
+  "faculties": {
+    "crown": {
+      "display_name": "CROWN",
+      "domain": "general",
+      "description": "Primary conversational voice and relational presence.",
+      "charter_preview": "I am CROWN, the primary voice of INANNA NYX. I speak with warmth, precision, and constitutional honesty. I do not fabricate. I ground every response in approved memory.",
+      "model_url": "",
+      "model_name": "",
+      "governance_rules": [],
+      "active": true,
+      "built_in": true,
+      "color": "rose"
     },
-    {
-      "name": "LM Studio",
-      "pid": null,
-      "status": "running",
-      "uptime": "unknown",
-      "description": "http://localhost:1234/v1  local inference",
-      "endpoint": "http://localhost:1234",
-      "memory_mb": null,
-      "cpu_percent": null
+    "analyst": {
+      "display_name": "ANALYST",
+      "domain": "reasoning",
+      "description": "Structured reasoning and comparative analysis.",
+      "charter_preview": "I am ANALYST. I reason systematically. I compare, contrast, and synthesize. I show my work. I flag uncertainty explicitly.",
+      "model_url": "",
+      "model_name": "",
+      "governance_rules": [],
+      "active": true,
+      "built_in": true,
+      "color": "ivory"
+    },
+    "operator": {
+      "display_name": "OPERATOR",
+      "domain": "tools",
+      "description": "Bounded tool execution with proposal governance.",
+      "charter_preview": "I am OPERATOR. I execute only approved tools from the registry. I propose before acting. I report results transparently.",
+      "model_url": "",
+      "model_name": "",
+      "governance_rules": [
+        "All tool executions require proposal approval",
+        "No tool executes outside the registered tool list"
+      ],
+      "active": true,
+      "built_in": true,
+      "color": "amber"
+    },
+    "guardian": {
+      "display_name": "GUARDIAN",
+      "domain": "governance",
+      "description": "System observation and governance health.",
+      "charter_preview": "I am GUARDIAN. I watch the system. I report what I see. I do not act — I observe and present findings for the Guardian's judgment.",
+      "model_url": "",
+      "model_name": "",
+      "governance_rules": [
+        "Guardian Faculty may only observe — never act",
+        "All alerts require Guardian (human) acknowledgment"
+      ],
+      "active": true,
+      "built_in": true,
+      "color": "lapis"
+    },
+    "sentinel": {
+      "display_name": "SENTINEL",
+      "domain": "security",
+      "description": "Cybersecurity analysis, network threat assessment, vulnerability reasoning.",
+      "charter_preview": "I am SENTINEL. I analyze security posture. I reason about threats and vulnerabilities. I perform passive analysis only. Any offensive or active capability requires explicit Guardian proposal approval.",
+      "model_url": "http://localhost:1234/v1",
+      "model_name": "",
+      "governance_rules": [
+        "Passive analysis only without explicit Guardian approval",
+        "All offensive actions require Guardian proposal",
+        "Never recommend exploiting a vulnerability without consent"
+      ],
+      "active": false,
+      "built_in": false,
+      "color": "danger"
     }
-  ]
+  }
 }
 ```
 
-Add "process-status" to STARTUP_COMMANDS and capabilities.
+### Task 2 - Update FacultyMonitor to read faculties.json
 
-### Task 3 - Process panel in console.html
+Update inanna/core/faculty_monitor.py:
 
-Replace the placeholder in the Processes panel with a live view.
+- Load faculties.json at init
+- FacultyRecord gains fields from the JSON:
+    display_name, domain, description, charter_preview,
+    governance_rules, active, built_in, color
+- all_records() returns records for active faculties only
+- format_report() uses display_name from config
 
-On panel activate (tab click): send process-status command.
-Auto-refresh every 30 seconds while panel is visible.
+The four built-in Faculties (crown, analyst, operator, guardian)
+continue to function as before. Their call tracking and timing
+are preserved. The JSON adds metadata — it does not replace
+the runtime behavior.
 
-Display:
+### Task 3 - "faculty-registry" WebSocket command
+
+Add command: faculty-registry
+
+Returns all Faculties from faculties.json (both active and inactive):
+```json
+{
+  "type": "faculty_registry",
+  "faculties": [
+    {
+      "name": "crown",
+      "display_name": "CROWN",
+      "domain": "general",
+      "description": "Primary conversational voice...",
+      "charter_preview": "I am CROWN...",
+      "governance_rules": [],
+      "active": true,
+      "built_in": true,
+      "color": "rose",
+      "mode": "connected",
+      "call_count": 5,
+      "last_called": "22:15"
+    }
+  ],
+  "total": 5,
+  "active": 4,
+  "inactive": 1
+}
 ```
-PROCESS MONITOR
 
-  ● INANNA NYX Server                     pid: 12345
-    HTTP :8080 · WebSocket :8081 · Python 3.x
-    uptime: 2h 15m    memory: 145 MB    cpu: 2.1%
-    [ refresh ]
+The runtime data (mode, call_count, last_called) is merged from
+FacultyMonitor. Static data (charter, governance_rules, color)
+comes from faculties.json.
 
-  ● LM Studio                             endpoint: localhost:1234
-    http://localhost:1234/v1 · local inference
-    status: running    model: connected
-    [ refresh ]
+Add "faculty-registry" to STARTUP_COMMANDS and capabilities.
 
-  ○ INANNA NYXOS                          Cycle 7
-    Sovereign OS substrate
-    status: horizon
+### Task 4 - Faculty Registry panel in console.html
+
+Replace the placeholder in the Faculties panel with a live view.
+
+On panel activate: send faculty-registry command.
+
+Display each Faculty as a card:
+
+BUILT-IN FACULTIES:
+```
+𒀭 CROWN                          ● connected
+  general · Primary conversational voice
+  calls: 5 · last: 22:15
+  "I am CROWN, the primary voice of INANNA NYX..."
+  [ view charter ]
+
+𒁹 ANALYST                        ● connected
+  reasoning · Structured reasoning and analysis
+  calls: 2 · last: 22:10
+  [ view charter ]
 ```
 
-Status indicators:
-  ● green = running
-  ● amber = ready/degraded
-  ○ dim   = offline/horizon
+DOMAIN FACULTIES (inactive shown differently):
+```
+⚔ SENTINEL                       ○ inactive
+  security · Cybersecurity analysis
+  Governance: passive analysis only without approval
+  [ activate ]   (disabled — Phase 5.7)
+```
 
-### Task 4 - Server startup time tracking
+[ view charter ] expands to show the full charter_preview inline.
+[ activate ] is present but shows a tooltip: "Domain Faculty activation coming in Phase 5.7"
 
-In server.py __init__, record the startup time:
-  self.server_start_time = time.time()
+Color coding matches the UI language:
+  rose = CROWN (matches INANNA's message color)
+  ivory = ANALYST
+  amber = OPERATOR
+  lapis = GUARDIAN
+  danger = SENTINEL
 
-Pass to ProcessMonitor at init.
+### Task 5 - Update FacultyMonitor.format_report()
 
-### Task 5 - Update identity.py and state.py
+The format_report() string sent in the status payload to the
+main interface currently uses hardcoded Faculty names.
+Update it to read display_name from the loaded faculties.json.
 
-CURRENT_PHASE = "Cycle 5 - Phase 5.4 - The Process Monitor"
-Add "process-status" to STARTUP_COMMANDS and capabilities.
+### Task 6 - Update identity.py and state.py
 
-### Task 6 - Tests
+CURRENT_PHASE = "Cycle 5 - Phase 5.5 - The Faculty Registry"
+Add "faculty-registry" to STARTUP_COMMANDS and capabilities.
 
-Add inanna/tests/test_process_monitor.py:
-  - ProcessMonitor can be instantiated
-  - inanna_record() returns ProcessRecord with status "running"
-  - inanna_record() has correct pid
-  - format_uptime(0) returns "0s"
-  - format_uptime(90) returns "1m 30s"
-  - format_uptime(3700) returns "1h 1m"
-  - all_records() returns at least 2 records
+### Task 7 - Tests
 
+Update inanna/tests/test_faculty_monitor.py:
+  - FacultyMonitor loads from faculties.json
+  - all_records() returns 4 records (active only)
+  - FacultyRecord has domain field
+  - FacultyRecord has display_name field from config
+  - FacultyRecord has charter_preview field
+  - format_report() contains "CROWN" (from display_name)
+  - "sentinel" not in all_records() (inactive)
+
+Update test_commands.py: add faculty-registry.
 Update test_identity.py: update CURRENT_PHASE assertion.
-Update test_state.py: add process-status.
-Update test_commands.py: add process-status.
+Update test_state.py: add faculty-registry.
 
 ---
 
 ## Permitted file changes
 
 inanna/identity.py
-inanna/main.py              <- auto-memory fix + process-status command
+inanna/main.py                  <- add faculty-registry command
 inanna/config/
-  (no config changes)
+  faculties.json                <- NEW
 inanna/core/
-  process_monitor.py        <- NEW
-  state.py                  <- add process-status
+  faculty_monitor.py            <- MODIFY: load faculties.json,
+                                           enrich FacultyRecord
+  state.py                      <- add faculty-registry
 inanna/ui/
-  server.py                 <- auto-memory fix + process-status command
-  static/console.html       <- replace Processes placeholder
+  server.py                     <- add faculty-registry command
+  static/console.html           <- replace Faculties placeholder
+                                   with live Faculty Registry panel
 inanna/tests/
-  test_process_monitor.py   <- NEW
-  test_identity.py          <- update phase
-  test_state.py             <- add process-status
-  test_commands.py          <- add process-status
+  test_faculty_monitor.py       <- MODIFY: add config-driven tests
+  test_identity.py              <- update phase
+  test_state.py                 <- add faculty-registry
+  test_commands.py              <- add faculty-registry
 
 ---
 
 ## What You Are NOT Building
 
-- No process killing via the UI
-- No log streaming (future phase)
-- No custom service registration
-- No resource usage graphs
-- psutil is optional — graceful fallback if not installed
+- No Faculty activation (Phase 5.7)
+- No Faculty model endpoint switching
+- No charter editing via the UI
+- No new domain Faculty beyond defining SENTINEL in the JSON
+  (SENTINEL remains inactive: false until Phase 5.7)
 - Do not modify index.html
 
 ---
 
 ## Definition of Done
 
-- [ ] PART A: conversation turns no longer generate proposals
-- [ ] PART A: memory auto-written at turn threshold and session end
-- [ ] PART A: existing "remember this" and clear/forget proposals unchanged
-- [ ] PART B: core/process_monitor.py with ProcessMonitor
-- [ ] PART B: process-status command returns process data
-- [ ] PART B: Processes panel in Console shows live process records
-- [ ] PART B: panel auto-refreshes every 30s while visible
+- [ ] faculties.json exists with 5 Faculty definitions
+- [ ] FacultyMonitor reads from faculties.json
+- [ ] FacultyRecord enriched with domain, display_name, charter_preview
+- [ ] faculty-registry command returns merged static + runtime data
+- [ ] Faculties panel in Console shows all 5 Faculties with status
+- [ ] [ view charter ] expands charter inline
 - [ ] CURRENT_PHASE updated
 - [ ] All tests pass: py -3 -m unittest discover -s tests
 - [ ] Pushed to origin/main immediately
@@ -296,14 +281,15 @@ inanna/tests/
 
 ## Handoff
 
-Commit: cycle5-phase4-complete
+Commit: cycle5-phase5-complete
 Push immediately to origin/main.
-Report: docs/implementation/CYCLE5_PHASE4_REPORT.md
-Stop. Do not begin Phase 5.5 without new CURRENT_PHASE.md.
+Report: docs/implementation/CYCLE5_PHASE5_REPORT.md
+Stop. Do not begin Phase 5.6 without new CURRENT_PHASE.md.
 
 ---
 
 *Written by: Claude (Command Center)*
 *Guardian approval: ZAERA*
 *Date: 2026-04-20*
-*Memory flows. The process breathes. The flow is restored.*
+*Every intelligence named. Every charter readable.*
+*Nothing hidden about what INANNA is and what she can become.*
