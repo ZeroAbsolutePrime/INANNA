@@ -1,235 +1,234 @@
-# CURRENT PHASE: Cycle 6 - Phase 6.6 - The Identity Layer
+# CURRENT PHASE: Cycle 6 - Phase 6.7 - The Trust Persistence
 **Status: ACTIVE**
 **Authorized by: ZAERA (Guardian) + Claude (Command Center)**
 **Date opened: 2026-04-20**
 **Cycle: 6 - The Relational Memory**
-**Replaces: Cycle 6 Phase 6.5 - The Organizational Layer (COMPLETE)**
+**Replaces: Cycle 6 Phase 6.6 - The Identity Layer (COMPLETE)**
 
 ---
 
 ## What This Phase Is
 
-Phase 6.5 placed each person in their organizational context.
-Phase 6.6 makes INANNA address each person as they truly are.
+Phase 6.4 gave the UI the organic governance suggestion:
+when a tool is approved N times, INANNA asks
+"shall I remember this as a trusted pattern?"
 
-When a person's profile has a preferred_name, INANNA uses it.
-When a person's pronouns are set, INANNA uses them correctly
-in any context where she refers to that person.
-When a person's timezone is set, INANNA formats times accordingly.
+Phase 6.7 gives that suggestion a backend.
 
-This is not a feature. It is basic respect expressed as code.
-INANNA is not a system that ignores who you are.
-She is a presence that sees you.
+When the Guardian confirms "yes, trust this tool",
+the tool is recorded in profile.trust_patterns.persistent_trusted_tools.
+For future sessions, that tool bypasses the proposal governance
+for that user — no interruption, no waiting.
+
+The Guardian can revoke trust at any time.
+The audit trail records every grant and revocation.
+This is the organic governance principle made real:
+the system learns from repeated consent and honors it.
 
 ---
 
 ## What You Are Building
 
-### Task 1 - IdentityFormatter in core/profile.py
+### Task 1 - governance-trust command in server.py and main.py
 
-Add to profile.py:
+The UI already sends this when the user accepts a suggestion:
+  {"type": "command", "cmd": "governance-trust", "tool": "web_search"}
 
-```python
-class IdentityFormatter:
-    """
-    Provides identity-aware formatting for INANNA's language.
-    Used when INANNA refers to a person in third person,
-    formats times, or constructs greetings.
-    """
-
-    PRONOUN_SETS = {
-        "she/her":   {"subject": "she",  "object": "her",
-                      "possessive": "her",  "reflexive": "herself"},
-        "he/him":    {"subject": "he",   "object": "him",
-                      "possessive": "his",  "reflexive": "himself"},
-        "they/them": {"subject": "they", "object": "them",
-                      "possessive": "their","reflexive": "themselves"},
-        "ze/zir":    {"subject": "ze",   "object": "zir",
-                      "possessive": "zir",  "reflexive": "zirself"},
-        "xe/xem":    {"subject": "xe",   "object": "xem",
-                      "possessive": "xyr",  "reflexive": "xemself"},
-    }
-
-    def __init__(self, profile_manager: ProfileManager):
-        self.profile_manager = profile_manager
-
-    def address(self, user_id: str, fallback: str = "") -> str:
-        """Returns the name INANNA should use when addressing this person."""
-        return self.profile_manager.display_name_for(user_id, fallback)
-
-    def pronouns(self, user_id: str) -> dict:
-        """Returns the pronoun set for a user, defaulting to they/them."""
-        raw = self.profile_manager.pronouns_for(user_id).lower().strip()
-        for key, pset in self.PRONOUN_SETS.items():
-            if raw.startswith(key.split("/")[0]):
-                return pset
-        # Default: neutral they/them
-        return self.PRONOUN_SETS["they/them"]
-
-    def subject(self, user_id: str) -> str:
-        """Returns the subject pronoun: she, he, they, etc."""
-        return self.pronouns(user_id)["subject"]
-
-    def object_pronoun(self, user_id: str) -> str:
-        """Returns the object pronoun: her, him, them, etc."""
-        return self.pronouns(user_id)["object"]
-
-    def possessive(self, user_id: str) -> str:
-        """Returns the possessive pronoun: her, his, their, etc."""
-        return self.pronouns(user_id)["possessive"]
-
-    def format_greeting(self, user_id: str, fallback: str = "") -> str:
-        """Returns a natural greeting using the person's preferred name."""
-        name = self.address(user_id, fallback)
-        return f"Welcome back, {name}." if name else "Welcome back."
-
-    def format_time(self, iso_timestamp: str, user_id: str) -> str:
-        """Formats a timestamp in the user's timezone if set."""
-        profile = self.profile_manager.load(user_id)
-        tz_name = profile.timezone if profile else ""
-        try:
-            from datetime import datetime, timezone
-            dt = datetime.fromisoformat(iso_timestamp)
-            if tz_name:
-                import zoneinfo
-                tz = zoneinfo.ZoneInfo(tz_name)
-                dt = dt.astimezone(tz)
-                return dt.strftime(f"%b %d %H:%M ({tz_name})")
-            return dt.strftime("%b %d %H:%M")
-        except Exception:
-            return iso_timestamp[:16].replace("T", " ")
-```
-
-### Task 2 - Use IdentityFormatter in INANNA's grounding prefix
-
-Update build_grounding_prefix() in main.py to use IdentityFormatter:
+Add the server-side handler:
 
 ```python
-def build_grounding_prefix(
-    profile_manager: ProfileManager | None,
-    user_record: UserRecord | None,
-    active_token: SessionToken | None,
-) -> str:
-    if not profile_manager or not active_token:
-        return ""
-    formatter = IdentityFormatter(profile_manager)
-    name = formatter.address(
-        active_token.user_id,
-        fallback=active_token.display_name
-    )
-    pronouns = formatter.pronouns(active_token.user_id)
-    subject = pronouns["subject"]
-    possessive = pronouns["possessive"]
-
-    lines = [f"You are speaking with {name}."]
-    if subject != "they":  # only add if not default
-        lines.append(
-            f"{name} uses {subject}/{possessive} pronouns. "
-            f"Use these when referring to {name} in third person."
-        )
-    return "\n".join(lines)
+if cmd == "governance-trust":
+    tool_name = data.get("tool", "").strip()
+    if tool_name and active_token:
+        profile = profile_manager.load(active_token.user_id)
+        if profile:
+            current = profile.persistent_trusted_tools or []
+            if tool_name not in current:
+                updated = current + [tool_name]
+                profile_manager.update_field(
+                    active_token.user_id,
+                    "persistent_trusted_tools",
+                    updated,
+                )
+                append_audit_event(
+                    audit_path,
+                    "trust_granted",
+                    f"persistent trust granted for tool: {tool_name} "
+                    f"by user: {active_token.display_name}",
+                )
+                return {"type": "system",
+                        "text": f"governance > {tool_name} is now persistently trusted for you."}
+    return {"type": "system", "text": "governance > trust not updated."}
 ```
 
-This means INANNA's system prompt now says:
-"You are speaking with ZAERA.
-ZAERA uses she/her pronouns. Use these when referring to ZAERA in third person."
+### Task 2 - governance-revoke command
 
-CROWN and SENTINEL will naturally use the correct pronouns
-in any response that refers to the user.
+Add command: governance-revoke [tool]
 
-### Task 3 - Use preferred_name in onboarding completion message
-
-Update the onboarding completion message in server.py and main.py:
+Allows the user to revoke persistent trust for a tool:
+  "governance-revoke web_search"
 
 ```python
-formatter = IdentityFormatter(profile_manager)
-name = formatter.address(user_id, fallback=display_name)
-completion = (
-    f"Thank you, {name}. I will remember what you have shared. "
-    f"You can update your profile at any time with the my-profile command. "
-    f"Let us begin."
-)
+if cmd == "governance-revoke":
+    tool_name = data.get("tool", "").strip()
+    if not tool_name:
+        # Parse from text: "governance-revoke web_search"
+        tool_name = text.replace("governance-revoke", "").strip()
+    if tool_name and active_token:
+        profile = profile_manager.load(active_token.user_id)
+        if profile:
+            current = profile.persistent_trusted_tools or []
+            if tool_name in current:
+                updated = [t for t in current if t != tool_name]
+                profile_manager.update_field(
+                    active_token.user_id,
+                    "persistent_trusted_tools",
+                    updated,
+                )
+                append_audit_event(
+                    audit_path,
+                    "trust_revoked",
+                    f"persistent trust revoked for tool: {tool_name} "
+                    f"by user: {active_token.display_name}",
+                )
+                return {"type": "system",
+                        "text": f"governance > {tool_name} trust revoked. "
+                                f"Proposals will resume for this tool."}
+    return {"type": "system", "text": f"governance > {tool_name} was not persistently trusted."}
 ```
 
-This replaces any hardcoded display_name reference with the
-preferred_name when set.
+### Task 3 - Persistent trust checked in OperatorFaculty
 
-### Task 4 - format_time used in audit and memory timestamps
+In core/operator.py, update the tool execution flow to check
+persistent trust before generating a proposal:
 
-When INANNA displays timestamps (audit events, memory records,
-proposal timestamps) through the my-profile or audit commands,
-use IdentityFormatter.format_time() to show times in the user's
-timezone when set.
+```python
+def should_skip_proposal(
+    self,
+    tool_name: str,
+    persistent_trusted_tools: list[str],
+) -> bool:
+    return tool_name in persistent_trusted_tools
+```
 
-This is a best-effort enhancement — if the timezone is not set
-or is invalid, fall back to UTC formatting as before.
+In server.py, when OPERATOR is about to execute a tool:
+```python
+persistent_trusted = []
+if profile_manager and active_token:
+    profile = profile_manager.load(active_token.user_id)
+    if profile:
+        persistent_trusted = profile.persistent_trusted_tools or []
 
-### Task 5 - Update identity.py
+if operator_faculty.should_skip_proposal(tool_name, persistent_trusted):
+    # Execute directly, no proposal
+    result = operator_faculty.execute_tool(tool_name, args)
+    append_audit_event(audit_path, "tool_executed_trusted",
+        f"trusted tool {tool_name} executed without proposal")
+else:
+    # Normal proposal flow
+    ...
+```
 
-CURRENT_PHASE = "Cycle 6 - Phase 6.6 - The Identity Layer"
+### Task 4 - my-profile shows trust patterns
 
-### Task 6 - Tests
+The existing my-profile output already has a Trust section.
+After Phase 6.7 it shows actual values:
+
+```
+  Trust
+  Persistent   web_search, ping
+  Session      —
+```
+
+No code change needed — the fields are already rendered.
+
+### Task 5 - "my-trust" convenience command
+
+Add command: my-trust
+
+Shows the active user's trust patterns clearly:
+
+```
+Your governance trust patterns:
+
+  Persistent (survives sessions):
+    web_search   — trusted since Apr 19
+    ping         — trusted since Apr 20
+
+  Session (this session only):
+    —
+
+Type "governance-revoke [tool]" to remove persistent trust.
+```
+
+### Task 6 - Update identity.py and state.py
+
+CURRENT_PHASE = "Cycle 6 - Phase 6.7 - The Trust Persistence"
+Add to STARTUP_COMMANDS: governance-trust, governance-revoke, my-trust
+
+### Task 7 - Tests
 
 Update inanna/tests/test_profile.py:
-  - IdentityFormatter.address() returns preferred_name when set
-  - IdentityFormatter.address() returns fallback when not set
-  - IdentityFormatter.subject() returns "she" for she/her
-  - IdentityFormatter.subject() returns "he" for he/him
-  - IdentityFormatter.subject() returns "they" for they/them
-  - IdentityFormatter.subject() returns "they" for unknown pronouns
-  - IdentityFormatter.object_pronoun() correct for she/her
-  - IdentityFormatter.possessive() correct for they/them
-  - IdentityFormatter.format_greeting() includes preferred_name
-  - IdentityFormatter.format_time() formats correctly
-  - IdentityFormatter.format_time() falls back on invalid timezone
-  - build_grounding_prefix() includes pronouns line when set
+  - persistent_trusted_tools field exists in UserProfile
+  - governance-trust adds tool to persistent_trusted_tools
+  - governance-trust is idempotent (no duplicates)
+  - governance-revoke removes tool from persistent_trusted_tools
+  - governance-revoke on non-trusted tool returns gracefully
+  - should_skip_proposal() returns True for trusted tool
+  - should_skip_proposal() returns False for untrusted tool
 
 Update test_identity.py: update CURRENT_PHASE assertion.
+Update test_state.py: add new commands.
+Update test_commands.py: add new commands.
 
 ---
 
 ## Permitted file changes
 
 inanna/identity.py              <- MODIFY: update CURRENT_PHASE
-inanna/main.py                  <- MODIFY: IdentityFormatter in
-                                           build_grounding_prefix,
-                                           onboarding completion message
+inanna/main.py                  <- MODIFY: governance-trust handler,
+                                           governance-revoke handler,
+                                           my-trust command
 inanna/core/
-  profile.py                    <- MODIFY: add IdentityFormatter class
-  state.py                      <- MODIFY: update phase only
+  operator.py                   <- MODIFY: should_skip_proposal()
+  state.py                      <- MODIFY: add new commands
 inanna/ui/
-  server.py                     <- MODIFY: IdentityFormatter in
-                                           onboarding completion message,
-                                           format_time in audit/memory output
+  server.py                     <- MODIFY: governance-trust handler,
+                                           governance-revoke handler,
+                                           persistent trust check before
+                                           tool proposal,
+                                           my-trust command
 inanna/tests/
-  test_profile.py               <- MODIFY: add IdentityFormatter tests
+  test_profile.py               <- MODIFY: add trust tests
   test_identity.py              <- MODIFY: update phase assertion
+  test_state.py                 <- MODIFY: add new commands
+  test_commands.py              <- MODIFY: add new commands
 
 ---
 
 ## What You Are NOT Building
 
-- No trust persistence backend (Phase 6.7)
 - No reflective memory (Phase 6.8)
 - No changes to console.html or index.html
-- No multi-language response generation
-  (INANNA responds in the language she was trained in —
-  full multi-language support is a future cycle)
-- No pronoun correction of INANNA's existing responses —
-  the formatter affects only new grounding, not past text
+- No cross-user trust propagation
+- No trust expiry (trust persists until explicitly revoked)
+- No proposal required to grant persistent trust —
+  the Guardian's explicit confirmation in the UI is sufficient
+- Persistent trust does NOT bypass governance entirely —
+  it only skips the proposal. Audit logging still occurs.
+  The tool must still be in the registered tool registry.
 
 ---
 
 ## Definition of Done
 
-- [ ] IdentityFormatter class in core/profile.py
-- [ ] address() uses preferred_name
-- [ ] subject/object/possessive pronoun methods work correctly
-- [ ] Unknown pronouns default to they/them
-- [ ] format_greeting() uses preferred_name
-- [ ] format_time() uses user timezone when set
-- [ ] build_grounding_prefix() includes pronouns instruction
-- [ ] Onboarding completion uses preferred_name via formatter
+- [ ] governance-trust command grants persistent trust
+- [ ] governance-revoke command revokes persistent trust
+- [ ] should_skip_proposal() checked before tool proposal
+- [ ] Trusted tools execute without proposal (audit logged)
+- [ ] my-trust shows current trust patterns
+- [ ] my-profile Trust section shows persistent tools
+- [ ] Audit events for grant and revocation
 - [ ] CURRENT_PHASE updated
 - [ ] All tests pass: py -3 -m unittest discover -s tests
 - [ ] Pushed to origin/main immediately
@@ -238,18 +237,18 @@ inanna/tests/
 
 ## Handoff
 
-Commit: cycle6-phase6-complete
+Commit: cycle6-phase7-complete
 Push immediately to origin/main.
-Report: docs/implementation/CYCLE6_PHASE6_REPORT.md
-Stop. Do not begin Phase 6.7 without new CURRENT_PHASE.md.
+Report: docs/implementation/CYCLE6_PHASE7_REPORT.md
+Stop. Do not begin Phase 6.8 without new CURRENT_PHASE.md.
 
 ---
 
 *Written by: Claude (Command Center)*
 *Guardian approval: ZAERA*
 *Date: 2026-04-20*
-*INANNA sees who you are.*
-*She says your name as you wish it said.*
-*She speaks of you as you wish to be spoken of.*
-*This is not a feature.*
-*It is attention. It is care.*
+*Trust is not given once and forgotten.*
+*It is granted, remembered, and revocable.*
+*The system learns from repeated consent*
+*and honors it — without losing the ability*
+*to question again when something feels different.*
