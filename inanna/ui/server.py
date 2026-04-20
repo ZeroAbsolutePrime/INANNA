@@ -27,7 +27,7 @@ from core.nammu_memory import (
 )
 from core.orchestration import OrchestrationEngine
 from core.operator import OperatorFaculty
-from core.profile import ProfileManager
+from core.profile import NotificationStore, ProfileManager
 from core.process_monitor import ProcessMonitor
 from core.proposal import Proposal
 from core.session import AnalystFaculty, Engine, Session
@@ -49,6 +49,7 @@ from main import (
     PROFILE_PROTECTED_CLEAR_FIELDS,
     PROFILE_READ_ONLY_FIELDS,
     STARTUP_COMMANDS,
+    assign_profile_membership,
     append_audit_event,
     append_user_log_entry,
     build_admin_surface_payload,
@@ -57,6 +58,7 @@ from main import (
     build_faculty_registry_payload,
     build_grounding_prefix,
     build_history_report,
+    build_organizational_context_report,
     begin_onboarding_if_needed,
     complete_onboarding,
     handle_onboarding_response,
@@ -90,6 +92,7 @@ from main import (
     clear_communication_observations,
     complete_orchestration_resolution as complete_orchestration_backend_resolution,
     default_profile_field_value,
+    deliver_pending_notifications,
     finalize_auto_memory,
     format_profile_output,
     format_profile_value,
@@ -114,6 +117,8 @@ from main import (
     sync_profile_grounding,
     token_preview,
     onboarding_question,
+    queue_department_notifications,
+    unassign_profile_membership,
 )
 
 APP_ROOT = Path(__file__).resolve().parent.parent
@@ -213,6 +218,7 @@ class InterfaceServer:
         )
         self.guardian_user = ensure_guardian_exists(self.user_manager)
         self.profile_manager = ProfileManager(self.data_root / "profiles")
+        self.notification_store = NotificationStore(self.data_root / "notifications")
         expired_invites = self.user_manager.expire_old_invites()
         if expired_invites:
             self.startup_messages.append(f"Expired {expired_invites} invite(s).")
@@ -864,6 +870,12 @@ class InterfaceServer:
                     f"login > session bound to user_id: {target.user_id}",
                 ):
                     await self.broadcast({"type": "system", "text": line})
+                for line in await asyncio.to_thread(
+                    deliver_pending_notifications,
+                    self.notification_store,
+                    target.user_id,
+                ):
+                    await self.broadcast({"type": "system", "text": line})
                 await self._broadcast_onboarding_start()
             except Exception as exc:
                 await self.broadcast({"type": "system", "text": f"login > {exc}"})
@@ -1128,6 +1140,36 @@ class InterfaceServer:
                 }
             )
             await self.broadcast_state()
+        elif command_name == "my-departments":
+            allowed, reason = check_privilege(self.active_user, self.user_manager, "converse")
+            if not allowed or self.active_token is None or self.active_user is None:
+                text = (
+                    f"access > {reason}"
+                    if not allowed
+                    else 'my-departments > No active session. Type "login [name]" to identify.'
+                )
+                await self.broadcast({"type": "system", "text": text})
+                await self.broadcast_state()
+                return
+            _, _, profile = await asyncio.to_thread(
+                resolve_profile_subject,
+                self.profile_manager,
+                self.active_user,
+                self.active_token,
+            )
+            if profile is None:
+                await self.broadcast(
+                    {"type": "system", "text": "my-departments > profile management is unavailable."}
+                )
+                await self.broadcast_state()
+                return
+            await self.broadcast(
+                {
+                    "type": "system",
+                    "text": await asyncio.to_thread(build_organizational_context_report, profile),
+                }
+            )
+            await self.broadcast_state()
         elif command_name == "view-profile":
             allowed, reason = check_privilege(self.active_user, self.user_manager, "all")
             if not allowed:
@@ -1161,6 +1203,270 @@ class InterfaceServer:
                         target.display_name,
                         f"Profile for {target.display_name} ({target.user_id}):",
                         False,
+                    ),
+                }
+            )
+            await self.broadcast_state()
+        elif command_name == "assign-department":
+            allowed, reason = check_privilege(self.active_user, self.user_manager, "all")
+            if not allowed or self.active_user is None:
+                await self.broadcast({"type": "system", "text": f"access > {reason}"})
+                await self.broadcast_state()
+                return
+            parsed = await asyncio.to_thread(parse_user_realm_command, raw_cmd, "assign-department")
+            if parsed is None:
+                await self.broadcast(
+                    {
+                        "type": "system",
+                        "text": "assign-department > usage: assign-department [display_name] [department]",
+                    }
+                )
+                await self.broadcast_state()
+                return
+            display_name, department = parsed
+            target = self.user_manager.get_user_by_display_name(display_name)
+            if target is None:
+                await self.broadcast(
+                    {"type": "system", "text": f"assign-department > No user found: {display_name}"}
+                )
+                await self.broadcast_state()
+                return
+            updated, normalized_department = await asyncio.to_thread(
+                assign_profile_membership,
+                self.profile_manager,
+                target.user_id,
+                "departments",
+                department,
+            )
+            if not updated:
+                await self.broadcast(
+                    {"type": "system", "text": "assign-department > profile management is unavailable."}
+                )
+                await self.broadcast_state()
+                return
+            append_audit_event(
+                self.session_audit,
+                "assign_department",
+                f"{self.active_user.display_name} assigned {target.display_name} to department {normalized_department}",
+            )
+            await self.broadcast(
+                {
+                    "type": "system",
+                    "text": f"org > {target.display_name} assigned to department: {normalized_department}",
+                }
+            )
+            await self.broadcast_state()
+        elif command_name == "unassign-department":
+            allowed, reason = check_privilege(self.active_user, self.user_manager, "all")
+            if not allowed or self.active_user is None:
+                await self.broadcast({"type": "system", "text": f"access > {reason}"})
+                await self.broadcast_state()
+                return
+            parsed = await asyncio.to_thread(parse_user_realm_command, raw_cmd, "unassign-department")
+            if parsed is None:
+                await self.broadcast(
+                    {
+                        "type": "system",
+                        "text": "unassign-department > usage: unassign-department [display_name] [department]",
+                    }
+                )
+                await self.broadcast_state()
+                return
+            display_name, department = parsed
+            target = self.user_manager.get_user_by_display_name(display_name)
+            if target is None:
+                await self.broadcast(
+                    {
+                        "type": "system",
+                        "text": f"unassign-department > No user found: {display_name}",
+                    }
+                )
+                await self.broadcast_state()
+                return
+            updated, removed, normalized_department = await asyncio.to_thread(
+                unassign_profile_membership,
+                self.profile_manager,
+                target.user_id,
+                "departments",
+                department,
+            )
+            if not updated:
+                await self.broadcast(
+                    {"type": "system", "text": "unassign-department > profile management is unavailable."}
+                )
+                await self.broadcast_state()
+                return
+            if not removed:
+                await self.broadcast(
+                    {
+                        "type": "system",
+                        "text": (
+                            f"org > {target.display_name} was not assigned to department: "
+                            f"{normalized_department}"
+                        ),
+                    }
+                )
+                await self.broadcast_state()
+                return
+            append_audit_event(
+                self.session_audit,
+                "unassign_department",
+                f"{self.active_user.display_name} removed {target.display_name} from department {normalized_department}",
+            )
+            await self.broadcast(
+                {
+                    "type": "system",
+                    "text": f"org > {target.display_name} removed from department: {normalized_department}",
+                }
+            )
+            await self.broadcast_state()
+        elif command_name == "assign-group":
+            allowed, reason = check_privilege(self.active_user, self.user_manager, "all")
+            if not allowed or self.active_user is None:
+                await self.broadcast({"type": "system", "text": f"access > {reason}"})
+                await self.broadcast_state()
+                return
+            parsed = await asyncio.to_thread(parse_user_realm_command, raw_cmd, "assign-group")
+            if parsed is None:
+                await self.broadcast(
+                    {
+                        "type": "system",
+                        "text": "assign-group > usage: assign-group [display_name] [group]",
+                    }
+                )
+                await self.broadcast_state()
+                return
+            display_name, group = parsed
+            target = self.user_manager.get_user_by_display_name(display_name)
+            if target is None:
+                await self.broadcast(
+                    {"type": "system", "text": f"assign-group > No user found: {display_name}"}
+                )
+                await self.broadcast_state()
+                return
+            updated, normalized_group = await asyncio.to_thread(
+                assign_profile_membership,
+                self.profile_manager,
+                target.user_id,
+                "groups",
+                group,
+            )
+            if not updated:
+                await self.broadcast(
+                    {"type": "system", "text": "assign-group > profile management is unavailable."}
+                )
+                await self.broadcast_state()
+                return
+            append_audit_event(
+                self.session_audit,
+                "assign_group",
+                f"{self.active_user.display_name} assigned {target.display_name} to group {normalized_group}",
+            )
+            await self.broadcast(
+                {
+                    "type": "system",
+                    "text": f"org > {target.display_name} assigned to group: {normalized_group}",
+                }
+            )
+            await self.broadcast_state()
+        elif command_name == "unassign-group":
+            allowed, reason = check_privilege(self.active_user, self.user_manager, "all")
+            if not allowed or self.active_user is None:
+                await self.broadcast({"type": "system", "text": f"access > {reason}"})
+                await self.broadcast_state()
+                return
+            parsed = await asyncio.to_thread(parse_user_realm_command, raw_cmd, "unassign-group")
+            if parsed is None:
+                await self.broadcast(
+                    {
+                        "type": "system",
+                        "text": "unassign-group > usage: unassign-group [display_name] [group]",
+                    }
+                )
+                await self.broadcast_state()
+                return
+            display_name, group = parsed
+            target = self.user_manager.get_user_by_display_name(display_name)
+            if target is None:
+                await self.broadcast(
+                    {"type": "system", "text": f"unassign-group > No user found: {display_name}"}
+                )
+                await self.broadcast_state()
+                return
+            updated, removed, normalized_group = await asyncio.to_thread(
+                unassign_profile_membership,
+                self.profile_manager,
+                target.user_id,
+                "groups",
+                group,
+            )
+            if not updated:
+                await self.broadcast(
+                    {"type": "system", "text": "unassign-group > profile management is unavailable."}
+                )
+                await self.broadcast_state()
+                return
+            if not removed:
+                await self.broadcast(
+                    {
+                        "type": "system",
+                        "text": f"org > {target.display_name} was not assigned to group: {normalized_group}",
+                    }
+                )
+                await self.broadcast_state()
+                return
+            append_audit_event(
+                self.session_audit,
+                "unassign_group",
+                f"{self.active_user.display_name} removed {target.display_name} from group {normalized_group}",
+            )
+            await self.broadcast(
+                {
+                    "type": "system",
+                    "text": f"org > {target.display_name} removed from group: {normalized_group}",
+                }
+            )
+            await self.broadcast_state()
+        elif command_name == "notify-department":
+            allowed, reason = check_privilege(self.active_user, self.user_manager, "all")
+            if not allowed or self.active_user is None:
+                await self.broadcast({"type": "system", "text": f"access > {reason}"})
+                await self.broadcast_state()
+                return
+            parts = raw_cmd.split(maxsplit=2)
+            if len(parts) != 3:
+                await self.broadcast(
+                    {
+                        "type": "system",
+                        "text": "notify-department > usage: notify-department [department] [message]",
+                    }
+                )
+                await self.broadcast_state()
+                return
+            _, department, message = parts
+            recipient_count, normalized_department = await asyncio.to_thread(
+                queue_department_notifications,
+                self.notification_store,
+                self.user_manager,
+                self.profile_manager,
+                department,
+                message,
+                self.active_user.role.strip().lower() or "guardian",
+            )
+            append_audit_event(
+                self.session_audit,
+                "notify_department",
+                (
+                    f"{self.active_user.display_name} notified department "
+                    f"{normalized_department or department.strip().lower()} ({recipient_count} recipients)"
+                ),
+            )
+            await self.broadcast(
+                {
+                    "type": "system",
+                    "text": (
+                        f"org > Department {normalized_department or department.strip().lower()} "
+                        f"notified ({recipient_count} recipient(s))."
                     ),
                 }
             )
@@ -1317,6 +1623,12 @@ class InterfaceServer:
                 'join > Type "whoami" to see your session details.',
             ):
                 await self.broadcast({"type": "system", "text": line})
+            for line in await asyncio.to_thread(
+                deliver_pending_notifications,
+                self.notification_store,
+                created.user_id,
+            ):
+                await self.broadcast({"type": "system", "text": line})
             await self._broadcast_onboarding_start()
             await self.broadcast_state()
         elif command_name == "invites":
@@ -1373,6 +1685,7 @@ class InterfaceServer:
                 self.user_log,
                 self.realm_manager,
                 self.active_user,
+                self.profile_manager,
             )
             await self.broadcast({"type": "admin_data", **admin_data})
         elif command_name == "tool-registry":

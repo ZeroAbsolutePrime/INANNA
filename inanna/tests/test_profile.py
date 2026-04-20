@@ -5,15 +5,18 @@ import unittest
 from pathlib import Path
 from tempfile import TemporaryDirectory
 
-from core.profile import CommunicationObserver, ProfileManager, UserProfile
+from core.profile import CommunicationObserver, NotificationStore, ProfileManager, UserProfile
 from main import (
     PROFILE_PROTECTED_CLEAR_FIELDS,
+    assign_profile_membership,
     clear_communication_observations,
     coerce_profile_field_value,
+    deliver_pending_notifications,
     format_profile_output,
     needs_onboarding,
     parse_profile_clear_command,
     parse_profile_edit_command,
+    unassign_profile_membership,
 )
 
 
@@ -398,6 +401,192 @@ class ProfileTests(unittest.TestCase):
         self.assertEqual(profile.preferred_length, "")
         self.assertEqual(profile.formality, "")
         self.assertEqual(profile.observed_patterns, [])
+
+    def test_notification_store_add_persists_notification(self) -> None:
+        _, root, _ = self.make_manager()
+        store = NotificationStore(root / "notifications")
+
+        store.add(
+            "user_123",
+            {
+                "notification_id": "notif-1",
+                "from": "guardian",
+                "department": "engineering",
+                "message": "Standup in 10 minutes.",
+                "created_at": "2026-04-20T10:00:00+00:00",
+                "delivered": False,
+            },
+        )
+
+        payload = json.loads((root / "notifications" / "user_123.json").read_text(encoding="utf-8"))
+        self.assertEqual(len(payload), 1)
+        self.assertEqual(payload[0]["message"], "Standup in 10 minutes.")
+
+    def test_notification_store_load_pending_returns_only_undelivered_records(self) -> None:
+        _, root, _ = self.make_manager()
+        store = NotificationStore(root / "notifications")
+        (root / "notifications" / "user_123.json").write_text(
+            json.dumps(
+                [
+                    {
+                        "notification_id": "notif-1",
+                        "from": "guardian",
+                        "department": "engineering",
+                        "message": "Pending.",
+                        "created_at": "2026-04-20T10:00:00+00:00",
+                        "delivered": False,
+                    },
+                    {
+                        "notification_id": "notif-2",
+                        "from": "guardian",
+                        "department": "engineering",
+                        "message": "Delivered.",
+                        "created_at": "2026-04-20T10:05:00+00:00",
+                        "delivered": True,
+                    },
+                ],
+                indent=2,
+            ),
+            encoding="utf-8",
+        )
+
+        pending = store.load_pending("user_123")
+
+        self.assertEqual(len(pending), 1)
+        self.assertEqual(pending[0]["notification_id"], "notif-1")
+
+    def test_notification_store_mark_delivered_marks_target_record(self) -> None:
+        _, root, _ = self.make_manager()
+        store = NotificationStore(root / "notifications")
+        store.add(
+            "user_123",
+            {
+                "notification_id": "notif-1",
+                "from": "guardian",
+                "department": "engineering",
+                "message": "Ping.",
+                "created_at": "2026-04-20T10:00:00+00:00",
+                "delivered": False,
+            },
+        )
+
+        marked = store.mark_delivered("user_123", "notif-1")
+        payload = json.loads((root / "notifications" / "user_123.json").read_text(encoding="utf-8"))
+
+        self.assertTrue(marked)
+        self.assertTrue(payload[0]["delivered"])
+
+    def test_notification_store_clear_delivered_removes_delivered_records(self) -> None:
+        _, root, _ = self.make_manager()
+        store = NotificationStore(root / "notifications")
+        (root / "notifications" / "user_123.json").write_text(
+            json.dumps(
+                [
+                    {
+                        "notification_id": "notif-1",
+                        "from": "guardian",
+                        "department": "engineering",
+                        "message": "Delivered.",
+                        "created_at": "2026-04-20T10:00:00+00:00",
+                        "delivered": True,
+                    },
+                    {
+                        "notification_id": "notif-2",
+                        "from": "guardian",
+                        "department": "engineering",
+                        "message": "Pending.",
+                        "created_at": "2026-04-20T10:05:00+00:00",
+                        "delivered": False,
+                    },
+                ],
+                indent=2,
+            ),
+            encoding="utf-8",
+        )
+
+        store.clear_delivered("user_123")
+        payload = json.loads((root / "notifications" / "user_123.json").read_text(encoding="utf-8"))
+
+        self.assertEqual(len(payload), 1)
+        self.assertEqual(payload[0]["notification_id"], "notif-2")
+
+    def test_assign_profile_membership_updates_department(self) -> None:
+        _, _, manager = self.make_manager()
+        manager.ensure_profile_exists("user_123")
+
+        updated, department = assign_profile_membership(
+            manager,
+            "user_123",
+            "departments",
+            "Engineering",
+        )
+
+        self.assertTrue(updated)
+        self.assertEqual(department, "engineering")
+        self.assertEqual(manager.load("user_123").departments, ["engineering"])
+
+    def test_assign_profile_membership_updates_group(self) -> None:
+        _, _, manager = self.make_manager()
+        manager.ensure_profile_exists("user_123")
+
+        updated, group = assign_profile_membership(
+            manager,
+            "user_123",
+            "groups",
+            "Core Team",
+        )
+
+        self.assertTrue(updated)
+        self.assertEqual(group, "core team")
+        self.assertEqual(manager.load("user_123").groups, ["core team"])
+
+    def test_duplicate_department_assignment_is_idempotent(self) -> None:
+        _, _, manager = self.make_manager()
+        manager.save(UserProfile(user_id="user_123", departments=["engineering"]))
+
+        assign_profile_membership(manager, "user_123", "departments", "Engineering")
+        assign_profile_membership(manager, "user_123", "departments", "engineering")
+
+        self.assertEqual(manager.load("user_123").departments, ["engineering"])
+
+    def test_unassign_missing_department_returns_gracefully(self) -> None:
+        _, _, manager = self.make_manager()
+        manager.save(UserProfile(user_id="user_123", departments=["engineering"]))
+
+        updated, removed, department = unassign_profile_membership(
+            manager,
+            "user_123",
+            "departments",
+            "research",
+        )
+
+        self.assertTrue(updated)
+        self.assertFalse(removed)
+        self.assertEqual(department, "research")
+        self.assertEqual(manager.load("user_123").departments, ["engineering"])
+
+    def test_deliver_pending_notifications_marks_and_clears_records(self) -> None:
+        _, root, _ = self.make_manager()
+        store = NotificationStore(root / "notifications")
+        store.add(
+            "user_123",
+            {
+                "notification_id": "notif-1",
+                "from": "guardian",
+                "department": "engineering",
+                "message": "Standup in 10 minutes.",
+                "created_at": "2026-04-20T10:00:00+00:00",
+                "delivered": False,
+            },
+        )
+
+        lines = deliver_pending_notifications(store, "user_123")
+
+        self.assertEqual(
+            lines,
+            ["\U0001F4E2 [engineering notification] Standup in 10 minutes."],
+        )
+        self.assertFalse((root / "notifications" / "user_123.json").exists())
 
 
 if __name__ == "__main__":

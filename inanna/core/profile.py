@@ -135,6 +135,70 @@ class ProfileManager:
         return ""
 
 
+class NotificationStore:
+    def __init__(self, notifications_dir: Path) -> None:
+        self.notifications_dir = notifications_dir
+        self.notifications_dir.mkdir(parents=True, exist_ok=True)
+
+    def _path(self, user_id: str) -> Path:
+        return self.notifications_dir / f"{user_id}.json"
+
+    def _load_all(self, user_id: str) -> list[dict[str, Any]]:
+        path = self._path(user_id)
+        if not path.exists():
+            return []
+        try:
+            data = json.loads(path.read_text(encoding="utf-8"))
+        except Exception:
+            return []
+        if not isinstance(data, list):
+            return []
+        return [item for item in data if isinstance(item, dict)]
+
+    def _save_all(self, user_id: str, notifications: list[dict[str, Any]]) -> None:
+        self._path(user_id).write_text(
+            json.dumps(notifications, indent=2, ensure_ascii=False),
+            encoding="utf-8",
+        )
+
+    def add(self, user_id: str, notification: dict[str, Any]) -> None:
+        notifications = self._load_all(user_id)
+        notifications.append(dict(notification))
+        self._save_all(user_id, notifications)
+
+    def load_pending(self, user_id: str) -> list[dict[str, Any]]:
+        return [
+            dict(notification)
+            for notification in self._load_all(user_id)
+            if not bool(notification.get("delivered", False))
+        ]
+
+    def mark_delivered(self, user_id: str, notification_id: str) -> bool:
+        notifications = self._load_all(user_id)
+        changed = False
+        for notification in notifications:
+            if str(notification.get("notification_id", "")).strip() != notification_id:
+                continue
+            notification["delivered"] = True
+            changed = True
+        if changed:
+            self._save_all(user_id, notifications)
+        return changed
+
+    def clear_delivered(self, user_id: str) -> None:
+        path = self._path(user_id)
+        notifications = [
+            notification
+            for notification in self._load_all(user_id)
+            if not bool(notification.get("delivered", False))
+        ]
+        if notifications:
+            self._save_all(user_id, notifications)
+            return
+        if path.exists():
+            path.unlink()
+
+
 class CommunicationObserver:
     """Observes conversation patterns and updates the user profile silently."""
 

@@ -14,7 +14,7 @@ from core.faculty_monitor import FacultyMonitor
 from core.memory import Memory
 from core.nammu import IntentClassifier
 from core.operator import ToolResult
-from core.profile import ProfileManager
+from core.profile import NotificationStore, ProfileManager
 from core.process_monitor import ProcessMonitor
 from core.proposal import Proposal
 from core.realm import RealmManager
@@ -490,6 +490,12 @@ class CommandTests(unittest.TestCase):
                 "whoami",
                 "my-profile",
                 "view-profile",
+                "my-departments",
+                "assign-department",
+                "unassign-department",
+                "assign-group",
+                "unassign-group",
+                "notify-department",
                 "reflect",
                 "analyse",
                 "audit",
@@ -531,7 +537,8 @@ class CommandTests(unittest.TestCase):
             startup_commands_line(),
             (
                 "Commands: users, create-user, login, logout, whoami, my-profile, view-profile, "
-                "reflect, analyse, audit, guardian, faculties, realms, create-realm, realm-context, switch-user, "
+                "my-departments, assign-department, unassign-department, assign-group, "
+                "unassign-group, notify-department, reflect, analyse, audit, guardian, faculties, realms, create-realm, realm-context, switch-user, "
                 "assign-realm, unassign-realm, my-log, user-log, invite, join, invites, "
                 "admin-surface, tool-registry, faculty-registry, network-status, process-status, history, proposal-history, routing-log, nammu-log, "
                 "memory-log, body, status, diagnostics, guardian-dismiss, "
@@ -759,6 +766,192 @@ class CommandTests(unittest.TestCase):
 
         self.assertIn(f"Profile for Alice ({target.user_id}):", result)
         self.assertIn("Preferred    Alicia", result)
+
+    def test_my_departments_reports_current_context(self) -> None:
+        (
+            session,
+            memory,
+            proposal,
+            state_report,
+            engine,
+            analyst,
+            classifier,
+            routing_log,
+            startup_context,
+            config,
+        ) = self.make_runtime()
+        root = session.session_path.parent.parent
+        user_manager, session_state, token_store, user_log, faculty_monitor = self.make_user_context(root)
+        profile_manager = ProfileManager(root / "profiles")
+        active_user = session_state["active_user"]
+        assert active_user is not None
+        profile_manager.update_field(active_user.user_id, "departments", ["engineering", "research"])
+        profile_manager.update_field(active_user.user_id, "groups", ["core-team"])
+
+        result = handle_command(
+            "my-departments",
+            session,
+            memory,
+            proposal,
+            state_report,
+            engine,
+            analyst,
+            classifier,
+            routing_log,
+            startup_context,
+            config,
+            user_manager=user_manager,
+            session_state=session_state,  # type: ignore[arg-type]
+            token_store=token_store,
+            user_log=user_log,
+            faculty_monitor=faculty_monitor,
+            profile_manager=profile_manager,
+        )
+
+        self.assertIn("Your organizational context:", result)
+        self.assertIn("Departments  engineering, research", result)
+        self.assertIn("Groups       core-team", result)
+
+    def test_assign_department_updates_target_profile(self) -> None:
+        (
+            session,
+            memory,
+            proposal,
+            state_report,
+            engine,
+            analyst,
+            classifier,
+            routing_log,
+            startup_context,
+            config,
+        ) = self.make_runtime()
+        root = session.session_path.parent.parent
+        user_manager, session_state, token_store, user_log, faculty_monitor = self.make_user_context(root)
+        profile_manager = ProfileManager(root / "profiles")
+        guardian_user = session_state["active_user"]
+        assert guardian_user is not None
+        target = user_manager.create_user("Alice", "user", ["default"], guardian_user.user_id)
+
+        result = handle_command(
+            "assign-department Alice Engineering",
+            session,
+            memory,
+            proposal,
+            state_report,
+            engine,
+            analyst,
+            classifier,
+            routing_log,
+            startup_context,
+            config,
+            user_manager=user_manager,
+            session_state=session_state,  # type: ignore[arg-type]
+            token_store=token_store,
+            user_log=user_log,
+            faculty_monitor=faculty_monitor,
+            profile_manager=profile_manager,
+            session_audit=[],
+        )
+
+        self.assertEqual("org > Alice assigned to department: engineering", result)
+        self.assertEqual(profile_manager.load(target.user_id).departments, ["engineering"])
+
+    def test_unassign_group_removes_target_membership(self) -> None:
+        (
+            session,
+            memory,
+            proposal,
+            state_report,
+            engine,
+            analyst,
+            classifier,
+            routing_log,
+            startup_context,
+            config,
+        ) = self.make_runtime()
+        root = session.session_path.parent.parent
+        user_manager, session_state, token_store, user_log, faculty_monitor = self.make_user_context(root)
+        profile_manager = ProfileManager(root / "profiles")
+        guardian_user = session_state["active_user"]
+        assert guardian_user is not None
+        target = user_manager.create_user("Alice", "user", ["default"], guardian_user.user_id)
+        profile_manager.update_field(target.user_id, "groups", ["facilitators"])
+
+        result = handle_command(
+            "unassign-group Alice facilitators",
+            session,
+            memory,
+            proposal,
+            state_report,
+            engine,
+            analyst,
+            classifier,
+            routing_log,
+            startup_context,
+            config,
+            user_manager=user_manager,
+            session_state=session_state,  # type: ignore[arg-type]
+            token_store=token_store,
+            user_log=user_log,
+            faculty_monitor=faculty_monitor,
+            profile_manager=profile_manager,
+            session_audit=[],
+        )
+
+        self.assertEqual("org > Alice removed from group: facilitators", result)
+        self.assertEqual(profile_manager.load(target.user_id).groups, [])
+
+    def test_notify_department_queues_notifications_for_matching_users(self) -> None:
+        (
+            session,
+            memory,
+            proposal,
+            state_report,
+            engine,
+            analyst,
+            classifier,
+            routing_log,
+            startup_context,
+            config,
+        ) = self.make_runtime()
+        root = session.session_path.parent.parent
+        user_manager, session_state, token_store, user_log, faculty_monitor = self.make_user_context(root)
+        profile_manager = ProfileManager(root / "profiles")
+        guardian_user = session_state["active_user"]
+        assert guardian_user is not None
+        alice = user_manager.create_user("Alice", "user", ["default"], guardian_user.user_id)
+        bob = user_manager.create_user("Bob", "user", ["default"], guardian_user.user_id)
+        profile_manager.update_field(alice.user_id, "departments", ["engineering"])
+        profile_manager.update_field(bob.user_id, "departments", ["research"])
+
+        result = handle_command(
+            "notify-department engineering Standup in 10 minutes.",
+            session,
+            memory,
+            proposal,
+            state_report,
+            engine,
+            analyst,
+            classifier,
+            routing_log,
+            startup_context,
+            config,
+            user_manager=user_manager,
+            session_state=session_state,  # type: ignore[arg-type]
+            token_store=token_store,
+            user_log=user_log,
+            faculty_monitor=faculty_monitor,
+            profile_manager=profile_manager,
+            session_audit=[],
+        )
+
+        alice_notifications = json.loads(
+            (root / "notifications" / f"{alice.user_id}.json").read_text(encoding="utf-8")
+        )
+        self.assertEqual("org > Department engineering notified (1 recipient(s)).", result)
+        self.assertEqual(len(alice_notifications), 1)
+        self.assertEqual(alice_notifications[0]["department"], "engineering")
+        self.assertFalse((root / "notifications" / f"{bob.user_id}.json").exists())
 
     def test_tool_registry_command_lists_registered_tools(self) -> None:
         (
@@ -1007,6 +1200,7 @@ class CommandTests(unittest.TestCase):
         guardian_user = session_state["active_user"]
         assert guardian_user is not None
         user_log = UserLog(root / "user_logs")
+        profile_manager = ProfileManager(root / "profiles")
         user_log.append(
             guardian_user.user_id,
             session.session_id,
@@ -1018,6 +1212,11 @@ class CommandTests(unittest.TestCase):
         realm_manager.ensure_default_realm()
         realm_manager.create_realm("work", purpose="Focused work.")
         user_manager.create_user("Alice", "user", ["work"], guardian_user.user_id)
+        profile_manager.update_field(guardian_user.user_id, "departments", ["oversight"])
+        alice = user_manager.get_user_by_display_name("Alice")
+        assert alice is not None
+        profile_manager.update_field(alice.user_id, "departments", ["engineering"])
+        profile_manager.update_field(alice.user_id, "groups", ["core-team"])
         user_manager.create_invite("user", ["work"], guardian_user.user_id)
 
         result = handle_command(
@@ -1036,12 +1235,15 @@ class CommandTests(unittest.TestCase):
             user_manager=user_manager,
             session_state=session_state,  # type: ignore[arg-type]
             user_log=user_log,
+            profile_manager=profile_manager,
         )
 
         self.assertIn("admin-surface > Users: 2  Invites: 1  Realms: 2", result)
         self.assertIn("USERS", result)
         self.assertIn("ZAERA", result)
         self.assertIn("Alice", result)
+        self.assertIn("departments: engineering", result)
+        self.assertIn("groups: core-team", result)
         self.assertIn("INVITES", result)
         self.assertIn("REALMS", result)
         self.assertIn("[work]", result)
@@ -1344,6 +1546,65 @@ class CommandTests(unittest.TestCase):
         self.assertIn("whoami > Alice (user)", whoami_result)
         self.assertIn("whoami > session token:", whoami_result)
         self.assertEqual(logout_result, "logout > session ended for Alice")
+
+    def test_login_delivers_pending_department_notifications(self) -> None:
+        (
+            session,
+            memory,
+            proposal,
+            state_report,
+            engine,
+            analyst,
+            classifier,
+            routing_log,
+            startup_context,
+            config,
+        ) = self.make_runtime()
+        root = session.session_path.parent.parent
+        user_manager, session_state, token_store, user_log, faculty_monitor = self.make_user_context(
+            root
+        )
+        profile_manager = ProfileManager(root / "profiles")
+        alice = user_manager.create_user("Alice", "user", ["default"], "system")
+        profile_manager.ensure_profile_exists(alice.user_id)
+        NotificationStore(root / "notifications").add(
+            alice.user_id,
+            {
+                "notification_id": "notif-1",
+                "from": "guardian",
+                "department": "engineering",
+                "message": "Standup in 10 minutes.",
+                "created_at": "2026-04-20T10:00:00+00:00",
+                "delivered": False,
+            },
+        )
+
+        login_result = handle_command(
+            "login Alice",
+            session,
+            memory,
+            proposal,
+            state_report,
+            engine,
+            analyst,
+            classifier,
+            routing_log,
+            startup_context,
+            config,
+            user_manager=user_manager,
+            session_state=session_state,  # type: ignore[arg-type]
+            token_store=token_store,
+            user_log=user_log,
+            faculty_monitor=faculty_monitor,
+            session_audit=[],
+            profile_manager=profile_manager,
+        )
+
+        self.assertIn(
+            "\U0001F4E2 [engineering notification] Standup in 10 minutes.",
+            login_result,
+        )
+        self.assertFalse((root / "notifications" / f"{alice.user_id}.json").exists())
 
     def test_faculties_command_returns_faculty_monitor_report(self) -> None:
         (

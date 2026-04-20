@@ -7,6 +7,7 @@ from dataclasses import MISSING
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
+from uuid import uuid4
 
 from dotenv import load_dotenv
 
@@ -26,7 +27,13 @@ from core.nammu_memory import (
 )
 from core.orchestration import OrchestrationEngine, OrchestrationPlan
 from core.operator import OperatorFaculty, ToolResult
-from core.profile import CommunicationObserver, ProfileManager, UserProfile, utc_now
+from core.profile import (
+    CommunicationObserver,
+    NotificationStore,
+    ProfileManager,
+    UserProfile,
+    utc_now,
+)
 from core.process_monitor import ProcessMonitor
 from core.proposal import Proposal
 from core.realm import DEFAULT_REALM, RealmConfig, RealmManager
@@ -65,6 +72,12 @@ STARTUP_COMMANDS = (
     "whoami",
     "my-profile",
     "view-profile",
+    "my-departments",
+    "assign-department",
+    "unassign-department",
+    "assign-group",
+    "unassign-group",
+    "notify-department",
     "reflect",
     "analyse",
     "audit",
@@ -744,6 +757,139 @@ def clear_communication_observations(
     return True
 
 
+def normalize_org_value(value: str) -> str:
+    return " ".join(value.strip().lower().split())
+
+
+def assign_profile_membership(
+    profile_manager: ProfileManager | None,
+    user_id: str,
+    field_name: str,
+    value: str,
+) -> tuple[bool, str]:
+    if profile_manager is None or not user_id or field_name not in {"departments", "groups"}:
+        return False, ""
+    normalized = normalize_org_value(value)
+    if not normalized:
+        return False, ""
+    profile = profile_manager.ensure_profile_exists(user_id)
+    current_values: list[str] = []
+    for item in getattr(profile, field_name, []) or []:
+        cleaned = normalize_org_value(str(item))
+        if cleaned and cleaned not in current_values:
+            current_values.append(cleaned)
+    if normalized not in current_values:
+        current_values.append(normalized)
+    if list(getattr(profile, field_name, [])) != current_values:
+        profile_manager.update_field(user_id, field_name, current_values)
+    return True, normalized
+
+
+def unassign_profile_membership(
+    profile_manager: ProfileManager | None,
+    user_id: str,
+    field_name: str,
+    value: str,
+) -> tuple[bool, bool, str]:
+    if profile_manager is None or not user_id or field_name not in {"departments", "groups"}:
+        return False, False, ""
+    normalized = normalize_org_value(value)
+    if not normalized:
+        return False, False, ""
+    profile = profile_manager.ensure_profile_exists(user_id)
+    current_values: list[str] = []
+    for item in getattr(profile, field_name, []) or []:
+        cleaned = normalize_org_value(str(item))
+        if cleaned and cleaned not in current_values:
+            current_values.append(cleaned)
+    removed = normalized in current_values
+    next_values = [item for item in current_values if item != normalized]
+    if list(getattr(profile, field_name, [])) != next_values:
+        profile_manager.update_field(user_id, field_name, next_values)
+    return True, removed, normalized
+
+
+def notification_store_from_profile_manager(
+    profile_manager: ProfileManager | None,
+) -> NotificationStore | None:
+    if profile_manager is None:
+        return None
+    return NotificationStore(profile_manager.profiles_dir.parent / "notifications")
+
+
+def build_organizational_context_report(profile: UserProfile) -> str:
+    return "\n".join(
+        [
+            "Your organizational context:",
+            "",
+            f"  {'Departments':<12} {format_profile_value(profile.departments)}",
+            f"  {'Groups':<12} {format_profile_value(profile.groups)}",
+            "",
+            'Type "assign-department [dept]" to request assignment (Guardian approves).',
+        ]
+    )
+
+
+def queue_department_notifications(
+    notification_store: NotificationStore | None,
+    user_manager: UserManager | None,
+    profile_manager: ProfileManager | None,
+    department: str,
+    message: str,
+    sender: str,
+) -> tuple[int, str]:
+    if notification_store is None or user_manager is None or profile_manager is None:
+        return 0, ""
+    normalized_department = normalize_org_value(department)
+    message_text = message.strip()
+    if not normalized_department or not message_text:
+        return 0, normalized_department
+    recipients = 0
+    for record in user_manager.list_users():
+        profile = profile_manager.load(record.user_id)
+        if profile is None:
+            continue
+        departments = [
+            normalize_org_value(str(item))
+            for item in profile.departments
+            if normalize_org_value(str(item))
+        ]
+        if normalized_department not in departments:
+            continue
+        notification_store.add(
+            record.user_id,
+            {
+                "notification_id": f"notif-{uuid4().hex[:12]}",
+                "from": sender,
+                "department": normalized_department,
+                "message": message_text,
+                "created_at": utc_now(),
+                "delivered": False,
+            },
+        )
+        recipients += 1
+    return recipients, normalized_department
+
+
+def deliver_pending_notifications(
+    notification_store: NotificationStore | None,
+    user_id: str,
+) -> list[str]:
+    if notification_store is None or not user_id:
+        return []
+    lines: list[str] = []
+    pending = notification_store.load_pending(user_id)
+    for notification in pending:
+        department = normalize_org_value(str(notification.get("department", ""))) or "department"
+        message = str(notification.get("message", "")).strip()
+        lines.append(f"\U0001F4E2 [{department} notification] {message}".strip())
+        notification_id = str(notification.get("notification_id", "")).strip()
+        if notification_id:
+            notification_store.mark_delivered(user_id, notification_id)
+    notification_store.clear_delivered(user_id)
+    return lines
+
+
 def collect_session_user_messages(session: Session) -> list[str]:
     messages: list[str] = []
     for event in session.events:
@@ -1027,6 +1173,7 @@ def build_admin_surface_payload(
     user_log: UserLog,
     realm_manager: RealmManager,
     active_user: UserRecord | None,
+    profile_manager: ProfileManager | None = None,
 ) -> dict[str, object]:
     scope_realms = admin_scope_realms(active_user)
     full_access = (
@@ -1038,18 +1185,23 @@ def build_admin_surface_payload(
         user_manager.list_users(),
         key=lambda record: (record.display_name.lower(), record.user_id),
     )
-    visible_users = [
-        {
-            "user_id": record.user_id,
-            "display_name": record.display_name,
-            "role": record.role,
-            "assigned_realms": list(record.assigned_realms),
-            "status": record.status,
-            "log_count": user_log.entry_count(record.user_id),
-        }
-        for record in all_users
-        if full_access or record_matches_admin_scope(record.assigned_realms, scope_realms)
-    ]
+    visible_users: list[dict[str, object]] = []
+    for record in all_users:
+        if not full_access and not record_matches_admin_scope(record.assigned_realms, scope_realms):
+            continue
+        profile = profile_manager.load(record.user_id) if profile_manager is not None else None
+        visible_users.append(
+            {
+                "user_id": record.user_id,
+                "display_name": record.display_name,
+                "role": record.role,
+                "assigned_realms": list(record.assigned_realms),
+                "departments": list(profile.departments) if profile is not None else [],
+                "groups": list(profile.groups) if profile is not None else [],
+                "status": record.status,
+                "log_count": user_log.entry_count(record.user_id),
+            }
+        )
     visible_invites = [
         {
             "invite_code": invite.invite_code,
@@ -1113,12 +1265,16 @@ def build_admin_surface_report(admin_data: dict[str, object]) -> str:
     else:
         for record in users:
             realms_text = format_realm_names(list(record.get("assigned_realms", [])))
+            departments_text = format_realm_names(list(record.get("departments", [])))
+            groups_text = format_realm_names(list(record.get("groups", [])))
             lines.append(
                 "  "
                 f"{record.get('display_name', '')} "
                 f"[{record.get('role', '')}] "
                 f"{record.get('status', '')} "
                 f"realms: {realms_text} "
+                f"departments: {departments_text} "
+                f"groups: {groups_text} "
                 f"log: {record.get('log_count', 0)}"
             )
     lines.extend(["", "INVITES"])
@@ -2641,11 +2797,13 @@ def handle_command(
         )
         refresh_startup_context(startup_context, memory, target, user_manager)
         sync_profile_grounding(engine, profile_manager, target, token)
+        notification_store = notification_store_from_profile_manager(profile_manager)
         lines = [
             f"login > session started for {target.display_name} ({target.role})",
             f"login > token: {token_preview(token)} valid for 8 hours",
             f"login > session bound to user_id: {target.user_id}",
         ]
+        lines.extend(deliver_pending_notifications(notification_store, target.user_id))
         lines.extend(
             f"onboarding > {message}"
             for message in begin_onboarding_if_needed(
@@ -2702,6 +2860,21 @@ def handle_command(
         if profile is None:
             return "my-profile > profile management is unavailable."
         return format_profile_output(profile, display_name or current_user.display_name)
+
+    if lowered == "my-departments":
+        if user_manager is None or active_token is None or current_user is None:
+            return 'my-departments > No active session. Type "login [name]" to identify.'
+        allowed, reason = check_privilege(current_user, user_manager, "converse")
+        if not allowed:
+            return f"access > {reason}"
+        _, _, profile = resolve_profile_subject(
+            profile_manager,
+            current_user,
+            active_token,
+        )
+        if profile is None:
+            return "my-departments > profile management is unavailable."
+        return build_organizational_context_report(profile)
 
     if lowered.startswith("my-profile edit"):
         if user_manager is None or active_token is None or current_user is None:
@@ -2801,6 +2974,154 @@ def handle_command(
             target.display_name,
             heading=f"Profile for {target.display_name} ({target.user_id}):",
             include_actions=False,
+        )
+
+    if lowered.startswith("assign-department"):
+        if user_manager is None or current_user is None:
+            return "assign-department > user management is unavailable."
+        allowed, reason = check_privilege(current_user, user_manager, "all")
+        if not allowed:
+            return f"access > {reason}"
+        parsed = parse_user_realm_command(normalized, "assign-department")
+        if parsed is None:
+            return "assign-department > usage: assign-department [display_name] [department]"
+        display_name, department = parsed
+        target = user_manager.get_user_by_display_name(display_name)
+        if target is None:
+            return f"assign-department > No user found: {display_name}"
+        updated, normalized_department = assign_profile_membership(
+            profile_manager,
+            target.user_id,
+            "departments",
+            department,
+        )
+        if not updated:
+            return "assign-department > profile management is unavailable."
+        append_audit_event(
+            session_audit,
+            "assign_department",
+            f"{current_user.display_name} assigned {target.display_name} to department {normalized_department}",
+        )
+        return f"org > {target.display_name} assigned to department: {normalized_department}"
+
+    if lowered.startswith("unassign-department"):
+        if user_manager is None or current_user is None:
+            return "unassign-department > user management is unavailable."
+        allowed, reason = check_privilege(current_user, user_manager, "all")
+        if not allowed:
+            return f"access > {reason}"
+        parsed = parse_user_realm_command(normalized, "unassign-department")
+        if parsed is None:
+            return "unassign-department > usage: unassign-department [display_name] [department]"
+        display_name, department = parsed
+        target = user_manager.get_user_by_display_name(display_name)
+        if target is None:
+            return f"unassign-department > No user found: {display_name}"
+        updated, removed, normalized_department = unassign_profile_membership(
+            profile_manager,
+            target.user_id,
+            "departments",
+            department,
+        )
+        if not updated:
+            return "unassign-department > profile management is unavailable."
+        if not removed:
+            return f"org > {target.display_name} was not assigned to department: {normalized_department}"
+        append_audit_event(
+            session_audit,
+            "unassign_department",
+            f"{current_user.display_name} removed {target.display_name} from department {normalized_department}",
+        )
+        return f"org > {target.display_name} removed from department: {normalized_department}"
+
+    if lowered.startswith("assign-group"):
+        if user_manager is None or current_user is None:
+            return "assign-group > user management is unavailable."
+        allowed, reason = check_privilege(current_user, user_manager, "all")
+        if not allowed:
+            return f"access > {reason}"
+        parsed = parse_user_realm_command(normalized, "assign-group")
+        if parsed is None:
+            return "assign-group > usage: assign-group [display_name] [group]"
+        display_name, group = parsed
+        target = user_manager.get_user_by_display_name(display_name)
+        if target is None:
+            return f"assign-group > No user found: {display_name}"
+        updated, normalized_group = assign_profile_membership(
+            profile_manager,
+            target.user_id,
+            "groups",
+            group,
+        )
+        if not updated:
+            return "assign-group > profile management is unavailable."
+        append_audit_event(
+            session_audit,
+            "assign_group",
+            f"{current_user.display_name} assigned {target.display_name} to group {normalized_group}",
+        )
+        return f"org > {target.display_name} assigned to group: {normalized_group}"
+
+    if lowered.startswith("unassign-group"):
+        if user_manager is None or current_user is None:
+            return "unassign-group > user management is unavailable."
+        allowed, reason = check_privilege(current_user, user_manager, "all")
+        if not allowed:
+            return f"access > {reason}"
+        parsed = parse_user_realm_command(normalized, "unassign-group")
+        if parsed is None:
+            return "unassign-group > usage: unassign-group [display_name] [group]"
+        display_name, group = parsed
+        target = user_manager.get_user_by_display_name(display_name)
+        if target is None:
+            return f"unassign-group > No user found: {display_name}"
+        updated, removed, normalized_group = unassign_profile_membership(
+            profile_manager,
+            target.user_id,
+            "groups",
+            group,
+        )
+        if not updated:
+            return "unassign-group > profile management is unavailable."
+        if not removed:
+            return f"org > {target.display_name} was not assigned to group: {normalized_group}"
+        append_audit_event(
+            session_audit,
+            "unassign_group",
+            f"{current_user.display_name} removed {target.display_name} from group {normalized_group}",
+        )
+        return f"org > {target.display_name} removed from group: {normalized_group}"
+
+    if lowered.startswith("notify-department"):
+        if user_manager is None or current_user is None:
+            return "notify-department > user management is unavailable."
+        allowed, reason = check_privilege(current_user, user_manager, "all")
+        if not allowed:
+            return f"access > {reason}"
+        parts = normalized.split(maxsplit=2)
+        if len(parts) != 3:
+            return "notify-department > usage: notify-department [department] [message]"
+        _, department, message = parts
+        notification_store = notification_store_from_profile_manager(profile_manager)
+        recipient_count, normalized_department = queue_department_notifications(
+            notification_store,
+            user_manager,
+            profile_manager,
+            department,
+            message,
+            current_user.role.strip().lower() or "guardian",
+        )
+        append_audit_event(
+            session_audit,
+            "notify_department",
+            (
+                f"{current_user.display_name} notified department "
+                f"{normalized_department or normalize_org_value(department)} ({recipient_count} recipients)"
+            ),
+        )
+        return (
+            f"org > Department {normalized_department or normalize_org_value(department)} "
+            f"notified ({recipient_count} recipient(s))."
         )
 
     if lowered == "faculties":
@@ -2906,6 +3227,7 @@ def handle_command(
         )
         refresh_startup_context(startup_context, memory, created, user_manager)
         sync_profile_grounding(engine, profile_manager, created, token)
+        notification_store = notification_store_from_profile_manager(profile_manager)
         lines = [
             f"join > Welcome, {created.display_name}.",
             "join > Your account has been created.",
@@ -2913,6 +3235,7 @@ def handle_command(
             "join > You are now logged in.",
             'join > Type "whoami" to see your session details.',
         ]
+        lines.extend(deliver_pending_notifications(notification_store, created.user_id))
         lines.extend(
             f"onboarding > {message}"
             for message in begin_onboarding_if_needed(
@@ -2955,6 +3278,7 @@ def handle_command(
                 user_log=user_log,
                 realm_manager=realm_manager,
                 active_user=current_user,
+                profile_manager=profile_manager,
             )
         )
 
