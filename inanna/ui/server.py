@@ -54,6 +54,9 @@ from main import (
     build_faculty_registry_payload,
     build_grounding_prefix,
     build_history_report,
+    begin_onboarding_if_needed,
+    complete_onboarding,
+    handle_onboarding_response,
     build_invites_report,
     build_memory_log_report,
     build_network_audit_entry,
@@ -87,13 +90,17 @@ from main import (
     initialize_realm_context,
     inspect_body_report,
     load_current_realm,
+    needs_onboarding,
     parse_user_realm_command,
     record_completed_turn,
+    reset_onboarding_state,
     run_sentinel_response as run_sentinel_backend_response,
     sentinel_response_mode,
+    ensure_guardian_profile_completed,
     startup_context_items,
     sync_profile_grounding,
     token_preview,
+    onboarding_question,
 )
 
 APP_ROOT = Path(__file__).resolve().parent.parent
@@ -203,7 +210,7 @@ class InterfaceServer:
             self.guardian_user.display_name,
             self.guardian_user.role,
         )
-        self.profile_manager.ensure_profile_exists(self.guardian_user.user_id)
+        ensure_guardian_profile_completed(self.profile_manager, self.guardian_user.user_id)
         self.active_token = self.guardian_token
         self.original_token = None
         self.user_log = UserLog(self.data_root / "user_logs")
@@ -243,6 +250,9 @@ class InterfaceServer:
         self.governance_blocks = 0
         self.tool_executions = 0
         self.conversation_state = {"turn_count": 0, "last_auto_memory_turn": 0}
+        self.onboarding_active = False
+        self.onboarding_step = 0
+        self.onboarding_responses: dict[str, Any] = {}
         print("Verifying model connection...")
         self.engine.verify_connection()
         self.analyst.fallback_mode = self.engine.fallback_mode
@@ -265,6 +275,7 @@ class InterfaceServer:
             session_dir=self.session_dir,
             context_summary=self.startup_context["summary_lines"],
         )
+        self._begin_onboarding_if_needed()
         self.connections: set[ServerConnection] = set()
         self.lock = asyncio.Lock()
 
@@ -312,6 +323,10 @@ class InterfaceServer:
     async def process_user_input(self, text: str) -> None:
         await self.broadcast({"type": "thinking", "active": True})
         try:
+            if self.onboarding_active:
+                await self._process_onboarding_input(text)
+                await self.broadcast_state()
+                return
             lowered = text.lower()
             command_name = lowered.split(" ", 1)[0]
             if command_name in set(STARTUP_COMMANDS) - {"analyse"}:
@@ -386,6 +401,60 @@ class InterfaceServer:
         self.startup_context = self.memory.load_startup_context(
             user_id=self._memory_scope_user_id()
         )
+
+    def _onboarding_state(self) -> dict[str, Any]:
+        return {
+            "onboarding_active": self.onboarding_active,
+            "onboarding_step": self.onboarding_step,
+            "onboarding_responses": dict(self.onboarding_responses),
+        }
+
+    def _apply_onboarding_state(self, state: dict[str, Any]) -> None:
+        self.onboarding_active = bool(state.get("onboarding_active", False))
+        self.onboarding_step = int(state.get("onboarding_step", 0))
+        self.onboarding_responses = dict(state.get("onboarding_responses", {}))
+
+    def _begin_onboarding_if_needed(self) -> list[str]:
+        state = self._onboarding_state()
+        messages = begin_onboarding_if_needed(
+            state,
+            self.profile_manager,
+            self.active_user,
+            self.active_token,
+        )
+        self._apply_onboarding_state(state)
+        return messages
+
+    def _current_onboarding_prompt(self) -> str:
+        if not self.onboarding_active:
+            return ""
+        return onboarding_question(self.onboarding_step)
+
+    async def _broadcast_onboarding_start(self) -> None:
+        messages = self._begin_onboarding_if_needed()
+        if not messages:
+            return
+        for index, message in enumerate(messages):
+            payload: dict[str, Any] = {"type": "onboarding", "text": message}
+            if index == 0:
+                payload["show_skip"] = True
+            await self.broadcast(payload)
+
+    async def _process_onboarding_input(self, text: str) -> None:
+        state = self._onboarding_state()
+        outcome = handle_onboarding_response(
+            state=state,
+            text=text,
+            profile_manager=self.profile_manager,
+            active_user=self.active_user,
+            active_token=self.active_token,
+            engine=self.engine,
+        )
+        self._apply_onboarding_state(state)
+        if outcome.get("completed"):
+            self._refresh_startup_context()
+        for message in outcome.get("messages", []):
+            await self.broadcast({"type": "onboarding", "text": message})
 
     def _visible_memory_report(self) -> dict[str, Any]:
         return self.memory.memory_log_report(user_id=self._memory_scope_user_id())
@@ -757,7 +826,10 @@ class InterfaceServer:
                 self.active_token = token
                 self.original_user = None
                 self.original_token = None
-                self.profile_manager.ensure_profile_exists(target.user_id)
+                if target.role.strip().lower() == "guardian":
+                    ensure_guardian_profile_completed(self.profile_manager, target.user_id)
+                else:
+                    self.profile_manager.ensure_profile_exists(target.user_id)
                 if self.guardian_user is not None and target.user_id == self.guardian_user.user_id:
                     self.guardian_token = token
                 append_audit_event(
@@ -772,6 +844,7 @@ class InterfaceServer:
                     f"login > session bound to user_id: {target.user_id}",
                 ):
                     await self.broadcast({"type": "system", "text": line})
+                await self._broadcast_onboarding_start()
             except Exception as exc:
                 await self.broadcast({"type": "system", "text": f"login > {exc}"})
             await self.broadcast_state()
@@ -792,6 +865,9 @@ class InterfaceServer:
                 self.original_token = None
                 self.original_user = None
                 self._refresh_startup_context()
+                onboarding_state = self._onboarding_state()
+                reset_onboarding_state(onboarding_state)
+                self._apply_onboarding_state(onboarding_state)
                 await self.broadcast(
                     {
                         "type": "system",
@@ -961,6 +1037,7 @@ class InterfaceServer:
                 'join > Type "whoami" to see your session details.',
             ):
                 await self.broadcast({"type": "system", "text": line})
+            await self._broadcast_onboarding_start()
             await self.broadcast_state()
         elif command_name == "invites":
             if self.active_user is None:
@@ -1181,6 +1258,7 @@ class InterfaceServer:
                         "text": f"switch-user > Returned to {guardian_record.display_name} ({guardian_record.role}).",
                     }
                 )
+                await self._broadcast_onboarding_start()
                 await self.broadcast_state()
                 return
             target = self.user_manager.get_user_by_display_name(target_name)
@@ -1191,6 +1269,10 @@ class InterfaceServer:
                 await self.broadcast_state()
                 return
             await asyncio.to_thread(self._finalize_auto_memory, "session end")
+            if target.role.strip().lower() == "guardian":
+                ensure_guardian_profile_completed(self.profile_manager, target.user_id)
+            else:
+                self.profile_manager.ensure_profile_exists(target.user_id)
             self.active_user = target
             self.original_user = guardian_record
             self._refresh_startup_context()
@@ -1209,6 +1291,7 @@ class InterfaceServer:
                 )
             for message in messages:
                 await self.broadcast({"type": "system", "text": message})
+            await self._broadcast_onboarding_start()
             await self.broadcast_state()
         elif command_name == "assign-realm":
             allowed, reason = check_privilege(self.active_user, self.user_manager, "all")
@@ -1787,6 +1870,13 @@ class InterfaceServer:
     async def send_initial_state(self, connection: ServerConnection) -> bool:
         visible_memory_report = self._visible_memory_report()
         status_payload = {"type": "status", "data": self.build_status_payload()}
+        active_profile = (
+            self.profile_manager.load(self.active_user.user_id)
+            if self.active_user is not None
+            else None
+        )
+        if not self.onboarding_active and needs_onboarding(active_profile):
+            self._begin_onboarding_if_needed()
         if self._connection_path(connection) == "/console" and not self._has_console_access():
             await self.send_json(connection, status_payload)
             await self.send_json(
@@ -1814,6 +1904,14 @@ class InterfaceServer:
                 {"type": "system", "text": "INANNA NYX interface online."},
             ]
         )
+        if self.onboarding_active:
+            payloads.append(
+                {
+                    "type": "onboarding",
+                    "text": self._current_onboarding_prompt(),
+                    "show_skip": self.onboarding_step == 0,
+                }
+            )
         for payload in payloads:
             await self.send_json(connection, payload)
         alerts, report = self.inspect_guardian()

@@ -25,7 +25,7 @@ from core.nammu_memory import (
 )
 from core.orchestration import OrchestrationEngine, OrchestrationPlan
 from core.operator import OperatorFaculty, ToolResult
-from core.profile import ProfileManager
+from core.profile import ProfileManager, UserProfile, utc_now
 from core.process_monitor import ProcessMonitor
 from core.proposal import Proposal
 from core.realm import DEFAULT_REALM, RealmConfig, RealmManager
@@ -103,6 +103,43 @@ SENTINEL_STUB_RESPONSE = (
     "SENTINEL Faculty is registered but not yet deployed. Activate it in the Faculty Registry."
 )
 SENTINEL_FALLBACK_PREFIX = "[sentinel fallback]"
+ONBOARDING_SKIP_ALL = "skip all"
+ONBOARDING_STEPS: tuple[dict[str, Any], ...] = (
+    {
+        "field": "preferred_name",
+        "prompt": "What would you like me to call you?",
+        "skip_phrases": {"", "skip", "no preference"},
+    },
+    {
+        "field": "pronouns",
+        "prompt": (
+            "What pronouns do you use? For example: she/her, he/him, "
+            "they/them - or skip this if you prefer."
+        ),
+        "skip_phrases": {"", "skip", "prefer not"},
+    },
+    {
+        "field": "purpose",
+        "prompt": "What brings you here? What are you working on?",
+        "skip_phrases": {"skip"},
+    },
+    {
+        "field": "sensitive_domains",
+        "prompt": (
+            "Are there domains or topics you would like me to be especially "
+            "thoughtful about?"
+        ),
+        "skip_phrases": {"skip", "none"},
+    },
+    {
+        "field": "additional",
+        "prompt": (
+            "Is there anything else you would like me to know about you "
+            "that would help me serve you well?"
+        ),
+        "skip_phrases": {"skip", "nothing", "no"},
+    },
+)
 
 
 def get_active_realm_name() -> str:
@@ -519,6 +556,179 @@ def build_profile_status_payload(
         "onboarding_completed": profile.onboarding_completed,
         "departments": list(profile.departments),
         "pronouns": profile.pronouns,
+    }
+
+
+def needs_onboarding(profile: UserProfile | None) -> bool:
+    if profile is None:
+        return False
+    return not profile.onboarding_completed
+
+
+def ensure_guardian_profile_completed(
+    profile_manager: ProfileManager | None,
+    user_id: str,
+) -> UserProfile | None:
+    if profile_manager is None or not user_id:
+        return None
+    profile = profile_manager.ensure_profile_exists(user_id)
+    if not profile.onboarding_completed:
+        profile_manager.update_field(user_id, "onboarding_completed", True)
+    if not profile.onboarding_completed_at:
+        profile_manager.update_field(user_id, "onboarding_completed_at", utc_now())
+    return profile_manager.load(user_id)
+
+
+def reset_onboarding_state(state: dict[str, Any] | None) -> None:
+    if state is None:
+        return
+    state["onboarding_active"] = False
+    state["onboarding_step"] = 0
+    state["onboarding_responses"] = {}
+
+
+def activate_onboarding_state(state: dict[str, Any] | None) -> None:
+    if state is None:
+        return
+    state["onboarding_active"] = True
+    state["onboarding_step"] = 0
+    state["onboarding_responses"] = {}
+
+
+def build_onboarding_intro(display_name: str) -> str:
+    name = display_name.strip() or "friend"
+    return (
+        f"Welcome, {name}. Before we begin, I would like to welcome you properly. "
+        "I have five brief questions so I can serve you more thoughtfully. "
+        "You may answer in your own words, say skip, or say skip all to leave the survey."
+    )
+
+
+def onboarding_question(step_index: int) -> str:
+    bounded_index = max(0, min(step_index, len(ONBOARDING_STEPS) - 1))
+    return str(ONBOARDING_STEPS[bounded_index]["prompt"])
+
+
+def begin_onboarding_if_needed(
+    state: dict[str, Any] | None,
+    profile_manager: ProfileManager | None,
+    active_user: UserRecord | None,
+    active_token: SessionToken | None,
+) -> list[str]:
+    if state is None or profile_manager is None:
+        return []
+    user_id, display_name = profile_subject(active_user, active_token)
+    if not user_id:
+        reset_onboarding_state(state)
+        return []
+    if active_user is not None and active_user.role.strip().lower() == "guardian":
+        reset_onboarding_state(state)
+        return []
+    profile = profile_manager.load(user_id)
+    if not needs_onboarding(profile):
+        reset_onboarding_state(state)
+        return []
+    activate_onboarding_state(state)
+    return [build_onboarding_intro(display_name), onboarding_question(0)]
+
+
+def _record_onboarding_response(
+    responses: dict[str, Any],
+    step_index: int,
+    text: str,
+) -> None:
+    step = ONBOARDING_STEPS[step_index]
+    cleaned = text.strip()
+    lowered = cleaned.lower()
+    if lowered in step["skip_phrases"] or not cleaned:
+        return
+    field = str(step["field"])
+    if field in {"preferred_name", "pronouns"}:
+        responses[field] = cleaned
+        return
+    survey_responses = dict(responses.get("survey_responses", {}))
+    survey_responses[field] = cleaned
+    responses["survey_responses"] = survey_responses
+
+
+def complete_onboarding(
+    *,
+    profile_manager: ProfileManager | None,
+    active_user: UserRecord | None,
+    active_token: SessionToken | None,
+    engine: Engine | None,
+    responses: dict[str, Any] | None,
+) -> str:
+    user_id, display_name = profile_subject(active_user, active_token)
+    if not user_id or profile_manager is None:
+        return "Thank you. Let us begin."
+    collected = dict(responses or {})
+    preferred_name = str(collected.get("preferred_name", "")).strip()
+    pronouns = str(collected.get("pronouns", "")).strip()
+    survey_responses = dict(collected.get("survey_responses", {}))
+    if preferred_name:
+        profile_manager.update_field(user_id, "preferred_name", preferred_name)
+    if pronouns:
+        profile_manager.update_field(user_id, "pronouns", pronouns)
+    profile_manager.update_field(user_id, "survey_responses", survey_responses)
+    profile_manager.update_field(user_id, "onboarding_completed", True)
+    profile_manager.update_field(user_id, "onboarding_completed_at", utc_now())
+    sync_profile_grounding(engine, profile_manager, active_user, active_token)
+    name = profile_manager.display_name_for(user_id, fallback=display_name)
+    return (
+        f"Thank you, {name}. I will remember what you have shared. "
+        "You can update your profile at any time with the my-profile command. "
+        "Let us begin."
+    )
+
+
+def handle_onboarding_response(
+    *,
+    state: dict[str, Any] | None,
+    text: str,
+    profile_manager: ProfileManager | None,
+    active_user: UserRecord | None,
+    active_token: SessionToken | None,
+    engine: Engine | None,
+) -> dict[str, Any]:
+    if state is None or not state.get("onboarding_active"):
+        return {"handled": False, "messages": [], "completed": False}
+
+    cleaned = text.strip()
+    responses = dict(state.get("onboarding_responses", {}))
+    if cleaned.lower() == ONBOARDING_SKIP_ALL:
+        completion = complete_onboarding(
+            profile_manager=profile_manager,
+            active_user=active_user,
+            active_token=active_token,
+            engine=engine,
+            responses=responses,
+        )
+        reset_onboarding_state(state)
+        return {"handled": True, "messages": [completion], "completed": True}
+
+    step_index = int(state.get("onboarding_step", 0))
+    bounded_index = max(0, min(step_index, len(ONBOARDING_STEPS) - 1))
+    _record_onboarding_response(responses, bounded_index, cleaned)
+
+    next_step = bounded_index + 1
+    if next_step >= len(ONBOARDING_STEPS):
+        completion = complete_onboarding(
+            profile_manager=profile_manager,
+            active_user=active_user,
+            active_token=active_token,
+            engine=engine,
+            responses=responses,
+        )
+        reset_onboarding_state(state)
+        return {"handled": True, "messages": [completion], "completed": True}
+
+    state["onboarding_responses"] = responses
+    state["onboarding_step"] = next_step
+    return {
+        "handled": True,
+        "messages": [onboarding_question(next_step)],
+        "completed": False,
     }
 
 
@@ -2105,9 +2315,6 @@ def handle_command(
     profile_manager: ProfileManager | None = None,
 ) -> str | None:
     normalized = command.strip()
-    if not normalized:
-        return ""
-
     guardian_metrics = ensure_guardian_metrics(guardian_metrics)
     current_user = session_state.get("active_user") if session_state else None
     original_user = session_state.get("original_user") if session_state else None
@@ -2119,6 +2326,23 @@ def handle_command(
     current_realm = load_current_realm(realm_manager, active_realm)
     if current_realm is not None:
         active_realm_name = current_realm.name
+
+    if session_state is not None and session_state.get("onboarding_active"):
+        onboarding = handle_onboarding_response(
+            state=session_state,
+            text=normalized,
+            profile_manager=profile_manager,
+            active_user=current_user,
+            active_token=active_token,
+            engine=engine,
+        )
+        if onboarding["handled"]:
+            return "\n".join(
+                f"onboarding > {message}" for message in onboarding["messages"]
+            )
+
+    if not normalized:
+        return ""
 
     lowered = normalized.lower()
     orchestration_engine = orchestration_engine or OrchestrationEngine(FACULTIES_CONFIG_PATH)
@@ -2176,7 +2400,10 @@ def handle_command(
         token_store.revoke_all_for_user(target.user_id)
         token = token_store.issue(target.user_id, target.display_name, target.role)
         if profile_manager is not None:
-            profile_manager.ensure_profile_exists(target.user_id)
+            if target.role.strip().lower() == "guardian":
+                ensure_guardian_profile_completed(profile_manager, target.user_id)
+            else:
+                profile_manager.ensure_profile_exists(target.user_id)
         session_state["active_token"] = token
         session_state["active_user"] = target
         if guardian_user is not None and target.user_id == guardian_user.user_id:
@@ -2193,13 +2420,21 @@ def handle_command(
         )
         refresh_startup_context(startup_context, memory, target, user_manager)
         sync_profile_grounding(engine, profile_manager, target, token)
-        return "\n".join(
-            [
-                f"login > session started for {target.display_name} ({target.role})",
-                f"login > token: {token_preview(token)} valid for 8 hours",
-                f"login > session bound to user_id: {target.user_id}",
-            ]
+        lines = [
+            f"login > session started for {target.display_name} ({target.role})",
+            f"login > token: {token_preview(token)} valid for 8 hours",
+            f"login > session bound to user_id: {target.user_id}",
+        ]
+        lines.extend(
+            f"onboarding > {message}"
+            for message in begin_onboarding_if_needed(
+                session_state,
+                profile_manager,
+                target,
+                token,
+            )
         )
+        return "\n".join(lines)
 
     if lowered == "logout":
         if token_store is None or session_state is None or active_token is None:
@@ -2226,6 +2461,7 @@ def handle_command(
         session_state["original_user"] = None
         refresh_startup_context(startup_context, memory, None, user_manager)
         sync_profile_grounding(engine, profile_manager, None, None)
+        reset_onboarding_state(session_state)
         return f"logout > session ended for {active_token.display_name}"
 
     if lowered == "whoami":
@@ -2334,15 +2570,23 @@ def handle_command(
         )
         refresh_startup_context(startup_context, memory, created, user_manager)
         sync_profile_grounding(engine, profile_manager, created, token)
-        return "\n".join(
-            [
-                f"join > Welcome, {created.display_name}.",
-                "join > Your account has been created.",
-                f"join > Role: {created.role}  Realm: {', '.join(created.assigned_realms)}",
-                "join > You are now logged in.",
-                'join > Type "whoami" to see your session details.',
-            ]
+        lines = [
+            f"join > Welcome, {created.display_name}.",
+            "join > Your account has been created.",
+            f"join > Role: {created.role}  Realm: {', '.join(created.assigned_realms)}",
+            "join > You are now logged in.",
+            'join > Type "whoami" to see your session details.',
+        ]
+        lines.extend(
+            f"onboarding > {message}"
+            for message in begin_onboarding_if_needed(
+                session_state,
+                profile_manager,
+                created,
+                token,
+            )
         )
+        return "\n".join(lines)
 
     if lowered == "invites":
         if user_manager is None:
@@ -2527,10 +2771,27 @@ def handle_command(
                 guardian_record,
                 active_token,
             )
-            return f"switch-user > Returned to {guardian_record.display_name} ({guardian_record.role})."
+            lines = [
+                f"switch-user > Returned to {guardian_record.display_name} ({guardian_record.role})."
+            ]
+            lines.extend(
+                f"onboarding > {message}"
+                for message in begin_onboarding_if_needed(
+                    session_state,
+                    profile_manager,
+                    guardian_record,
+                    active_token,
+                )
+            )
+            return "\n".join(lines)
         target = user_manager.get_user_by_display_name(target_name)
         if target is None:
             return f"switch-user > No user found: {target_name}"
+        if profile_manager is not None:
+            if target.role.strip().lower() == "guardian":
+                ensure_guardian_profile_completed(profile_manager, target.user_id)
+            else:
+                profile_manager.ensure_profile_exists(target.user_id)
         session_state["active_user"] = target
         session_state["guardian_user"] = guardian_record
         session_state["original_user"] = guardian_record
@@ -2549,6 +2810,15 @@ def handle_command(
             lines.append(
                 f'switch-user > Type "switch-user {guardian_record.display_name}" to return to Guardian.'
             )
+        lines.extend(
+            f"onboarding > {message}"
+            for message in begin_onboarding_if_needed(
+                session_state,
+                profile_manager,
+                target,
+                active_token,
+            )
+        )
         return "\n".join(lines)
 
     if lowered.startswith("assign-realm"):
@@ -3044,7 +3314,7 @@ def main() -> None:
         guardian_user.display_name,
         guardian_user.role,
     )
-    profile_manager.ensure_profile_exists(guardian_user.user_id)
+    ensure_guardian_profile_completed(profile_manager, guardian_user.user_id)
     user_log = UserLog(USER_LOG_DIR)
     faculty_monitor = FacultyMonitor()
     session_audit: list[dict[str, str]] = []
@@ -3062,6 +3332,9 @@ def main() -> None:
         "active_token": guardian_token,
         "original_token": None,
         "guardian_token": guardian_token,
+        "onboarding_active": False,
+        "onboarding_step": 0,
+        "onboarding_responses": {},
     }
     engine = Engine(
         model_url=config.model_url,
@@ -3120,6 +3393,13 @@ def main() -> None:
         active_realm.name,
     ):
         print(line)
+    for message in begin_onboarding_if_needed(
+        session_state,
+        profile_manager,
+        guardian_user,
+        guardian_token,
+    ):
+        print(f"onboarding > {message}")
 
     while True:
         try:

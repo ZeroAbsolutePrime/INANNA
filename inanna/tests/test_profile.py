@@ -6,6 +6,7 @@ from pathlib import Path
 from tempfile import TemporaryDirectory
 
 from core.profile import ProfileManager, UserProfile
+from main import needs_onboarding
 
 
 class ProfileTests(unittest.TestCase):
@@ -179,6 +180,19 @@ class ProfileTests(unittest.TestCase):
         self.assertEqual(loaded.pronouns, "she/her")
         self.assertEqual(loaded.departments, ["Operations"])
         self.assertEqual(loaded.inanna_notes, ["Prefers direct answers."])
+
+    def test_needs_onboarding_returns_true_for_incomplete_profile(self) -> None:
+        profile = UserProfile(user_id="user_123", onboarding_completed=False)
+
+        self.assertTrue(needs_onboarding(profile))
+
+    def test_needs_onboarding_returns_false_for_completed_profile(self) -> None:
+        profile = UserProfile(user_id="user_123", onboarding_completed=True)
+
+        self.assertFalse(needs_onboarding(profile))
+
+    def test_needs_onboarding_returns_false_for_none(self) -> None:
+        self.assertFalse(needs_onboarding(None))
 
 
 if __name__ == "__main__":
