@@ -375,6 +375,7 @@ html,body{
 .msg-row.governance{justify-content:flex-start;}
 .msg-row.analyst {justify-content:flex-start;}
 .msg-row.sentinel{justify-content:flex-start;}
+.msg-row.orchestration{justify-content:flex-start;}
 .msg-row.guardian{justify-content:flex-start;}
 .msg-row.access  {justify-content:flex-start;}
 
@@ -390,6 +391,7 @@ html,body{
 .msg-row.governance .msg-label{color:var(--danger);}
 .msg-row.analyst   .msg-label{color:var(--faded);}
 .msg-row.sentinel  .msg-label{color:var(--danger);}
+.msg-row.orchestration .msg-label{color:var(--vio3);}
 .msg-row.guardian  .msg-label{color:var(--lap3);}
 
 /* Bubble base */
@@ -493,6 +495,25 @@ html,body{
   font-size:13px;
   color:rgba(240,190,180,.9);
   line-height:1.85;
+}
+
+/* ORCHESTRATION */
+.msg-row.orchestration .msg-bubble{
+  background:rgba(120,72,176,.06);
+  border:1px solid rgba(120,72,176,.25);
+  border-left:2px solid var(--vio3);
+  font-size:13px;
+  color:var(--rose5);
+  line-height:2;
+  font-family:var(--serif);
+}
+.msg-chain-header{
+  font-size:8px;
+  letter-spacing:3px;
+  color:var(--vio3);
+  margin-bottom:10px;
+  padding-bottom:6px;
+  border-bottom:1px solid rgba(120,72,176,.2);
 }
 
 /* GUARDIAN */
@@ -1137,6 +1158,7 @@ function handleMsg(m){
   if(t==='assistant')    {addMessage('inanna',m.text);return;}
   if(t==='analyst')      {addMessage('analyst',m.text);return;}
   if(t==='sentinel')     {addMessage('sentinel',m.text);return;}
+  if(t==='orchestration'){addMessage('orchestration',m.text,{steps:m.steps||[],chain:m.chain||''});return;}
   if(t==='nammu')        {addMessage('nammu',m.text);return;}
   if(t==='governance')   {addMessage('governance',m.text);return;}
   if(t==='operator')     {addMessage('operator',m.text);return;}
@@ -1214,9 +1236,10 @@ function setBadge(name,count,urgent){
 // ══════════════════════════════════
 //  MESSAGE RENDERING
 // ══════════════════════════════════
-function addMessage(type,text){
+function addMessage(type,text,meta){
   const log=document.getElementById('conversation-log');
   const row=document.createElement('div');
+  const data=meta||{};
   if(type==='inanna'){
     row.className='msg-row inanna';
     row.innerHTML=`<div class="msg-label">inanna ∴</div><div class="msg-bubble">${esc(text)}</div>`;
@@ -1249,6 +1272,11 @@ function addMessage(type,text){
   }else if(type==='sentinel'){
     row.className='msg-row sentinel';
     row.innerHTML=`<div class="msg-label">sentinel</div><div class="msg-bubble">${esc(text)}</div>`;
+  }else if(type==='orchestration'){
+    const chain=(data.chain||'').trim()||((data.steps||[]).map(step=>String(step.faculty||'').toUpperCase()).join(' -> '));
+    const header=(chain?`${esc(chain)} &middot; orchestrated response`:'orchestrated response');
+    row.className='msg-row orchestration';
+    row.innerHTML=`<div class="msg-label">orchestration</div><div class="msg-bubble"><div class="msg-chain-header">${header}</div>${esc(text)}</div>`;
   }else if(type==='guardian'){
     row.className='msg-row guardian';
     row.innerHTML=`<div class="msg-label">guardian</div><div class="msg-bubble">${esc(text)}</div>`;

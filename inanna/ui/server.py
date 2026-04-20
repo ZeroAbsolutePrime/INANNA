@@ -25,6 +25,7 @@ from core.nammu_memory import (
     append_routing_event,
     load_governance_history,
 )
+from core.orchestration import OrchestrationEngine
 from core.operator import OperatorFaculty
 from core.process_monitor import ProcessMonitor
 from core.proposal import Proposal
@@ -69,12 +70,14 @@ from main import (
     build_whoami_report,
     build_tool_context_lines,
     create_invite_proposal,
+    create_orchestration_proposal,
     create_realm_proposal,
     create_user_proposal,
     create_realm_assignment_proposal,
     create_memory_request_proposal,
     create_realm_context_proposal,
     create_tool_use_proposal,
+    complete_orchestration_resolution as complete_orchestration_backend_resolution,
     finalize_auto_memory,
     format_user_log_report,
     has_admin_surface_access,
@@ -226,6 +229,7 @@ class InterfaceServer:
             governance=self.governance,
             faculties_path=FACULTIES_CONFIG_PATH,
         )
+        self.orchestration_engine = OrchestrationEngine(FACULTIES_CONFIG_PATH)
         self.routing_log: list[dict[str, str]] = []
         self.last_routed_faculty = ""
         self.governance_blocks = 0
@@ -434,6 +438,28 @@ class InterfaceServer:
         self,
         text: str,
     ) -> dict[str, Any]:
+        plan = self.orchestration_engine.detect_orchestration(text)
+        if plan is not None:
+            self._record_routing_decision("orchestration", text)
+            self._record_governance_decision(
+                "propose",
+                "Multi-Faculty orchestration requires approval before execution.",
+                text,
+            )
+            created = create_orchestration_proposal(
+                proposal=self.proposal,
+                session=self.session,
+                user_input=text,
+                plan=plan,
+            )
+            return {
+                "response": {
+                    "type": "system",
+                    "text": f"orchestration > proposal required: {plan.describe_steps()}",
+                },
+                "proposal": created,
+            }
+
         governance_result = self.classifier.route(text)
         if governance_result.faculty == "sentinel":
             append_audit_event(
@@ -1283,6 +1309,16 @@ class InterfaceServer:
                         await self.broadcast(operator_payload)
                     if outcome["assistant_text"]:
                         await self.broadcast({"type": "assistant", "text": outcome["assistant_text"]})
+                elif resolved.get("payload", {}).get("action") == "orchestration":
+                    outcome = await asyncio.to_thread(
+                        self.complete_orchestration_resolution,
+                        resolved,
+                        command_name,
+                    )
+                    if outcome["response"] is not None:
+                        await self.broadcast(outcome["response"])
+                    else:
+                        await self.broadcast({"type": "system", "text": outcome["display_text"]})
                 else:
                     result = await asyncio.to_thread(self.apply_resolution, resolved)
                     await self.broadcast({"type": "system", "text": result})
@@ -1554,6 +1590,28 @@ class InterfaceServer:
             "operator_payloads": operator_payloads,
             "assistant_text": assistant_text,
         }
+
+    def complete_orchestration_resolution(
+        self,
+        resolved: dict[str, Any],
+        decision: str,
+    ) -> dict[str, Any]:
+        return complete_orchestration_backend_resolution(
+            resolved=resolved,
+            decision=decision,
+            session=self.session,
+            memory=self.memory,
+            engine=self.engine,
+            config=self.config,
+            startup_context=self.startup_context,
+            orchestration_engine=self.orchestration_engine,
+            active_token=self.active_token,
+            user_log=self.user_log,
+            faculty_monitor=self.faculty_monitor,
+            session_audit=self.session_audit,
+            active_realm_name=self.active_realm.name,
+            conversation_state=self.conversation_state,
+        )
 
     def inspect_guardian(self) -> tuple[list[Any], str]:
         t0 = time.monotonic()

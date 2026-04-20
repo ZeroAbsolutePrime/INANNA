@@ -163,7 +163,7 @@ class BodyStatusPayloadTests(unittest.TestCase):
                 self.assertEqual(payload["active_user"]["display_name"], "ZAERA")
                 self.assertTrue(payload["active_user"]["token_preview"].endswith("..."))
                 self.assertEqual(payload["user_log_count"], 0)
-                self.assertEqual(len(payload["faculties"]), 4)
+                self.assertEqual(len(payload["faculties"]), 5)
             finally:
                 ui_server.APP_ROOT = original_app_root
 

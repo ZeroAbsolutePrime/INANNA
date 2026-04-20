@@ -23,6 +23,7 @@ from core.nammu_memory import (
     load_governance_history,
     load_routing_history,
 )
+from core.orchestration import OrchestrationEngine, OrchestrationPlan
 from core.operator import OperatorFaculty, ToolResult
 from core.process_monitor import ProcessMonitor
 from core.proposal import Proposal
@@ -1328,6 +1329,204 @@ def create_tool_use_proposal(
     }
 
 
+def create_orchestration_proposal(
+    proposal: Proposal,
+    session: Session,
+    user_input: str,
+    plan: OrchestrationPlan,
+) -> dict[str, Any]:
+    created = proposal.create(
+        what=f"Multi-Faculty task: {plan.chain_label()}",
+        why="User requested a governed multi-Faculty orchestration.",
+        payload={
+            "action": "orchestration",
+            "original_input": user_input,
+            "session_id": session.session_id,
+            "plan": plan.to_payload(),
+        },
+    )
+    return {
+        **created,
+        "line": (
+            f"[ORCHESTRATION PROPOSAL] {created['timestamp']} | "
+            f"Multi-Faculty task: {plan.chain_label()} | "
+            f"{plan.describe_steps()} | status: {created['status']}"
+        ),
+    }
+
+
+def execute_orchestration_plan(
+    *,
+    plan: OrchestrationPlan,
+    user_input: str,
+    grounding: str | list[str | dict[str, str]] | None,
+    config: Config,
+    engine: Engine,
+    orchestration_engine: OrchestrationEngine,
+    faculty_monitor: FacultyMonitor | None = None,
+) -> dict[str, Any]:
+    if isinstance(grounding, list):
+        grounding_items = list(grounding)
+    elif isinstance(grounding, str) and grounding.strip():
+        grounding_items = [grounding.strip()]
+    else:
+        grounding_items = []
+
+    previous_output = user_input
+    executed_steps: list[dict[str, str]] = []
+
+    for step in plan.steps:
+        step_input = user_input if step.input_from == "user" else previous_output
+        if step.purpose == "synthesize":
+            step_input = orchestration_engine.format_synthesis_prompt(
+                user_input,
+                previous_output,
+                step,
+            )
+
+        if step.faculty == "sentinel":
+            t0 = time.monotonic()
+            step_output = run_sentinel_response(
+                user_input=step_input,
+                grounding=grounding_items,
+                lm_url=config.model_url,
+                model_name=config.model_name,
+                faculties_path=FACULTIES_CONFIG_PATH,
+            )
+            mode = sentinel_response_mode(step_output)
+            if faculty_monitor is not None:
+                faculty_monitor.record_call(
+                    "sentinel",
+                    (time.monotonic() - t0) * 1000,
+                    mode == "connected",
+                )
+                faculty_monitor.set_mode("sentinel", mode)
+        elif step.faculty == "crown":
+            t0 = time.monotonic()
+            step_output = engine.respond(
+                context_summary=grounding_items,
+                conversation=[{"role": "user", "content": step_input}],
+            )
+            if faculty_monitor is not None:
+                faculty_monitor.record_call("crown", (time.monotonic() - t0) * 1000, True)
+        else:
+            raise ValueError(f"Unsupported orchestration faculty: {step.faculty}")
+
+        previous_output = step_output
+        executed_steps.append(
+            {
+                "faculty": step.faculty,
+                "purpose": step.purpose,
+                "input_from": step.input_from,
+                "output_to": step.output_to,
+            }
+        )
+
+    return {
+        "chain": plan.chain_label(),
+        "steps": executed_steps,
+        "text": previous_output,
+    }
+
+
+def complete_orchestration_resolution(
+    *,
+    resolved: dict[str, Any],
+    decision: str,
+    session: Session,
+    memory: Memory,
+    engine: Engine,
+    config: Config,
+    startup_context: dict[str, Any],
+    orchestration_engine: OrchestrationEngine,
+    active_token: SessionToken | None = None,
+    user_log: UserLog | None = None,
+    faculty_monitor: FacultyMonitor | None = None,
+    session_audit: list[dict[str, object]] | None = None,
+    active_realm_name: str = "",
+    conversation_state: dict[str, int] | None = None,
+) -> dict[str, Any]:
+    payload = resolved["payload"]
+    original_input = str(payload.get("original_input", "")).strip()
+    plan = OrchestrationPlan.from_payload(payload.get("plan", {}))
+    compact_chain = plan.chain_label(separator="->")
+
+    if decision != "approve":
+        append_audit_event(
+            session_audit,
+            "orchestration",
+            (
+                f'orchestration rejected: {compact_chain} | input: "{original_input[:60]}" | '
+                f"steps: {len(plan.steps)} | proposal: {resolved['proposal_id']}"
+            ),
+            {
+                "proposal_id": resolved["proposal_id"],
+                "chain": compact_chain,
+                "steps": len(plan.steps),
+                "input_preview": original_input[:60],
+                "approved": False,
+            },
+        )
+        return {
+            "display_text": f"Rejected {resolved['proposal_id']}.",
+            "response": None,
+        }
+
+    session.add_event("user", original_input)
+    outcome = execute_orchestration_plan(
+        plan=plan,
+        user_input=original_input,
+        grounding=startup_context_items(startup_context),
+        config=config,
+        engine=engine,
+        orchestration_engine=orchestration_engine,
+        faculty_monitor=faculty_monitor,
+    )
+    final_text = str(outcome["text"]).strip()
+    session.add_event("assistant", final_text)
+    append_user_log_entry(
+        user_log,
+        active_token,
+        session.session_id,
+        original_input,
+        final_text,
+    )
+    append_audit_event(
+        session_audit,
+        "orchestration",
+        (
+            f'orchestration: {compact_chain} | input: "{original_input[:60]}" | '
+            f"steps: {len(outcome['steps'])} | approved: {resolved['proposal_id']}"
+        ),
+        {
+            "proposal_id": resolved["proposal_id"],
+            "chain": compact_chain,
+            "steps": len(outcome["steps"]),
+            "input_preview": original_input[:60],
+            "approved": True,
+        },
+    )
+    record_completed_turn(
+        conversation_state=conversation_state,
+        memory=memory,
+        session=session,
+        active_realm_name=active_realm_name,
+        active_token=active_token,
+        user_log=user_log,
+        session_audit=session_audit,
+    )
+    return {
+        "display_text": f"orchestration > {outcome['chain']}\n{final_text}",
+        "response": {
+            "type": "orchestration",
+            "chain": outcome["chain"],
+            "steps": outcome["steps"],
+            "text": final_text,
+            "proposal_id": resolved["proposal_id"],
+        },
+    }
+
+
 def build_tool_result_text(result: ToolResult) -> str:
     if result.tool == "ping":
         lines = ["ping result:"]
@@ -1785,6 +1984,7 @@ def handle_command(
     session_audit: list[dict[str, str]] | None = None,
     process_monitor: ProcessMonitor | None = None,
     conversation_state: dict[str, int] | None = None,
+    orchestration_engine: OrchestrationEngine | None = None,
 ) -> str | None:
     normalized = command.strip()
     if not normalized:
@@ -1803,6 +2003,7 @@ def handle_command(
         active_realm_name = current_realm.name
 
     lowered = normalized.lower()
+    orchestration_engine = orchestration_engine or OrchestrationEngine(FACULTIES_CONFIG_PATH)
     if lowered in {"exit", "quit"}:
         return None
 
@@ -2378,6 +2579,25 @@ def handle_command(
                 conversation_state=conversation_state,
             )
 
+        if payload.get("action") == "orchestration":
+            outcome = complete_orchestration_resolution(
+                resolved=resolved,
+                decision=lowered,
+                session=session,
+                memory=memory,
+                engine=engine,
+                config=config,
+                startup_context=startup_context,
+                orchestration_engine=orchestration_engine,
+                active_token=active_token,
+                user_log=user_log,
+                faculty_monitor=faculty_monitor,
+                session_audit=session_audit,
+                active_realm_name=active_realm_name,
+                conversation_state=conversation_state,
+            )
+            return outcome["display_text"]
+
         if payload.get("action") == "realm_context_update":
             realm_name = payload.get("realm_name", "")
             governance_context = payload.get("governance_context", "")
@@ -2497,6 +2717,33 @@ def handle_command(
             )
 
         return f"Rejected {resolved['proposal_id']}."
+
+    plan = orchestration_engine.detect_orchestration(normalized)
+    if plan is not None:
+        append_routing_decision(
+            routing_log,
+            session,
+            "orchestration",
+            normalized,
+            nammu_dir=nammu_dir,
+        )
+        append_governance_event(
+            resolve_nammu_dir(session, nammu_dir),
+            session.session_id,
+            "propose",
+            "Multi-Faculty orchestration requires approval before execution.",
+            normalized[:60],
+        )
+        created = create_orchestration_proposal(
+            proposal=proposal,
+            session=session,
+            user_input=normalized,
+            plan=plan,
+        )
+        return (
+            f"orchestration > proposal required: {plan.describe_steps()}\n"
+            f"{created['line']}"
+        )
 
     governance_result = classifier.route(normalized)
     if governance_result.faculty == "sentinel":
@@ -2698,6 +2945,7 @@ def main() -> None:
         governance=governance,
         faculties_path=FACULTIES_CONFIG_PATH,
     )
+    orchestration_engine = OrchestrationEngine(FACULTIES_CONFIG_PATH)
     routing_log: list[dict[str, str]] = []
     guardian_metrics = {"governance_blocks": 0, "tool_executions": 0}
 
@@ -2792,6 +3040,7 @@ def main() -> None:
             session_audit=session_audit,
             process_monitor=process_monitor,
             conversation_state=conversation_state,
+            orchestration_engine=orchestration_engine,
         )
         if result is None:
             finalize_auto_memory(
