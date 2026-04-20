@@ -283,3 +283,58 @@ No MCP tool executes without passing through Law 1.
 This is not a constraint on connectivity. It is the shape of responsible connectivity.
 
 Full MCP integration architecture: see docs/mcp_integration_architecture.md
+
+
+---
+
+## The Organic Governance Layer
+
+*Added 2026-04-20 — from ZAERA's vision of "the flow"*
+
+The current governance model is binary: every proposal-triggering action
+requires explicit approval, every time, without exception.
+
+This is correct for the constitutional foundation. But ZAERA named something
+profound: a system that seeks flow. Like a mother who notices her child asking
+for the same thing N times and suggests: "shall I stop asking about this?"
+
+### The Organic Governance Principle
+
+When a Guardian or Operator approves the same class of action
+N times within a session, INANNA notices and gently surfaces:
+
+  "I notice you have approved [tool] N times.
+   Shall I remember this as a trusted pattern
+   and stop asking each time?
+   You can always reinstate the requirement through the Guardian Room."
+
+This is not autonomous permission escalation.
+This is INANNA being a thoughtful presence — noticing patterns,
+making suggestions, always waiting for explicit consent.
+
+The three-level model:
+  ALWAYS ASK    — default for all actions
+  SESSION TRUST — Guardian said yes, trusted for this session only
+  PERSISTENT TRUST — future phase: stored in governance config,
+                     survives sessions, requires Guardian proposal to set
+
+The implementation for SESSION TRUST lives in the UI (client-side
+approval count tracking, suggestion threshold = 3 approvals).
+The implementation for PERSISTENT TRUST lives in governance_signals.json
+(a future "always_allow_for_user" list) and is a proposal-governed action.
+
+### The Companion Principle
+
+A governance system that fights the natural flow of work
+will be circumvented or abandoned.
+A governance system that learns with you will be embraced.
+
+The Organic Governance Layer is how INANNA becomes
+not a gatekeeper but a companion —
+one that holds the law without making law feel like a wall.
+
+When something becomes "too much" (a sudden surge of approvals,
+an unusual pattern, a tool invoked in a new context), INANNA
+notices and returns to asking. The system breathes with you.
+
+This principle will inform all future governance design in Cycles 5-7.
