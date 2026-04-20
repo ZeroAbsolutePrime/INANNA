@@ -1,20 +1,23 @@
-<!doctype html>
+<!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>INANNA NYX Console</title>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>INANNA Console</title>
   <style>
     :root {
-      --bg: #0a0a0f;
-      --voice: #c8a96e;
-      --border: #4a3a1e;
-      --text: #b9b2a5;
-      --dim: #726a5d;
-      --panel: #111118;
-      --connected: #6f9a63;
-      --fallback: #c8a96e;
-      --critical: #c86e6e;
+      --bg: #0f1416;
+      --bg-alt: #162024;
+      --panel: #111a1d;
+      --panel-edge: #29353a;
+      --text: #d7e2d8;
+      --muted: #8ea19a;
+      --accent: #9dc89a;
+      --accent-strong: #c8e9a6;
+      --warn: #d9b166;
+      --danger: #b86d6a;
+      --border: rgba(157, 200, 154, 0.22);
+      --shadow: 0 20px 44px rgba(0, 0, 0, 0.28);
     }
 
     * {
@@ -23,339 +26,458 @@
 
     html,
     body {
-      height: 100%;
       margin: 0;
+      min-height: 100%;
       background:
-        linear-gradient(to bottom, rgba(200, 169, 110, 0.04), transparent 12%),
-        linear-gradient(to right, rgba(74, 58, 30, 0.12) 1px, transparent 1px),
-        linear-gradient(to bottom, rgba(74, 58, 30, 0.09) 1px, transparent 1px),
-        var(--bg);
-      background-size: auto, 32px 32px, 32px 32px, auto;
+        radial-gradient(circle at top left, rgba(157, 200, 154, 0.08), transparent 32%),
+        linear-gradient(180deg, #121a1d 0%, #0b1012 100%);
       color: var(--text);
       font-family: "Courier New", "Lucida Console", monospace;
     }
 
     body {
-      padding: 18px;
-      overflow: hidden;
-    }
-
-    button {
-      font: inherit;
+      padding: 22px;
     }
 
     .shell {
-      height: calc(100vh - 36px);
+      max-width: 1240px;
+      margin: 0 auto;
       border: 1px solid var(--border);
-      display: grid;
-      grid-template-rows: auto auto 1fr;
-      background: rgba(10, 10, 15, 0.92);
-      box-shadow: inset 0 0 0 1px rgba(74, 58, 30, 0.12);
+      background: linear-gradient(180deg, rgba(17, 26, 29, 0.96), rgba(10, 15, 17, 0.98));
+      box-shadow: var(--shadow);
     }
 
     .header {
       display: flex;
-      align-items: center;
       justify-content: space-between;
+      align-items: flex-start;
       gap: 20px;
-      padding: 16px 18px;
+      padding: 18px 20px 16px;
       border-bottom: 1px solid var(--border);
+      background: linear-gradient(180deg, rgba(157, 200, 154, 0.08), transparent);
     }
 
-    .brand {
-      display: flex;
-      align-items: baseline;
-      gap: 14px;
-      min-width: 0;
-    }
-
-    .brand-indicator {
-      color: var(--voice);
-      font-size: 1.08rem;
-      letter-spacing: 0.24em;
-      text-transform: uppercase;
-      white-space: nowrap;
-    }
-
-    .console-subtitle {
-      color: var(--dim);
-      font-size: 0.78rem;
-      letter-spacing: 0.18em;
-      text-transform: uppercase;
-      white-space: nowrap;
-    }
-
-    .header-meta {
-      display: flex;
-      align-items: center;
-      justify-content: flex-end;
-      gap: 18px;
-      min-width: 0;
-      color: var(--dim);
-      font-size: 0.8rem;
-      letter-spacing: 0.14em;
-      text-transform: uppercase;
-      flex-wrap: wrap;
-    }
-
-    .header-phase {
-      max-width: 40ch;
-      overflow: hidden;
-      text-overflow: ellipsis;
-      white-space: nowrap;
-    }
-
-    .realm-indicator,
-    .user-indicator,
-    .body-indicator,
-    .connection-indicator {
-      white-space: nowrap;
-    }
-
-    .realm-indicator {
-      color: #7a6a5a;
-    }
-
-    .user-indicator {
-      color: var(--voice);
-    }
-
-    .user-indicator.dim {
-      color: var(--dim);
-    }
-
-    .body-indicator {
-      color: var(--connected);
-    }
-
-    .body-indicator.warn,
-    .connection-indicator.warn {
-      color: var(--fallback);
-    }
-
-    .connection-indicator.danger {
-      color: var(--critical);
-    }
-
-    .console-nav {
-      display: flex;
-      align-items: center;
-      gap: 10px;
-      padding: 14px 18px;
-      border-bottom: 1px solid rgba(74, 58, 30, 0.58);
-      background: rgba(17, 17, 24, 0.94);
-      flex-wrap: wrap;
-    }
-
-    .console-tab {
-      padding: 4px 12px;
-      border: 1px solid var(--border);
-      background: transparent;
-      color: var(--dim);
-      cursor: pointer;
-      font-size: 0.76rem;
-      letter-spacing: 0.1em;
-      text-transform: lowercase;
-      transition: color 0.15s ease, border-color 0.15s ease, background 0.15s ease;
-    }
-
-    .console-tab:hover,
-    .console-tab:focus-visible {
-      color: var(--voice);
-      border-color: var(--voice);
-      outline: none;
-    }
-
-    .console-tab.is-active {
-      color: var(--voice);
-      border-color: var(--voice);
-      background: rgba(200, 169, 110, 0.08);
-    }
-
-    .console-stage {
-      min-height: 0;
-      overflow: auto;
-      padding: 22px 24px 26px;
-      display: flex;
-      flex-direction: column;
-    }
-
-    .console-panel {
-      display: none;
-      min-height: 100%;
-      border: 1px solid rgba(74, 58, 30, 0.6);
-      background: rgba(17, 17, 24, 0.9);
-      padding: 24px;
-      box-shadow: inset 0 0 0 1px rgba(200, 169, 110, 0.04);
-    }
-
-    .console-panel.is-active {
-      display: grid;
-      align-content: start;
-      gap: 14px;
-    }
-
-    .panel-phase {
-      color: var(--dim);
-      font-size: 0.74rem;
-      letter-spacing: 0.14em;
-      text-transform: uppercase;
-    }
-
-    .panel-title {
+    .title {
       margin: 0;
-      color: var(--voice);
-      font-size: 1.2rem;
+      font-size: 1.18rem;
+      letter-spacing: 0.16em;
+      text-transform: uppercase;
+      color: var(--accent-strong);
+    }
+
+    .subtitle,
+    .meta-line {
+      margin-top: 6px;
+      font-size: 0.77rem;
+      color: var(--muted);
       letter-spacing: 0.08em;
       text-transform: uppercase;
     }
 
-    .panel-subtitle {
-      margin: 0;
+    .meta {
+      display: grid;
+      gap: 8px;
+      justify-items: end;
+      text-align: right;
+    }
+
+    .chip-row {
+      display: flex;
+      flex-wrap: wrap;
+      justify-content: flex-end;
+      gap: 8px;
+    }
+
+    .chip {
+      padding: 5px 10px;
+      border: 1px solid var(--border);
+      background: rgba(157, 200, 154, 0.08);
+      font-size: 0.74rem;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      white-space: nowrap;
+    }
+
+    .chip.warn {
+      border-color: rgba(217, 177, 102, 0.44);
+      color: var(--warn);
+      background: rgba(217, 177, 102, 0.08);
+    }
+
+    .chip.danger {
+      border-color: rgba(184, 109, 106, 0.44);
+      color: #e0a4a0;
+      background: rgba(184, 109, 106, 0.08);
+    }
+
+    .layout {
+      display: grid;
+      grid-template-columns: minmax(0, 1.7fr) minmax(280px, 0.9fr);
+      gap: 16px;
+      padding: 16px;
+    }
+
+    .column {
+      display: grid;
+      gap: 16px;
+      align-content: start;
+    }
+
+    .panel {
+      border: 1px solid var(--border);
+      background:
+        linear-gradient(180deg, rgba(157, 200, 154, 0.04), transparent 24%),
+        rgba(13, 19, 22, 0.96);
+      min-height: 120px;
+    }
+
+    .panel-head {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+      padding: 12px 14px;
+      border-bottom: 1px solid var(--border);
+      font-size: 0.8rem;
+      letter-spacing: 0.12em;
+      text-transform: uppercase;
+      color: var(--accent-strong);
+    }
+
+    .panel-count {
+      color: var(--muted);
+      font-size: 0.72rem;
+    }
+
+    .panel-body {
+      padding: 14px;
+    }
+
+    .empty {
+      color: var(--muted);
+      font-size: 0.85rem;
+      line-height: 1.6;
+    }
+
+    .category-block + .category-block {
+      margin-top: 18px;
+    }
+
+    .category-label {
+      font-size: 0.76rem;
+      color: var(--muted);
+      text-transform: lowercase;
+      letter-spacing: 0.08em;
+      margin-bottom: 4px;
+    }
+
+    .category-rule {
+      height: 1px;
+      background: linear-gradient(90deg, rgba(157, 200, 154, 0.35), transparent);
+      margin-bottom: 8px;
+    }
+
+    .tool-card + .tool-card {
+      margin-top: 12px;
+      padding-top: 12px;
+      border-top: 1px solid rgba(157, 200, 154, 0.08);
+    }
+
+    .tool-head {
+      display: flex;
+      justify-content: space-between;
+      gap: 12px;
+      align-items: center;
+    }
+
+    .tool-name {
+      font-size: 0.92rem;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
       color: var(--text);
-      font-size: 0.94rem;
+    }
+
+    .tool-badge {
+      padding: 3px 8px;
+      border: 1px solid rgba(157, 200, 154, 0.28);
+      color: var(--accent-strong);
+      font-size: 0.7rem;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      background: rgba(157, 200, 154, 0.08);
+      white-space: nowrap;
+    }
+
+    .tool-description {
+      margin-top: 8px;
+      color: var(--text);
+      font-size: 0.87rem;
       line-height: 1.55;
     }
 
-    .panel-note {
-      max-width: 70ch;
-      padding: 14px 16px;
-      border: 1px solid rgba(74, 58, 30, 0.32);
-      background: rgba(24, 17, 10, 0.34);
-      color: var(--dim);
+    .tool-meta {
+      margin-top: 7px;
+      color: var(--muted);
+      font-size: 0.78rem;
+      line-height: 1.5;
+    }
+
+    .panel-btn {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 6px;
+      margin-top: 10px;
+      padding: 3px 10px;
+      border: 1px solid var(--border);
+      background: rgba(157, 200, 154, 0.08);
+      color: var(--accent-strong);
+      font: inherit;
+      font-size: 0.75rem;
+      letter-spacing: 0.08em;
+      text-transform: lowercase;
+      cursor: pointer;
+    }
+
+    .panel-btn:hover {
+      border-color: rgba(200, 233, 166, 0.45);
+      background: rgba(157, 200, 154, 0.14);
+    }
+
+    .tool-form {
+      margin-top: 10px;
+      padding: 10px;
+      border: 1px solid rgba(157, 200, 154, 0.14);
+      background: rgba(157, 200, 154, 0.04);
+      display: grid;
+      gap: 8px;
+    }
+
+    .tool-form label {
+      color: var(--muted);
+      font-size: 0.76rem;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+    }
+
+    .tool-form-row {
+      display: flex;
+      gap: 8px;
+      align-items: center;
+    }
+
+    .tool-input {
+      flex: 1;
+      min-width: 0;
+      padding: 8px 10px;
+      border: 1px solid rgba(157, 200, 154, 0.18);
+      background: rgba(6, 9, 10, 0.72);
+      color: var(--text);
+      font: inherit;
       font-size: 0.84rem;
-      line-height: 1.6;
     }
 
-    .access-alert {
-      display: none;
-      padding: 16px 18px;
-      border: 1px solid rgba(200, 110, 110, 0.42);
-      background: rgba(200, 110, 110, 0.08);
-      color: var(--critical);
-      font-size: 0.9rem;
-      line-height: 1.6;
+    .tool-input:focus {
+      outline: none;
+      border-color: rgba(200, 233, 166, 0.46);
+      box-shadow: 0 0 0 1px rgba(200, 233, 166, 0.16);
     }
 
-    body.access-denied .console-nav,
-    body.access-denied .console-panel {
-      display: none;
+    .activity-list {
+      display: grid;
+      gap: 8px;
     }
 
-    body.access-denied .access-alert {
-      display: block;
+    .activity-item {
+      padding: 9px 10px;
+      border-left: 2px solid rgba(157, 200, 154, 0.26);
+      background: rgba(157, 200, 154, 0.04);
+      font-size: 0.81rem;
+      line-height: 1.55;
+      white-space: pre-wrap;
+      word-break: break-word;
     }
 
-    @media (max-width: 980px) {
-      .header {
-        flex-direction: column;
-        align-items: flex-start;
+    .activity-item.warn {
+      border-left-color: rgba(217, 177, 102, 0.48);
+    }
+
+    .activity-item.danger {
+      border-left-color: rgba(184, 109, 106, 0.48);
+      color: #e0a4a0;
+    }
+
+    .placeholder-list {
+      display: grid;
+      gap: 10px;
+    }
+
+    .placeholder-card {
+      padding: 10px 11px;
+      border: 1px dashed rgba(157, 200, 154, 0.18);
+      color: var(--muted);
+      font-size: 0.82rem;
+      line-height: 1.55;
+      background: rgba(157, 200, 154, 0.03);
+    }
+
+    .access-denied {
+      padding: 36px 24px 40px;
+      text-align: center;
+      color: #e0a4a0;
+      font-size: 0.92rem;
+      line-height: 1.7;
+    }
+
+    .access-denied a {
+      color: var(--accent-strong);
+    }
+
+    @media (max-width: 960px) {
+      body {
+        padding: 12px;
       }
 
-      .header-meta {
+      .layout {
+        grid-template-columns: 1fr;
+      }
+
+      .header {
+        flex-direction: column;
+        align-items: stretch;
+      }
+
+      .meta {
+        justify-items: start;
+        text-align: left;
+      }
+
+      .chip-row {
         justify-content: flex-start;
       }
 
-      .console-stage {
-        padding: 18px;
-      }
-
-      .console-panel {
-        padding: 18px;
+      .tool-form-row {
+        flex-direction: column;
+        align-items: stretch;
       }
     }
   </style>
 </head>
-<body data-ws-port="__WS_PORT__">
-  <div class="shell">
+<body>
+  <main class="shell">
     <header class="header">
-      <div class="brand">
-        <div class="brand-indicator">INANNA NYX</div>
-        <div class="console-subtitle">OPERATOR CONSOLE</div>
+      <div>
+        <h1 class="title">INANNA Console</h1>
+        <div class="subtitle">Cycle 5 console surface for governed operator actions</div>
+        <div class="meta-line" id="phase-text">loading phase...</div>
       </div>
-      <div class="header-meta">
-        <div class="header-phase" id="phase-text">loading phase</div>
-        <div class="realm-indicator" id="realm-indicator">REALM: DEFAULT</div>
-        <div class="user-indicator dim" id="user-indicator">USER: NONE</div>
-        <div class="body-indicator" id="body-indicator">BODY: OK</div>
-        <div class="connection-indicator warn" id="connection-indicator">&#8226; CONNECTING</div>
+      <div class="meta">
+        <div class="chip-row">
+          <div class="chip" id="connection-chip">connecting</div>
+          <div class="chip" id="mode-chip">mode: --</div>
+        </div>
+        <div class="chip-row">
+          <div class="chip" id="realm-chip">realm: --</div>
+          <div class="chip" id="user-chip">user: --</div>
+        </div>
       </div>
     </header>
 
-    <nav class="console-nav" aria-label="Console sections">
-      <button class="console-tab is-active" type="button" data-panel-button="tools">[ tools ]</button>
-      <button class="console-tab" type="button" data-panel-button="network">[ network ]</button>
-      <button class="console-tab" type="button" data-panel-button="faculties">[ faculties ]</button>
-      <button class="console-tab" type="button" data-panel-button="processes">[ processes ]</button>
-    </nav>
+    <section id="access-denied" class="access-denied" hidden>
+      Console access is limited to guardian and operator roles.<br>
+      Return to <a href="/">the main surface</a>.
+    </section>
 
-    <main class="console-stage">
-      <div class="access-alert" id="access-alert"></div>
+    <div id="console-layout" class="layout">
+      <div class="column">
+        <section class="panel">
+          <div class="panel-head">
+            <span>Tool Registry</span>
+            <span class="panel-count" id="tool-count">0 tools</span>
+          </div>
+          <div class="panel-body" id="tool-registry-body"></div>
+        </section>
 
-      <section class="console-panel is-active" data-panel="tools" aria-labelledby="panel-tools-title">
-        <div class="panel-phase">Phase 5.2</div>
-        <h1 class="panel-title" id="panel-tools-title">Tool Registry - Phase 5.2</h1>
-        <p class="panel-subtitle">Registered tools will appear here.</p>
-        <div class="panel-note">
-          Phase 5.1 builds the governed console surface only. No tool execution occurs here yet.
-        </div>
-      </section>
+        <section class="panel">
+          <div class="panel-head">
+            <span>Network</span>
+            <span class="panel-count">Phase 5 placeholder</span>
+          </div>
+          <div class="panel-body">
+            <div class="placeholder-list">
+              <div class="placeholder-card">Network observability remains deliberately inactive in Phase 5.2.</div>
+              <div class="placeholder-card">Ping is exposed only through governed Tool Registry proposals. No scanning, chaining, or autonomous runs.</div>
+            </div>
+          </div>
+        </section>
+      </div>
 
-      <section class="console-panel" data-panel="network" aria-labelledby="panel-network-title">
-        <div class="panel-phase">Phase 5.3</div>
-        <h1 class="panel-title" id="panel-network-title">Network Eye - Phase 5.3</h1>
-        <p class="panel-subtitle">Network discovery and topology will appear here.</p>
-        <div class="panel-note">
-          Phase 5.1 does not perform scanning or host discovery. This panel is the placeholder door for that later governed work.
-        </div>
-      </section>
+      <div class="column">
+        <section class="panel">
+          <div class="panel-head">
+            <span>Console Activity</span>
+            <span class="panel-count">latest messages</span>
+          </div>
+          <div class="panel-body" id="activity-body"></div>
+        </section>
 
-      <section class="console-panel" data-panel="faculties" aria-labelledby="panel-faculties-title">
-        <div class="panel-phase">Phase 5.5</div>
-        <h1 class="panel-title" id="panel-faculties-title">Faculty Registry - Phase 5.5</h1>
-        <p class="panel-subtitle">Registered Faculties will appear here.</p>
-        <div class="panel-note">
-          Phase 5.1 opens the registry surface only. Faculty catalog and routing expansions arrive in later phases.
-        </div>
-      </section>
+        <section class="panel">
+          <div class="panel-head">
+            <span>Faculties</span>
+            <span class="panel-count">Phase 5 placeholder</span>
+          </div>
+          <div class="panel-body">
+            <div class="placeholder-card">Faculty deployment controls are not part of this phase. This panel stays informational only.</div>
+          </div>
+        </section>
 
-      <section class="console-panel" data-panel="processes" aria-labelledby="panel-processes-title">
-        <div class="panel-phase">Phase 5.4</div>
-        <h1 class="panel-title" id="panel-processes-title">Process Monitor - Phase 5.4</h1>
-        <p class="panel-subtitle">Running services and health will appear here.</p>
-        <div class="panel-note">
-          Phase 5.1 does not inspect or control processes. It provides the placeholder surface for later monitored service health.
-        </div>
-      </section>
-    </main>
-  </div>
+        <section class="panel">
+          <div class="panel-head">
+            <span>Processes</span>
+            <span class="panel-count">Phase 5 placeholder</span>
+          </div>
+          <div class="panel-body">
+            <div class="placeholder-card">Process inspection and control are deferred. The console currently declares capability without enabling execution.</div>
+          </div>
+        </section>
+      </div>
+    </div>
+  </main>
 
   <script>
-    const STATUS_DOT = "\u2022";
-
+    const WS_PORT = "__WS_PORT__";
     const state = {
-      ws: null,
-      panel: "tools",
-      status: {
-        phase: "",
-        realm: "default",
-        active_user: null,
-        acting_as: null,
-        original_user: null,
-        body: {},
-        mode: "fallback",
-      },
-      redirectScheduled: false,
+      status: null,
+      registryLoaded: false,
+      registryRequested: false,
+      toolRegistry: [],
+      openToolForm: "",
+      toolDrafts: {},
+      activity: [],
+      accessDenied: false,
     };
 
     const phaseText = document.getElementById("phase-text");
-    const realmIndicator = document.getElementById("realm-indicator");
-    const userIndicator = document.getElementById("user-indicator");
-    const bodyIndicator = document.getElementById("body-indicator");
-    const connectionIndicator = document.getElementById("connection-indicator");
-    const accessAlert = document.getElementById("access-alert");
-    const panelButtons = Array.from(document.querySelectorAll("[data-panel-button]"));
-    const panels = Array.from(document.querySelectorAll("[data-panel]"));
+    const connectionChip = document.getElementById("connection-chip");
+    const modeChip = document.getElementById("mode-chip");
+    const realmChip = document.getElementById("realm-chip");
+    const userChip = document.getElementById("user-chip");
+    const toolCount = document.getElementById("tool-count");
+    const toolRegistryBody = document.getElementById("tool-registry-body");
+    const activityBody = document.getElementById("activity-body");
+    const accessDenied = document.getElementById("access-denied");
+    const consoleLayout = document.getElementById("console-layout");
+
+    let socket = null;
+
+    function escapeHtml(value) {
+      return String(value == null ? "" : value)
+        .replace(/&/g, "&amp;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;")
+        .replace(/\"/g, "&quot;")
+        .replace(/'/g, "&#39;");
+    }
 
     function hasConsoleAccess(activeUser) {
       const role = String(activeUser && activeUser.role || "").toLowerCase();
@@ -363,137 +485,286 @@
     }
 
     function setConnectionState(label, tone) {
-      connectionIndicator.textContent = `${STATUS_DOT} ${label}`;
-      connectionIndicator.classList.toggle("warn", tone === "warn");
-      connectionIndicator.classList.toggle("danger", tone === "danger");
+      connectionChip.textContent = label;
+      connectionChip.className = tone ? `chip ${tone}` : "chip";
     }
 
-    function setActivePanel(panelName) {
-      state.panel = panelName;
-      panelButtons.forEach((button) => {
-        button.classList.toggle("is-active", button.dataset.panelButton === panelName);
+    function pushActivity(text, tone = "") {
+      if (!text) {
+        return;
+      }
+      state.activity.unshift({
+        text: String(text),
+        tone,
       });
-      panels.forEach((panel) => {
-        panel.classList.toggle("is-active", panel.dataset.panel === panelName);
-      });
+      state.activity = state.activity.slice(0, 8);
+      renderActivity();
     }
 
-    function renderHeader() {
-      const activeUser = state.status.active_user;
-      const actingAs = state.status.acting_as;
-      const originalUser = state.status.original_user;
-      const body = state.status.body || {};
+    function renderActivity() {
+      if (!state.activity.length) {
+        activityBody.innerHTML = '<div class="empty">Console activity will appear here when registry commands or governed tool proposals move through the shared WebSocket flow.</div>';
+        return;
+      }
+      activityBody.innerHTML = `
+        <div class="activity-list">
+          ${state.activity.map((item) => `
+            <div class="activity-item ${item.tone}">${escapeHtml(item.text)}</div>
+          `).join("")}
+        </div>
+      `;
+    }
 
-      phaseText.textContent = state.status.phase || "loading phase";
-      realmIndicator.textContent = `REALM: ${(state.status.realm || "default").toUpperCase()}`;
+    function updateStatus(payload) {
+      state.status = payload || {};
+      const activeUser = payload && payload.active_user || null;
+      phaseText.textContent = payload && payload.phase || "Cycle 5 Console";
+      modeChip.textContent = `mode: ${payload && payload.mode || "--"}`;
+      realmChip.textContent = `realm: ${payload && payload.realm || "--"}`;
+      userChip.textContent = `user: ${activeUser && activeUser.display_name || "--"}`;
 
-      if (activeUser && actingAs && originalUser) {
-        userIndicator.textContent = `USER: ${actingAs.display_name} [as ${originalUser.display_name}]`;
-        userIndicator.classList.remove("dim");
-      } else if (activeUser) {
-        userIndicator.textContent = `USER: ${activeUser.display_name}`;
-        userIndicator.classList.remove("dim");
+      if (!hasConsoleAccess(activeUser)) {
+        state.accessDenied = true;
+        accessDenied.hidden = false;
+        consoleLayout.hidden = true;
       } else {
-        userIndicator.textContent = "USER: NONE";
-        userIndicator.classList.add("dim");
+        state.accessDenied = false;
+        accessDenied.hidden = true;
+        consoleLayout.hidden = false;
+        requestToolRegistry();
       }
-
-      const modelMode = body.model_mode || state.status.mode || "fallback";
-      const isWarn =
-        modelMode === "fallback" ||
-        (typeof body.memory_used_pct === "number" && body.memory_used_pct >= 80) ||
-        (typeof body.disk_free_gb === "number" && body.disk_free_gb < 1);
-
-      let bodyLabel = "BODY: OK";
-      if (modelMode === "fallback") {
-        bodyLabel = "BODY: FALLBACK";
-      } else if (isWarn) {
-        bodyLabel = "BODY: WARN";
-      }
-
-      bodyIndicator.textContent = bodyLabel;
-      bodyIndicator.classList.toggle("warn", isWarn);
     }
 
-    function denyConsoleAccess() {
-      if (state.redirectScheduled) {
-        return;
-      }
-
-      state.redirectScheduled = true;
-      document.body.classList.add("access-denied");
-      accessAlert.textContent = "Access denied. Console requires Guardian or Operator role.";
-      setConnectionState("DENIED", "danger");
-      setTimeout(() => {
-        window.location.replace("/");
-      }, 2000);
-    }
-
-    function allowConsoleAccess() {
-      if (state.redirectScheduled) {
-        return;
-      }
-      document.body.classList.remove("access-denied");
-      accessAlert.textContent = "";
-    }
-
-    function handleServerMessage(payload) {
-      if (payload.type === "status") {
-        state.status = payload.data || {};
-        renderHeader();
-        if (hasConsoleAccess(state.status.active_user)) {
-          allowConsoleAccess();
-        } else {
-          denyConsoleAccess();
+    function groupTools(tools) {
+      const groups = new Map();
+      (tools || []).forEach((tool) => {
+        const category = String(tool.category || "general").toLowerCase();
+        if (!groups.has(category)) {
+          groups.set(category, []);
         }
+        groups.get(category).push(tool);
+      });
+      return Array.from(groups.entries()).sort((left, right) => left[0].localeCompare(right[0]));
+    }
+
+    function actionLabel(tool) {
+      if (tool.name === "ping") {
+        return "ping";
+      }
+      if (tool.name === "web_search") {
+        return "search";
+      }
+      return "run";
+    }
+
+    function inputLabel(tool) {
+      if (tool.name === "ping") {
+        return "Host";
+      }
+      if (tool.name === "web_search") {
+        return "Query";
+      }
+      return "Input";
+    }
+
+    function draftValue(toolName) {
+      return state.toolDrafts[toolName] || "";
+    }
+
+    function renderTools() {
+      const tools = state.toolRegistry || [];
+      toolCount.textContent = `${tools.length} tool${tools.length === 1 ? "" : "s"}`;
+
+      if (!state.registryLoaded) {
+        toolRegistryBody.innerHTML = '<div class="empty">Waiting for tool registry payload...</div>';
         return;
       }
 
-      if (payload.type === "console_access_denied") {
-        denyConsoleAccess();
+      if (!tools.length) {
+        toolRegistryBody.innerHTML = '<div class="empty">No tools are currently registered.</div>';
+        return;
       }
+
+      const groups = groupTools(tools);
+      toolRegistryBody.innerHTML = groups.map(([category, records]) => `
+        <div class="category-block">
+          <div class="category-label">${escapeHtml(category)}</div>
+          <div class="category-rule"></div>
+          ${records.map((tool) => `
+            <article class="tool-card">
+              <div class="tool-head">
+                <div class="tool-name">${escapeHtml(tool.display_name || tool.name)}</div>
+                <div class="tool-badge">${tool.enabled ? "enabled" : "disabled"}</div>
+              </div>
+              <div class="tool-description">${escapeHtml(tool.description || "No description.")}</div>
+              <div class="tool-meta">
+                Requires: ${tool.requires_approval ? "approval" : "none"}&nbsp;&nbsp; Privilege: ${escapeHtml(tool.requires_privilege || "none")}
+              </div>
+              <button class="panel-btn" type="button" data-action="toggle-tool" data-tool="${escapeHtml(tool.name)}">
+                ${state.openToolForm === tool.name ? "[ close ]" : "[ run tool ]"}
+              </button>
+              ${state.openToolForm === tool.name ? `
+                <form class="tool-form" data-action="run-tool" data-tool="${escapeHtml(tool.name)}">
+                  <label for="tool-input-${escapeHtml(tool.name)}">${inputLabel(tool)}</label>
+                  <div class="tool-form-row">
+                    <input
+                      class="tool-input"
+                      id="tool-input-${escapeHtml(tool.name)}"
+                      name="tool-value"
+                      autocomplete="off"
+                      value="${escapeHtml(draftValue(tool.name))}"
+                      placeholder="${escapeHtml(inputLabel(tool))}"
+                    >
+                    <button class="panel-btn" type="submit">[ ${actionLabel(tool)} ]</button>
+                  </div>
+                </form>
+              ` : ""}
+            </article>
+          `).join("")}
+        </div>
+      `).join("");
+    }
+
+    function requestToolRegistry() {
+      if (state.registryRequested || state.accessDenied || !socket || socket.readyState !== WebSocket.OPEN) {
+        return;
+      }
+      state.registryRequested = true;
+      socket.send(JSON.stringify({ type: "command", cmd: "tool-registry" }));
+      pushActivity("Requested tool-registry payload.");
+    }
+
+    function submitTool(toolName) {
+      const rawValue = String(state.toolDrafts[toolName] || "").trim();
+      if (!rawValue) {
+        pushActivity(`No ${toolName === "ping" ? "host" : "query"} provided.`, "warn");
+        return;
+      }
+      if (!socket || socket.readyState !== WebSocket.OPEN) {
+        pushActivity("Console is disconnected. Reconnect before sending governed tool input.", "danger");
+        return;
+      }
+      const text = toolName === "ping" ? `ping ${rawValue}` : `search for ${rawValue}`;
+      socket.send(JSON.stringify({ type: "input", text }));
+      pushActivity(`Sent governed input: ${text}`);
+      state.openToolForm = "";
+      renderTools();
     }
 
     function connect() {
-      const protocol = window.location.protocol === "https:" ? "wss" : "ws";
-      const wsPort = document.body.dataset.wsPort || "8081";
-      state.ws = new WebSocket(`${protocol}://localhost:${wsPort}/console`);
+      const scheme = window.location.protocol === "https:" ? "wss" : "ws";
+      socket = new WebSocket(`${scheme}://${window.location.hostname}:${WS_PORT}/console`);
 
-      setConnectionState("CONNECTING", "warn");
-
-      state.ws.addEventListener("open", () => {
-        setConnectionState("CONNECTED", "ok");
+      socket.addEventListener("open", () => {
+        setConnectionState("connected", "");
+        requestToolRegistry();
       });
 
-      state.ws.addEventListener("message", (event) => {
-        const payload = JSON.parse(event.data);
-        handleServerMessage(payload);
+      socket.addEventListener("close", () => {
+        if (!state.accessDenied) {
+          setConnectionState("disconnected", "warn");
+          pushActivity("Console connection closed.", "warn");
+          window.setTimeout(connect, 1200);
+        }
       });
 
-      state.ws.addEventListener("close", () => {
-        if (state.redirectScheduled) {
+      socket.addEventListener("error", () => {
+        setConnectionState("error", "danger");
+      });
+
+      socket.addEventListener("message", (event) => {
+        let payload = null;
+        try {
+          payload = JSON.parse(event.data);
+        } catch (error) {
+          pushActivity("Received unreadable console payload.", "danger");
           return;
         }
-        setConnectionState("RECONNECTING", "warn");
-        setTimeout(connect, 1000);
-      });
 
-      state.ws.addEventListener("error", () => {
-        if (state.redirectScheduled) {
+        if (payload.type === "status") {
+          updateStatus(payload.data || {});
           return;
         }
-        setConnectionState("RECONNECTING", "warn");
+
+        if (payload.type === "console_access_denied") {
+          state.accessDenied = true;
+          accessDenied.hidden = false;
+          consoleLayout.hidden = true;
+          setConnectionState("denied", "danger");
+          pushActivity(payload.text || "Console access denied.", "danger");
+          return;
+        }
+
+        if (payload.type === "tool_registry") {
+          state.toolRegistry = Array.isArray(payload.tools) ? payload.tools : [];
+          state.registryLoaded = true;
+          state.registryRequested = false;
+          renderTools();
+          pushActivity(`Tool registry loaded: ${payload.total || state.toolRegistry.length} registered.`);
+          return;
+        }
+
+        if (payload.type === "system") {
+          pushActivity(payload.text || "", "");
+          return;
+        }
+
+        if (payload.type === "operator") {
+          pushActivity(payload.text || "", "");
+          return;
+        }
+
+        if (payload.type === "governance") {
+          pushActivity(payload.text || "", payload.decision === "block" ? "danger" : "warn");
+        }
       });
     }
 
-    panelButtons.forEach((button) => {
-      button.addEventListener("click", () => {
-        setActivePanel(button.dataset.panelButton || "tools");
-      });
+    document.addEventListener("click", (event) => {
+      const button = event.target.closest("[data-action='toggle-tool']");
+      if (!button) {
+        return;
+      }
+      const toolName = button.getAttribute("data-tool") || "";
+      state.openToolForm = state.openToolForm === toolName ? "" : toolName;
+      renderTools();
+      if (state.openToolForm) {
+        window.setTimeout(() => {
+          const input = document.getElementById(`tool-input-${toolName}`);
+          if (input) {
+            input.focus();
+          }
+        }, 0);
+      }
     });
 
-    setActivePanel(state.panel);
-    renderHeader();
+    document.addEventListener("input", (event) => {
+      const field = event.target.closest(".tool-input");
+      if (!field) {
+        return;
+      }
+      const form = field.closest("form[data-action='run-tool']");
+      if (!form) {
+        return;
+      }
+      const toolName = form.getAttribute("data-tool") || "";
+      state.toolDrafts[toolName] = field.value;
+    });
+
+    document.addEventListener("submit", (event) => {
+      const form = event.target.closest("form[data-action='run-tool']");
+      if (!form) {
+        return;
+      }
+      event.preventDefault();
+      const toolName = form.getAttribute("data-tool") || "";
+      const input = form.querySelector(".tool-input");
+      state.toolDrafts[toolName] = input ? input.value : "";
+      submitTool(toolName);
+    });
+
+    renderTools();
+    renderActivity();
     connect();
   </script>
 </body>

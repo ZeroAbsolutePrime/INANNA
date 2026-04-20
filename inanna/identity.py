@@ -6,7 +6,7 @@ if TYPE_CHECKING:
     from core.realm import RealmConfig
 
 
-CURRENT_PHASE = "Cycle 5 - Phase 5.1 - The Console Surface"
+CURRENT_PHASE = "Cycle 5 - Phase 5.2 - The Tool Registry"
 
 CYCLE2_SUMMARY = (
     "Cycle 2 built the NAMMU Kernel: web interface, two Faculties, "
@@ -108,7 +108,7 @@ GOVERNANCE_RULES = [
     "Rule 4 - Allow: All other input proceeds as routed.",
 ]
 
-PERMITTED_TOOLS = ["web_search"]
+PERMITTED_TOOLS = ["web_search", "ping"]
 
 GUARDIAN_CHECK_CODES = [
     "PENDING_PROPOSAL_ACCUMULATION",

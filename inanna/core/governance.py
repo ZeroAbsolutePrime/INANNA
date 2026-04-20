@@ -69,14 +69,35 @@ class GovernanceLayer:
     def analyst_signals(self) -> list[str]:
         return self._signals.get("analyst_signals", [])
 
-    def _extract_tool_query(self, user_input: str) -> str:
+    def _extract_tool_query(self, user_input: str, matched_signal: str | None = None) -> str:
+        lower = user_input.lower().strip()
+        signals = [matched_signal] if matched_signal else self.tool_signals
+        for signal in signals:
+            if not signal:
+                continue
+            signal_lower = signal.lower().strip()
+            index = lower.find(signal_lower)
+            if index == -1:
+                continue
+            query = user_input[index + len(signal_lower) :].strip(" :,-")
+            if query:
+                return query
+        return user_input.strip()
+
+    def _resolve_tool_request(self, user_input: str) -> tuple[str, str]:
         lower = user_input.lower().strip()
         for signal in self.tool_signals:
-            if lower.startswith(signal):
-                query = user_input[len(signal) :].strip(" :,-")
-                if query:
-                    return query
-        return user_input.strip()
+            signal_lower = signal.lower().strip()
+            if not signal_lower or signal_lower not in lower:
+                continue
+            tool_name = "web_search"
+            if signal_lower.startswith("ping") or any(
+                keyword in signal_lower
+                for keyword in ("connectivity", "reachable", "connection")
+            ):
+                tool_name = "ping"
+            return tool_name, self._extract_tool_query(user_input, signal_lower)
+        return "web_search", user_input.strip()
 
     def _model_classify(self, user_input: str) -> str | None:
         if not self._engine or not self._engine._connected:
@@ -139,13 +160,14 @@ Reply with exactly one word from the list above."""
             )
 
         if decision == "tool":
+            tool_name, tool_query = self._resolve_tool_request(user_input)
             return GovernanceResult(
                 decision="allow",
                 faculty=nammu_route,
                 reason="",
                 suggests_tool=True,
-                proposed_tool="web_search",
-                tool_query=self._extract_tool_query(user_input),
+                proposed_tool=tool_name,
+                tool_query=tool_query,
             )
 
         return GovernanceResult(

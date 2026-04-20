@@ -12,7 +12,8 @@
         "manage_users_in_realm",
         "approve_proposals_in_realm",
         "read_realm_audit_log",
-        "invite_users"
+        "invite_users",
+        "network_tools"
       ]
     },
     "user": {

@@ -58,7 +58,12 @@
     "news about",
     "find information",
     "what are the latest",
-    "tell me about current"
+    "tell me about current",
+    "ping ",
+    "can you ping",
+    "check connectivity",
+    "is host reachable",
+    "test connection to"
   ],
   "analyst_signals": [
     "analyse",

@@ -1,0 +1,26 @@
+{
+  "tools": {
+    "web_search": {
+      "display_name": "Web Search",
+      "description": "Search the web via DuckDuckGo instant answer API.",
+      "category": "information",
+      "requires_approval": true,
+      "requires_privilege": "converse",
+      "parameters": [
+        "query"
+      ],
+      "enabled": true
+    },
+    "ping": {
+      "display_name": "Ping Host",
+      "description": "Check network connectivity to a hostname or IP address.",
+      "category": "network",
+      "requires_approval": true,
+      "requires_privilege": "network_tools",
+      "parameters": [
+        "host"
+      ],
+      "enabled": true
+    }
+  }
+}

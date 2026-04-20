@@ -142,6 +142,21 @@ class GovernanceLayerTests(unittest.TestCase):
             self.assertEqual(result.proposed_tool, "web_search")
             self.assertTrue(result.tool_query)
 
+    def test_ping_signal_sets_ping_tool(self) -> None:
+        with TemporaryDirectory() as temp_dir:
+            config_path = self.write_config(
+                Path(temp_dir),
+                signal_payload(tool_signal="ping "),
+            )
+            result = GovernanceLayer(config_path=config_path).check(
+                "ping 127.0.0.1",
+                "crown",
+            )
+
+            self.assertTrue(result.suggests_tool)
+            self.assertEqual(result.proposed_tool, "ping")
+            self.assertEqual(result.tool_query, "127.0.0.1")
+
 
 if __name__ == "__main__":
     unittest.main()

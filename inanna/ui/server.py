@@ -56,6 +56,7 @@ from main import (
     build_nammu_log_report,
     build_realms_report,
     build_routing_log_report,
+    build_tool_registry_payload,
     build_tool_result_text,
     build_users_report,
     build_whoami_report,
@@ -885,6 +886,10 @@ class InterfaceServer:
                 self.active_user,
             )
             await self.broadcast({"type": "admin_data", **admin_data})
+        elif command_name == "tool-registry":
+            await self.broadcast(
+                await asyncio.to_thread(build_tool_registry_payload, self.operator)
+            )
         elif command_name == "reflect":
             await self.run_reflect()
         elif command_name == "audit":
@@ -1415,7 +1420,7 @@ class InterfaceServer:
                 assistant_text = ""
                 operator_messages.append("model unavailable to summarize. Raw results shown above.")
         else:
-            operator_messages = ["tool use rejected. Proceeding without search."]
+            operator_messages = ["tool use rejected. Proceeding without tool execution."]
             t0 = time.monotonic()
             assistant_text = self.engine.respond(
                 context_summary=startup_context_items(self.startup_context),

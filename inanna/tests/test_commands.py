@@ -36,6 +36,7 @@ ROLES_PAYLOAD = {
                 "approve_proposals_in_realm",
                 "read_realm_audit_log",
                 "invite_users",
+                "network_tools",
             ],
         },
         "user": {
@@ -501,6 +502,7 @@ class CommandTests(unittest.TestCase):
                 "join",
                 "invites",
                 "admin-surface",
+                "tool-registry",
                 "history",
                 "proposal-history",
                 "routing-log",
@@ -523,11 +525,47 @@ class CommandTests(unittest.TestCase):
                 "Commands: users, create-user, login, logout, whoami, reflect, analyse, "
                 "audit, guardian, faculties, realms, create-realm, realm-context, switch-user, "
                 "assign-realm, unassign-realm, my-log, user-log, invite, join, invites, "
-                "admin-surface, history, proposal-history, routing-log, nammu-log, "
+                "admin-surface, tool-registry, history, proposal-history, routing-log, nammu-log, "
                 "memory-log, body, status, diagnostics, guardian-dismiss, "
                 "guardian-clear-events, approve, reject, forget, exit"
             ),
         )
+
+    def test_tool_registry_command_lists_registered_tools(self) -> None:
+        (
+            session,
+            memory,
+            proposal,
+            state_report,
+            engine,
+            analyst,
+            classifier,
+            routing_log,
+            startup_context,
+            config,
+        ) = self.make_runtime()
+
+        result = handle_command(
+            "tool-registry",
+            session,
+            memory,
+            proposal,
+            state_report,
+            engine,
+            analyst,
+            classifier,
+            routing_log,
+            startup_context,
+            config,
+        )
+
+        self.assertIn("tool-registry > Registered tools (2 total):", result)
+        self.assertIn("INFORMATION", result)
+        self.assertIn("Web Search [enabled]", result)
+        self.assertIn("Privilege: converse", result)
+        self.assertIn("NETWORK", result)
+        self.assertIn("Ping Host [enabled]", result)
+        self.assertIn("Privilege: network_tools", result)
 
     def test_guardian_dismiss_returns_acknowledgement(self) -> None:
         (

@@ -72,6 +72,7 @@ STARTUP_COMMANDS = (
     "join",
     "invites",
     "admin-surface",
+    "tool-registry",
     "history",
     "proposal-history",
     "routing-log",
@@ -1015,8 +1016,8 @@ def create_tool_use_proposal(
     query: str,
 ) -> dict:
     created = proposal.create(
-        what="web_search tool use",
-        why="User requested current information that requires approved tool use.",
+        what=f"{tool} tool use",
+        why="User requested information or connectivity that requires approved tool use.",
         payload={
             "action": "tool_use",
             "tool": tool,
@@ -1035,6 +1036,25 @@ def create_tool_use_proposal(
 
 
 def build_tool_result_text(result: ToolResult) -> str:
+    if result.tool == "ping":
+        lines = ["ping result:"]
+        if not result.success:
+            lines.append(f"  Error: {result.error}")
+            return "\n".join(lines)
+        lines.append(f"  Host: {result.data.get('host', result.query) or 'unknown'}")
+        lines.append(
+            "  Reachable: "
+            + ("yes" if result.data.get("reachable") else "no")
+        )
+        latency = result.data.get("latency_ms")
+        lines.append(
+            f"  Latency: {latency} ms" if latency is not None else "  Latency: unknown"
+        )
+        output = str(result.data.get("output", "")).strip()
+        if output:
+            lines.append(f"  Output: {output[:160]}")
+        return "\n".join(lines)
+
     lines = ["search result:"]
     if not result.success:
         lines.append(f"  Error: {result.error}")
@@ -1051,6 +1071,21 @@ def build_tool_result_text(result: ToolResult) -> str:
 
 
 def build_tool_context_lines(result: ToolResult) -> list[str]:
+    if result.tool == "ping":
+        if result.success:
+            latency = result.data.get("latency_ms")
+            lines = [
+                f"tool result ({result.tool}) host: {result.data.get('host', result.query) or result.query}",
+                f"reachable: {'yes' if result.data.get('reachable') else 'no'}",
+            ]
+            if latency is not None:
+                lines.append(f"latency_ms: {latency}")
+            return lines
+        return [
+            f"tool result ({result.tool}) host: {result.query}",
+            f"error: {result.error or 'unknown tool error'}",
+        ]
+
     if result.success:
         related = result.data.get("related", [])
         related_text = related[0].get("text", "") if related else ""
@@ -1066,6 +1101,40 @@ def build_tool_context_lines(result: ToolResult) -> list[str]:
         f"tool result ({result.tool}) query: {result.query}",
         f"error: {result.error or 'unknown tool error'}",
     ]
+
+
+def build_tool_registry_payload(operator: OperatorFaculty) -> dict[str, object]:
+    tools = operator.list_tools()
+    return {
+        "type": "tool_registry",
+        "tools": tools,
+        "total": len(tools),
+    }
+
+
+def build_tool_registry_report(payload: dict[str, object]) -> str:
+    tools = list(payload.get("tools", []))
+    total = int(payload.get("total", len(tools)))
+    lines = [f"tool-registry > Registered tools ({total} total):"]
+    current_category = ""
+    for tool in tools:
+        category = str(tool.get("category", "general")).strip() or "general"
+        if category != current_category:
+            current_category = category
+            lines.extend(["", category.upper()])
+        lines.append(
+            f"  {tool.get('display_name', tool.get('name', 'tool'))} "
+            f"[{'enabled' if tool.get('enabled', False) else 'disabled'}]"
+        )
+        lines.append(f"    {tool.get('description', '')}")
+        lines.append(
+            "    Requires: "
+            + ("approval" if tool.get("requires_approval", False) else "none")
+            + f"  Privilege: {tool.get('requires_privilege', '') or 'none'}"
+        )
+    if total == 0:
+        lines.append("  No registered tools.")
+    return "\n".join(lines)
 
 
 def complete_tool_resolution(
@@ -1121,7 +1190,7 @@ def complete_tool_resolution(
                 f"{created['line']}"
             )
     else:
-        operator_text = "tool use rejected. Proceeding without search."
+        operator_text = "tool use rejected. Proceeding without tool execution."
         t0 = time.monotonic()
         assistant_text = engine.respond(
             context_summary=startup_context_items(startup_context),
@@ -1456,6 +1525,10 @@ def handle_command(
                 active_user=current_user,
             )
         )
+
+    if lowered == "tool-registry":
+        operator = operator or OperatorFaculty()
+        return build_tool_registry_report(build_tool_registry_payload(operator))
 
     if lowered == "status":
         history = proposal.history_report()
