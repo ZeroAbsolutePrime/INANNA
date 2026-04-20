@@ -1,235 +1,299 @@
-﻿# CURRENT PHASE: Cycle 5 - Phase 5.1 - The Console Surface
+﻿# CURRENT PHASE: Cycle 5 - Phase 5.2 - The Tool Registry
 **Status: ACTIVE**
 **Authorized by: ZAERA (Guardian) + Claude (Command Center)**
 **Date opened: 2026-04-20**
 **Cycle: 5 - The Operator Console**
-**Master plan: docs/cycle5_master_plan.md**
-**Prerequisite: Cycle 4 complete — verify_cycle4.py passed 68 checks**
+**Replaces: Cycle 5 Phase 5.1 - The Console Surface (COMPLETE)**
 
 ---
 
 ## What This Phase Is
 
-Cycle 4 gave INANNA a civic layer: users, roles, privileges, logs.
-Cycle 5 gives Guardians and Operators the surface to manage it all.
+Phase 5.1 opened the door. Phase 5.2 fills the first room.
 
-Phase 5.1 builds the Console Surface: a second browser panel at
-/console, accessible only to Guardian and Operator roles, with four
-section buttons and a link from the main interface header.
+The current tool architecture has one tool: web_search, defined
+by a hardcoded PERMITTED_TOOLS set in operator.py. This violates
+the core principle: no configuration in Python code.
 
-This is the shell of the Operator Console. Subsequent phases
-(5.2-5.8) will fill it with tools, network views, Faculty registry,
-and orchestration. Phase 5.1 builds only the surface and navigation.
+Phase 5.2 moves all tool definitions into inanna/config/tools.json
+and builds the Tool Registry panel in the Operator Console.
+
+Two governed tools will be registered after this phase:
+  web_search  — search the web via DuckDuckGo (already works)
+  ping        — check connectivity to a host (new in this phase)
+
+The Tool Registry panel in the Console shows all registered tools,
+their categories, descriptions, and approval requirements.
 
 ---
 
 ## What You Are Building
 
-### Task 1 - inanna/ui/static/console.html
+### Task 1 - inanna/config/tools.json
 
-Create a new HTML file: inanna/ui/static/console.html
+Create: inanna/config/tools.json
 
-The Console shares the same WebSocket server as the main interface.
-It connects to ws://localhost:8081 on load.
-
-The Console header:
-```
-INANNA NYX  OPERATOR CONSOLE    [phase]  [realm]  USER: ZAERA  BODY: OK  • CONNECTED
-```
-
-Four section buttons below the header:
-```
-[ tools ]    [ network ]    [ faculties ]    [ processes ]
-```
-
-Each button shows its section panel. Only one panel visible at a time.
-Default: tools panel visible on load.
-
-Four section panels (all empty placeholders in Phase 5.1):
-
-TOOLS panel:
-  "Tool Registry — Phase 5.2"
-  "Registered tools will appear here."
-
-NETWORK panel:
-  "Network Eye — Phase 5.3"
-  "Network discovery and topology will appear here."
-
-FACULTIES panel:
-  "Faculty Registry — Phase 5.5"
-  "Registered Faculties will appear here."
-
-PROCESSES panel:
-  "Process Monitor — Phase 5.4"
-  "Running services and health will appear here."
-
-Each panel has a header with its name and a subtitle explaining
-what will be built in its phase.
-
-The Console uses the same color scheme and CSS variables as
-the main interface (dark background, amber voice color, etc).
-It does not need to import or reference index.html — it is
-standalone with its own CSS that matches the design language.
-
-### Task 2 - Role-gated access in the server
-
-Add a route handler in server.py for /console:
-
-When a request comes in for /console:
-- If there is an active session and the user has role guardian
-  or operator: serve console.html
-- Otherwise: redirect to / with a message
-
-Since sessions are WebSocket-based (not HTTP cookie-based),
-the HTTP access check is lightweight: just serve console.html
-to all HTTP requests for now and let the WebSocket role check
-handle enforcement when the page connects.
-
-Actually: serve console.html as a static file like index.html.
-Role enforcement happens via the WebSocket on connect:
-when console.html connects, send_initial_state() checks
-active_user.role and if not guardian/operator, broadcasts:
-{"type": "console_access_denied", "text": "Insufficient privileges for Console."}
-and the console.html JS redirects to /
-
-### Task 3 - [ console ] button in main interface header
-
-The main interface header currently has (from left to right):
-INANNA NYX | [phase] | [realm] | USER: ZAERA | BODY: OK | • CONNECTED
-
-Add a [ console ] button to the right of the phase name:
-```
-INANNA NYX  [phase]  [ console ]  [realm]  USER: ZAERA  BODY: OK  • CONNECTED
-```
-
-CSS for the console button:
-```css
-.console-btn {
-    padding: 2px 10px;
-    font-size: 0.74rem;
-    letter-spacing: 0.1em;
-    border: 1px solid var(--border);
-    color: var(--dim);
-    cursor: pointer;
-    background: transparent;
-    text-decoration: none;
-    transition: color 0.15s, border-color 0.15s;
-}
-.console-btn:hover {
-    color: var(--voice);
-    border-color: var(--voice);
+```json
+{
+  "tools": {
+    "web_search": {
+      "display_name": "Web Search",
+      "description": "Search the web via DuckDuckGo instant answer API.",
+      "category": "information",
+      "requires_approval": true,
+      "requires_privilege": "converse",
+      "parameters": ["query"],
+      "enabled": true
+    },
+    "ping": {
+      "display_name": "Ping Host",
+      "description": "Check network connectivity to a hostname or IP address.",
+      "category": "network",
+      "requires_approval": true,
+      "requires_privilege": "network_tools",
+      "parameters": ["host"],
+      "enabled": true
+    }
+  }
 }
 ```
 
-The button is an anchor tag: href="/console" target="_blank"
-It opens the Console in a new tab.
+All tool definitions live here. Python code reads them.
+No tool name or configuration is hardcoded in Python.
 
-The button is only rendered when active_user.role is guardian
-or operator. Hidden for user role and when not logged in.
+### Task 2 - Update OperatorFaculty to read tools.json
 
-### Task 4 - HTTP route for /console in server.py
+Update inanna/core/operator.py:
 
-The HTTP server already serves index.html for /.
-Add a handler for /console that serves console.html.
+- Load tools.json at init alongside governance_signals.json
+- PERMITTED_TOOLS becomes a property read from tools.json:
+  any tool with "enabled": true
+- execute() validates against loaded tool list (not hardcoded set)
+- Add _ping() method for the ping tool
 
 ```python
-elif path == "/console":
-    file_path = static_dir / "console.html"
-    if file_path.exists():
-        content = file_path.read_bytes()
-        self.send_response(200)
-        self.send_header("Content-Type", "text/html; charset=utf-8")
-        self.end_headers()
-        self.wfile.write(content)
-    else:
-        self.send_response(404)
-        self.end_headers()
+def _ping(self, host: str) -> ToolResult:
+    if not host.strip():
+        return ToolResult(tool="ping", query=host,
+                          success=False, data={},
+                          error="Empty host.")
+    try:
+        import subprocess, platform
+        param = "-n" if platform.system().lower() == "windows" else "-c"
+        result = subprocess.run(
+            ["ping", param, "3", host.strip()],
+            capture_output=True, text=True, timeout=10
+        )
+        success = result.returncode == 0
+        output = result.stdout if success else result.stderr
+        # Parse average latency from output
+        latency = None
+        import re
+        if platform.system().lower() == "windows":
+            m = re.search(r"Average = (\d+)ms", output)
+        else:
+            m = re.search(r"avg.*?=([\d.]+)", output)
+        if m:
+            latency = float(m.group(1))
+        return ToolResult(
+            tool="ping", query=host, success=success,
+            data={"host": host, "reachable": success,
+                  "latency_ms": latency, "output": output[:500]},
+            error="" if success else output[:200],
+        )
+    except subprocess.TimeoutExpired:
+        return ToolResult(tool="ping", query=host, success=False,
+                          data={}, error="Ping timed out.")
+    except Exception as e:
+        return ToolResult(tool="ping", query=host, success=False,
+                          data={}, error=str(e))
 ```
 
-### Task 5 - Console WebSocket connection and role check
+### Task 3 - Add "network_tools" privilege to roles.json
 
-In console.html, the WebSocket connect handler:
-1. Connects to ws://localhost:8081
-2. Listens for status messages
-3. Reads active_user.role from the status payload
-4. If role is not guardian or operator:
-   - Shows "Access denied. Console requires Guardian or Operator role."
-   - After 2 seconds, redirects to /
+Update inanna/config/roles.json:
 
-If role is guardian or operator:
-- Updates the header with phase, realm, user, body status
-- Shows the console as normal
+Add "network_tools" to operator privileges:
+```json
+"operator": {
+  "description": "Realm-scoped admin",
+  "privileges": [
+    "manage_users_in_realm",
+    "approve_proposals_in_realm",
+    "read_realm_audit_log",
+    "invite_users",
+    "network_tools"
+  ]
+}
+```
 
-### Task 6 - Update identity.py and state.py
+Guardian has "all" so inherits network_tools automatically.
 
-CURRENT_PHASE = "Cycle 5 - Phase 5.1 - The Console Surface"
+### Task 4 - Tool Registry panel in console.html
 
-No new commands needed in Phase 5.1.
+Replace the placeholder "Tool Registry - Phase 5.2" section
+with a real Tool Registry panel.
 
-### Task 7 - Tests
+The panel shows:
+```
+TOOL REGISTRY
 
+  information
+  ────────────────────────────────
+  WEB SEARCH                    [ enabled ]
+  Search the web via DuckDuckGo
+  Requires: approval  Privilege: converse
+  [ run tool ]
+
+  network
+  ────────────────────────────────
+  PING HOST                     [ enabled ]
+  Check connectivity to a host
+  Requires: approval  Privilege: network_tools
+  [ run tool ]
+```
+
+[ run tool ] opens an inline form below the tool entry:
+  For web_search: Query: [___________]  [ search ]
+  For ping:       Host:  [___________]  [ ping ]
+
+On submit: sends a WebSocket message to the main interface
+triggering the tool via the existing governed flow:
+```json
+{"type": "input", "text": "search for [query]"}
+{"type": "input", "text": "ping [host]"}
+```
+
+The Console sends these as if typed in the main interface —
+reusing the existing NAMMU → Governance → Operator flow.
+
+### Task 5 - "ping" tool signal in governance_signals.json
+
+Add ping-related patterns to tool_signals in governance_signals.json:
+
+```json
+"tool_signals": [
+  "search for", "look up", ... (existing),
+  "ping ", "can you ping", "check connectivity",
+  "is host reachable", "test connection to"
+]
+```
+
+### Task 6 - "tool-registry" WebSocket command
+
+Add command: tool-registry
+
+Returns all tools from tools.json with their metadata:
+```json
+{
+  "type": "tool_registry",
+  "tools": [
+    {
+      "name": "web_search",
+      "display_name": "Web Search",
+      "description": "...",
+      "category": "information",
+      "requires_approval": true,
+      "requires_privilege": "converse",
+      "enabled": true
+    }
+  ],
+  "total": 2
+}
+```
+
+The Console Tool Registry panel sends this command on load.
+
+Add "tool-registry" to STARTUP_COMMANDS and capabilities.
+
+### Task 7 - Update identity.py
+
+CURRENT_PHASE = "Cycle 5 - Phase 5.2 - The Tool Registry"
+
+### Task 8 - Tests
+
+Update inanna/tests/test_operator.py:
+- OperatorFaculty loads tools from tools.json (not hardcoded)
+- PERMITTED_TOOLS includes "web_search" and "ping"
+- execute("ping", {"host": "127.0.0.1"}) returns a ToolResult
+- execute("ping", {"host": ""}) returns success=False
+- execute("unknown_tool", {}) returns success=False
+
+Add to test_commands.py: "tool-registry" in capabilities.
 Update test_identity.py: update CURRENT_PHASE assertion.
-
-No new server tests needed for Phase 5.1 — the console.html
-is a static file addition, not a new API.
+Update test_state.py: add tool-registry.
 
 ---
 
 ## Permitted file changes
 
-inanna/identity.py                 <- MODIFY: update CURRENT_PHASE
+inanna/identity.py              <- MODIFY: update CURRENT_PHASE
+inanna/config/
+  tools.json                    <- NEW: tool registry config
+  roles.json                    <- MODIFY: add network_tools to operator
+  governance_signals.json       <- MODIFY: add ping tool signals
+inanna/main.py                  <- MODIFY: add tool-registry command
+inanna/core/
+  operator.py                   <- MODIFY: load tools.json,
+                                           add _ping() method,
+                                           PERMITTED_TOOLS from config
+  state.py                      <- MODIFY: add tool-registry
 inanna/ui/
-  server.py                        <- MODIFY: /console HTTP route,
-                                              console_access_denied on connect
+  server.py                     <- MODIFY: add tool-registry command,
+                                           return tool_registry payload
   static/
-    console.html                   <- NEW: Operator Console surface
-    index.html                     <- MODIFY: [ console ] button in header,
-                                              role-gated visibility
+    console.html                <- MODIFY: replace placeholder with
+                                           real Tool Registry panel,
+                                           inline run forms
 inanna/tests/
-  test_identity.py                 <- MODIFY: update phase assertion
+  test_operator.py              <- MODIFY: add tools.json tests, ping tests
+  test_commands.py              <- MODIFY: add tool-registry
+  test_identity.py              <- MODIFY: update phase assertion
+  test_state.py                 <- MODIFY: add tool-registry
 
 ---
 
 ## What You Are NOT Building
 
-- No tool execution (Phase 5.2)
-- No network scanning (Phase 5.3)
-- No Faculty deployment (Phase 5.5)
-- No process monitoring (Phase 5.4)
-- No new WebSocket commands
-- No new Python modules
-- The four section panels are placeholder only
+- No autonomous tool execution without approval
+- No tool chaining (sequential execution)
+- No tool result caching
+- No new tools beyond web_search and ping
+- No tool editing via the Console UI
+- The Console run form sends input to the main interface —
+  it does not bypass the proposal governance flow
 
 ---
 
-## Definition of Done for Phase 5.1
+## Definition of Done for Phase 5.2
 
-- [ ] console.html exists with four section panels
-- [ ] /console HTTP route serves console.html
-- [ ] Console connects to WebSocket and reads status payload
-- [ ] Role check redirects non-authorized users to /
-- [ ] [ console ] button appears in main header for guardian/operator
-- [ ] [ console ] button hidden for user role
-- [ ] CURRENT_PHASE updated to Phase 5.1
+- [ ] tools.json exists with web_search and ping definitions
+- [ ] OperatorFaculty reads PERMITTED_TOOLS from tools.json
+- [ ] _ping() executes and returns ToolResult
+- [ ] "network_tools" privilege added to operator role
+- [ ] Tool Registry panel in Console shows both tools
+- [ ] [ run tool ] form works for both tools
+- [ ] tool-registry command returns tools payload
+- [ ] governance_signals.json has ping tool signals
+- [ ] CURRENT_PHASE updated
 - [ ] All tests pass: py -3 -m unittest discover -s tests
-- [ ] Commit pushed to origin/main immediately
+- [ ] Pushed to origin/main immediately
 
 ---
 
-## Handoff to Command Center
+## Handoff
 
-When Definition of Done is met, Codex must:
-1. Commit with message: cycle5-phase1-complete
-2. PUSH TO ORIGIN/MAIN IMMEDIATELY.
-3. Write docs/implementation/CYCLE5_PHASE1_REPORT.md
-4. Stop. Do not begin Phase 5.2 without a new CURRENT_PHASE.md.
+Commit: cycle5-phase2-complete
+Push immediately to origin/main.
+Report: docs/implementation/CYCLE5_PHASE2_REPORT.md
+Stop. Do not begin Phase 5.3 without new CURRENT_PHASE.md.
 
 ---
 
 *Written by: Claude (Command Center)*
 *Guardian approval: ZAERA*
 *Date: 2026-04-20*
-*The console opens.*
-*Not with tools yet. Not with network views.*
-*Just the surface. Just the door.*
-*Everything begins with a door.*
+*The tool registry is not a list of features.*
+*It is a declaration of what the system can do*
+*and under what conditions it may do it.*
+*Every tool named. Every tool governed.*
