@@ -1,280 +1,245 @@
-﻿# CURRENT PHASE: Cycle 5 - Phase 5.2 - The Tool Registry
+﻿# CURRENT PHASE: Cycle 5 - Phase 5.3 - The Network Eye
 **Status: ACTIVE**
 **Authorized by: ZAERA (Guardian) + Claude (Command Center)**
 **Date opened: 2026-04-20**
 **Cycle: 5 - The Operator Console**
-**Replaces: Cycle 5 Phase 5.1 - The Console Surface (COMPLETE)**
+**Replaces: Cycle 5 Phase 5.2 - The Tool Registry (COMPLETE)**
 
 ---
 
 ## What This Phase Is
 
-Phase 5.1 opened the door. Phase 5.2 fills the first room.
+Phase 5.2 registered tools and governed their invocation.
+Phase 5.3 gives INANNA eyes on the network.
 
-The current tool architecture has one tool: web_search, defined
-by a hardcoded PERMITTED_TOOLS set in operator.py. This violates
-the core principle: no configuration in Python code.
+The Network Eye is the first surface in INANNA NYX that reaches
+beyond the machine it runs on. Every action is proposal-governed.
+Every result is audited. The Guardian sees everything.
 
-Phase 5.2 moves all tool definitions into inanna/config/tools.json
-and builds the Tool Registry panel in the Operator Console.
+Three governed capabilities are added in this phase:
+  ping_host     — already exists in operator.py, now surfaced properly
+  resolve_host  — resolve hostname to IP address
+  scan_ports    — check a range of ports on a host
 
-Two governed tools will be registered after this phase:
-  web_search  — search the web via DuckDuckGo (already works)
-  ping        — check connectivity to a host (new in this phase)
+All three use Python standard library only. No nmap. No external deps.
+All three require approval before execution.
+All three append to the audit surface.
 
-The Tool Registry panel in the Console shows all registered tools,
-their categories, descriptions, and approval requirements.
+The Network panel in the Operator Console becomes functional.
 
 ---
 
 ## What You Are Building
 
-### Task 1 - inanna/config/tools.json
+### Task 1 - Add resolve_host and scan_ports to operator.py
 
-Create: inanna/config/tools.json
-
-```json
-{
-  "tools": {
-    "web_search": {
-      "display_name": "Web Search",
-      "description": "Search the web via DuckDuckGo instant answer API.",
-      "category": "information",
-      "requires_approval": true,
-      "requires_privilege": "converse",
-      "parameters": ["query"],
-      "enabled": true
-    },
-    "ping": {
-      "display_name": "Ping Host",
-      "description": "Check network connectivity to a hostname or IP address.",
-      "category": "network",
-      "requires_approval": true,
-      "requires_privilege": "network_tools",
-      "parameters": ["host"],
-      "enabled": true
-    }
-  }
-}
-```
-
-All tool definitions live here. Python code reads them.
-No tool name or configuration is hardcoded in Python.
-
-### Task 2 - Update OperatorFaculty to read tools.json
-
-Update inanna/core/operator.py:
-
-- Load tools.json at init alongside governance_signals.json
-- PERMITTED_TOOLS becomes a property read from tools.json:
-  any tool with "enabled": true
-- execute() validates against loaded tool list (not hardcoded set)
-- Add _ping() method for the ping tool
+Add two new tool implementations to OperatorFaculty:
 
 ```python
-def _ping(self, host: str) -> ToolResult:
+def _resolve_host(self, host: str) -> ToolResult:
     if not host.strip():
-        return ToolResult(tool="ping", query=host,
-                          success=False, data={},
-                          error="Empty host.")
+        return ToolResult(tool="resolve_host", query=host,
+                          success=False, data={}, error="Empty host.")
     try:
-        import subprocess, platform
-        param = "-n" if platform.system().lower() == "windows" else "-c"
-        result = subprocess.run(
-            ["ping", param, "3", host.strip()],
-            capture_output=True, text=True, timeout=10
-        )
-        success = result.returncode == 0
-        output = result.stdout if success else result.stderr
-        # Parse average latency from output
-        latency = None
-        import re
-        if platform.system().lower() == "windows":
-            m = re.search(r"Average = (\d+)ms", output)
-        else:
-            m = re.search(r"avg.*?=([\d.]+)", output)
-        if m:
-            latency = float(m.group(1))
+        import socket
+        ip = socket.gethostbyname(host.strip())
+        hostname = socket.getfqdn(host.strip())
         return ToolResult(
-            tool="ping", query=host, success=success,
-            data={"host": host, "reachable": success,
-                  "latency_ms": latency, "output": output[:500]},
-            error="" if success else output[:200],
+            tool="resolve_host", query=host, success=True,
+            data={"host": host, "ip": ip, "fqdn": hostname},
+            error="",
         )
-    except subprocess.TimeoutExpired:
-        return ToolResult(tool="ping", query=host, success=False,
-                          data={}, error="Ping timed out.")
     except Exception as e:
-        return ToolResult(tool="ping", query=host, success=False,
-                          data={}, error=str(e))
+        return ToolResult(tool="resolve_host", query=host,
+                          success=False, data={}, error=str(e))
+
+def _scan_ports(self, host: str, port_range: str = "1-1024") -> ToolResult:
+    if not host.strip():
+        return ToolResult(tool="scan_ports", query=host,
+                          success=False, data={}, error="Empty host.")
+    try:
+        import socket, re
+        m = re.match(r"(\d+)[-–](\d+)", port_range.strip())
+        if m:
+            start, end = int(m.group(1)), int(m.group(2))
+        else:
+            start = end = int(port_range.strip())
+        # Cap range for safety
+        end = min(end, start + 99)  # max 100 ports per scan
+        open_ports = []
+        for port in range(start, end + 1):
+            try:
+                with socket.create_connection((host.strip(), port), timeout=0.3):
+                    open_ports.append(port)
+            except Exception:
+                pass
+        return ToolResult(
+            tool="scan_ports", query=f"{host}:{port_range}",
+            success=True,
+            data={"host": host, "port_range": port_range,
+                  "open_ports": open_ports,
+                  "scanned": end - start + 1},
+            error="",
+        )
+    except Exception as e:
+        return ToolResult(tool="scan_ports", query=host,
+                          success=False, data={}, error=str(e))
 ```
 
-### Task 3 - Add "network_tools" privilege to roles.json
+### Task 2 - Register resolve_host and scan_ports in tools.json
 
-Update inanna/config/roles.json:
+Add to inanna/config/tools.json:
 
-Add "network_tools" to operator privileges:
 ```json
-"operator": {
-  "description": "Realm-scoped admin",
-  "privileges": [
-    "manage_users_in_realm",
-    "approve_proposals_in_realm",
-    "read_realm_audit_log",
-    "invite_users",
-    "network_tools"
-  ]
+"resolve_host": {
+  "display_name": "Resolve Host",
+  "description": "Resolve a hostname to its IP address and FQDN.",
+  "category": "network",
+  "requires_approval": true,
+  "requires_privilege": "network_tools",
+  "parameters": ["host"],
+  "enabled": true
+},
+"scan_ports": {
+  "display_name": "Port Scan",
+  "description": "Scan open ports on a host (max 100 ports per scan).",
+  "category": "network",
+  "requires_approval": true,
+  "requires_privilege": "network_tools",
+  "parameters": ["host", "port_range"],
+  "enabled": true
 }
 ```
 
-Guardian has "all" so inherits network_tools automatically.
+### Task 3 - Add tool signals to governance_signals.json
 
-### Task 4 - Tool Registry panel in console.html
+Add to tool_signals:
+  "resolve ", "resolve host", "what is the ip",
+  "scan ports", "port scan", "check ports on",
+  "open ports", "what ports"
 
-Replace the placeholder "Tool Registry - Phase 5.2" section
-with a real Tool Registry panel.
+### Task 4 - Network Eye panel in console.html
 
-The panel shows:
+Replace the placeholder content in the Network panel with
+a functional Network Eye surface.
+
+The panel has two sections:
+
+**Discovery section** — quick action buttons:
+  [ ping localhost ]  [ ping 8.8.8.8 ]
+  [ resolve [input] ]  [ scan ports [host] [range] ]
+
+**Results section** — a live host map:
+When a ping, resolve, or scan result arrives via WebSocket
+(operator message with tool result), parse and display it
+as a host card:
+
 ```
-TOOL REGISTRY
-
-  information
-  ────────────────────────────────
-  WEB SEARCH                    [ enabled ]
-  Search the web via DuckDuckGo
-  Requires: approval  Privilege: converse
-  [ run tool ]
-
-  network
-  ────────────────────────────────
-  PING HOST                     [ enabled ]
-  Check connectivity to a host
-  Requires: approval  Privilege: network_tools
-  [ run tool ]
-```
-
-[ run tool ] opens an inline form below the tool entry:
-  For web_search: Query: [___________]  [ search ]
-  For ping:       Host:  [___________]  [ ping ]
-
-On submit: sends a WebSocket message to the main interface
-triggering the tool via the existing governed flow:
-```json
-{"type": "input", "text": "search for [query]"}
-{"type": "input", "text": "ping [host]"}
+HOST: 127.0.0.1
+  name:    localhost
+  status:  reachable
+  latency: 0ms
+  ports:   22, 80, 443  (from scan if done)
+  last seen: 22:15
 ```
 
-The Console sends these as if typed in the main interface —
-reusing the existing NAMMU → Governance → Operator flow.
+Host cards are added to the panel as results arrive.
+Each card has buttons: [ ping ] [ resolve ] [ scan ports ]
 
-### Task 5 - "ping" tool signal in governance_signals.json
+The console.html listens for operator messages containing
+tool results (JSON in the text or structured data) and
+parses them to populate the host map.
 
-Add ping-related patterns to tool_signals in governance_signals.json:
+**Inline forms for resolve and scan:**
+  Resolve:   Host: [___________]  [ resolve ]
+  Scan:      Host: [___________]  Range: [1-1024]  [ scan ]
 
-```json
-"tool_signals": [
-  "search for", "look up", ... (existing),
-  "ping ", "can you ping", "check connectivity",
-  "is host reachable", "test connection to"
-]
-```
+These send inputs through the governed WebSocket flow.
 
-### Task 6 - "tool-registry" WebSocket command
+### Task 5 - "network-status" WebSocket command
 
-Add command: tool-registry
+Add command: network-status
 
-Returns all tools from tools.json with their metadata:
+Returns a summary of recent network activity from the audit log:
 ```json
 {
-  "type": "tool_registry",
-  "tools": [
-    {
-      "name": "web_search",
-      "display_name": "Web Search",
-      "description": "...",
-      "category": "information",
-      "requires_approval": true,
-      "requires_privilege": "converse",
-      "enabled": true
-    }
+  "type": "network_status",
+  "recent_scans": [
+    {"tool": "ping", "host": "8.8.8.8", "result": "reachable", "ts": "..."},
+    {"tool": "resolve_host", "host": "google.com", "result": "142.250.x.x", "ts": "..."}
   ],
-  "total": 2
+  "total_scans": 5
 }
 ```
 
-The Console Tool Registry panel sends this command on load.
+Reads from the audit log, filters for tool_use events with
+network tool names. Returns last 20.
 
-Add "tool-registry" to STARTUP_COMMANDS and capabilities.
+Add "network-status" to STARTUP_COMMANDS and capabilities.
 
-### Task 7 - Update identity.py
+### Task 6 - Update identity.py and state.py
 
-CURRENT_PHASE = "Cycle 5 - Phase 5.2 - The Tool Registry"
+CURRENT_PHASE = "Cycle 5 - Phase 5.3 - The Network Eye"
 
-### Task 8 - Tests
+Add "network-status" to capabilities.
+
+### Task 7 - Tests
 
 Update inanna/tests/test_operator.py:
-- OperatorFaculty loads tools from tools.json (not hardcoded)
-- PERMITTED_TOOLS includes "web_search" and "ping"
-- execute("ping", {"host": "127.0.0.1"}) returns a ToolResult
-- execute("ping", {"host": ""}) returns success=False
-- execute("unknown_tool", {}) returns success=False
+- resolve_host("localhost") returns success=True with ip field
+- resolve_host("") returns success=False
+- scan_ports("127.0.0.1", "80-80") returns success=True
+- scan_ports("", "80-80") returns success=False
+- scan_ports caps at 100 ports (start+99)
+- PERMITTED_TOOLS includes resolve_host and scan_ports
 
-Add to test_commands.py: "tool-registry" in capabilities.
+Update test_commands.py: add network-status to capabilities.
 Update test_identity.py: update CURRENT_PHASE assertion.
-Update test_state.py: add tool-registry.
+Update test_state.py: add network-status.
 
 ---
 
 ## Permitted file changes
 
-inanna/identity.py              <- MODIFY: update CURRENT_PHASE
+inanna/identity.py
+inanna/main.py                  <- add network-status command
 inanna/config/
-  tools.json                    <- NEW: tool registry config
-  roles.json                    <- MODIFY: add network_tools to operator
-  governance_signals.json       <- MODIFY: add ping tool signals
-inanna/main.py                  <- MODIFY: add tool-registry command
+  tools.json                    <- add resolve_host, scan_ports
+  governance_signals.json       <- add network tool signals
 inanna/core/
-  operator.py                   <- MODIFY: load tools.json,
-                                           add _ping() method,
-                                           PERMITTED_TOOLS from config
-  state.py                      <- MODIFY: add tool-registry
+  operator.py                   <- add _resolve_host(), _scan_ports()
+  state.py                      <- add network-status
 inanna/ui/
-  server.py                     <- MODIFY: add tool-registry command,
-                                           return tool_registry payload
-  static/
-    console.html                <- MODIFY: replace placeholder with
-                                           real Tool Registry panel,
-                                           inline run forms
+  server.py                     <- add network-status command
+  static/console.html           <- replace Network placeholder
+                                   with functional Network Eye
 inanna/tests/
-  test_operator.py              <- MODIFY: add tools.json tests, ping tests
-  test_commands.py              <- MODIFY: add tool-registry
-  test_identity.py              <- MODIFY: update phase assertion
-  test_state.py                 <- MODIFY: add tool-registry
+  test_operator.py              <- add network tests
+  test_commands.py              <- add network-status
+  test_identity.py              <- update phase
+  test_state.py                 <- add network-status
 
 ---
 
 ## What You Are NOT Building
 
-- No autonomous tool execution without approval
-- No tool chaining (sequential execution)
-- No tool result caching
-- No new tools beyond web_search and ping
-- No tool editing via the Console UI
-- The Console run form sends input to the main interface —
-  it does not bypass the proposal governance flow
+- No automated network scanning (always proposal-governed)
+- No topology visualization graph (future phase)
+- No persistent host database (session-only in Phase 5.3)
+- No service fingerprinting beyond port open/closed
+- No ICMP raw sockets (use subprocess ping only)
+- Do not modify index.html (main interface redesign is separate)
 
 ---
 
-## Definition of Done for Phase 5.2
+## Definition of Done
 
-- [ ] tools.json exists with web_search and ping definitions
-- [ ] OperatorFaculty reads PERMITTED_TOOLS from tools.json
-- [ ] _ping() executes and returns ToolResult
-- [ ] "network_tools" privilege added to operator role
-- [ ] Tool Registry panel in Console shows both tools
-- [ ] [ run tool ] form works for both tools
-- [ ] tool-registry command returns tools payload
-- [ ] governance_signals.json has ping tool signals
+- [ ] resolve_host() and scan_ports() in operator.py
+- [ ] resolve_host and scan_ports in tools.json
+- [ ] Network Eye panel shows quick actions and host cards
+- [ ] Inline forms for resolve and scan send governed input
+- [ ] Host cards update from operator tool results
+- [ ] network-status command returns audit-filtered results
 - [ ] CURRENT_PHASE updated
 - [ ] All tests pass: py -3 -m unittest discover -s tests
 - [ ] Pushed to origin/main immediately
@@ -283,17 +248,16 @@ inanna/tests/
 
 ## Handoff
 
-Commit: cycle5-phase2-complete
+Commit: cycle5-phase3-complete
 Push immediately to origin/main.
-Report: docs/implementation/CYCLE5_PHASE2_REPORT.md
-Stop. Do not begin Phase 5.3 without new CURRENT_PHASE.md.
+Report: docs/implementation/CYCLE5_PHASE3_REPORT.md
+Stop. Do not begin Phase 5.4 without new CURRENT_PHASE.md.
 
 ---
 
 *Written by: Claude (Command Center)*
 *Guardian approval: ZAERA*
 *Date: 2026-04-20*
-*The tool registry is not a list of features.*
-*It is a declaration of what the system can do*
-*and under what conditions it may do it.*
-*Every tool named. Every tool governed.*
+*The Network Eye sees what is connected.*
+*Every host visible. Every port accountable.*
+*Nothing scanned without consent.*
