@@ -74,6 +74,7 @@ STARTUP_COMMANDS = (
     "invites",
     "admin-surface",
     "tool-registry",
+    "faculty-registry",
     "network-status",
     "process-status",
     "history",
@@ -1352,6 +1353,18 @@ def build_tool_registry_payload(operator: OperatorFaculty) -> dict[str, object]:
     }
 
 
+def build_faculty_registry_payload(faculty_monitor: FacultyMonitor) -> dict[str, object]:
+    faculties = faculty_monitor.registry_summary()
+    active = sum(1 for faculty in faculties if bool(faculty.get("active", False)))
+    return {
+        "type": "faculty_registry",
+        "faculties": faculties,
+        "total": len(faculties),
+        "active": active,
+        "inactive": len(faculties) - active,
+    }
+
+
 def build_tool_result_payload(result: ToolResult) -> dict[str, object]:
     return {
         "tool": result.tool,
@@ -1420,6 +1433,35 @@ def build_tool_registry_report(payload: dict[str, object]) -> str:
         )
     if total == 0:
         lines.append("  No registered tools.")
+    return "\n".join(lines)
+
+
+def build_faculty_registry_report(payload: dict[str, object]) -> str:
+    faculties = list(payload.get("faculties", []))
+    total = int(payload.get("total", len(faculties)))
+    active = int(payload.get("active", 0))
+    inactive = int(payload.get("inactive", max(total - active, 0)))
+    lines = [
+        f"faculty-registry > Faculties ({total} total):",
+        f"  active: {active}  inactive: {inactive}",
+    ]
+    for faculty in faculties:
+        label = "inactive" if not bool(faculty.get("active", False)) else str(
+            faculty.get("mode", "unknown")
+        )
+        lines.append(
+            f"  {faculty.get('display_name', faculty.get('name', 'FACULTY'))} "
+            f"[{label}]"
+        )
+        lines.append(
+            f"    {faculty.get('domain', 'general')} · {faculty.get('description', '')}"
+        )
+        lines.append(
+            f"    calls: {faculty.get('call_count', 0)}  "
+            f"last: {faculty.get('last_called_at', 'never') or 'never'}"
+        )
+        if faculty.get("charter_preview"):
+            lines.append(f"    charter: {faculty.get('charter_preview', '')}")
     return "\n".join(lines)
 
 
@@ -1768,6 +1810,11 @@ def handle_command(
         if faculty_monitor is None:
             return "faculties > faculty monitor is unavailable."
         return faculty_monitor.format_report()
+
+    if lowered == "faculty-registry":
+        if faculty_monitor is None:
+            return "faculty-registry > faculty monitor is unavailable."
+        return build_faculty_registry_report(build_faculty_registry_payload(faculty_monitor))
 
     if lowered == "my-log":
         if user_manager is None or user_log is None or active_token is None:

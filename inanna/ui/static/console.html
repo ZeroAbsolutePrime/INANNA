@@ -947,9 +947,20 @@ html, body {
 .faculty-card.active-fac { border-left: 2px solid var(--gold3); }
 .faculty-card.ready-fac  { border-left: 2px solid var(--connected); }
 .faculty-card.offline-fac{ border-left: 2px solid var(--dim); }
+.faculty-card.rose-fac   { border-left: 2px solid #b86f6f; }
+.faculty-card.ivory-fac  { border-left: 2px solid var(--parch); }
+.faculty-card.amber-fac  { border-left: 2px solid var(--gold4); }
+.faculty-card.lapis-fac  { border-left: 2px solid var(--lapis4); }
+.faculty-card.danger-fac { border-left: 2px solid var(--danger); }
 
 .faculty-icon { font-size: 24px; flex-shrink: 0; }
 .faculty-info { flex: 1; }
+.faculty-topline {
+  display:flex; align-items:flex-start; justify-content:space-between; gap:12px;
+}
+.faculty-labels {
+  display:flex; flex-direction:column; gap:2px;
+}
 .faculty-name {
   font-family: var(--dec);
   font-size: 12px; letter-spacing: 2px;
@@ -964,8 +975,37 @@ html, body {
   color: var(--dim); margin-top: 6px;
   line-height: 1.5;
 }
+.faculty-governance {
+  font-size: 8px; letter-spacing: 1px;
+  color: var(--amber4); margin-top: 8px;
+  line-height: 1.5;
+}
 .faculty-meta {
   display: flex; gap: 8px; margin-top: 8px; flex-wrap: wrap;
+}
+.faculty-actions {
+  display:flex; gap:8px; margin-top:10px; flex-wrap:wrap;
+}
+.faculty-charter {
+  margin-top: 10px;
+  padding: 10px 12px;
+  border: 1px solid rgba(200,150,42,.18);
+  background: rgba(10,8,6,.55);
+  font-size: 9px;
+  letter-spacing: 1px;
+  line-height: 1.6;
+  color: var(--cream);
+}
+.faculty-section-label {
+  font-size: 8px;
+  letter-spacing: 4px;
+  color: var(--gold2);
+  padding: 2px 0 0;
+}
+.faculty-empty-note {
+  font-size: 9px;
+  color: var(--dim);
+  letter-spacing: 1px;
 }
 .faculty-status-chip {
   font-size: 8px; letter-spacing: 2px;
@@ -974,6 +1014,7 @@ html, body {
 .fsc-connected { border-color: rgba(90,170,112,.3); color: var(--connected); }
 .fsc-ready     { border-color: var(--gold1); color: var(--gold2); }
 .fsc-offline   { border-color: var(--dust); color: var(--dim); }
+.fsc-inactive  { border-color: rgba(170,48,32,.25); color: #c87268; }
 .fsc-calls     { border-color: var(--dust); color: var(--faded); }
 
 /* ─── PROCESSES PANEL ─── */
@@ -1543,6 +1584,7 @@ const S = {
   startTime: Date.now(),
   tools: [],
   faculties: [],
+  openFacultyCharters: {},
   networkHosts: {},
   networkRecent: [],
   networkTotal: 0,
@@ -1704,6 +1746,13 @@ function handleMsg(msg) {
     return;
   }
 
+  if (t === 'faculty_registry') {
+    S.faculties = msg.faculties || [];
+    document.getElementById('badge-fac').textContent = msg.total || S.faculties.length;
+    renderFacultyRegistry();
+    return;
+  }
+
   if (t === 'network_status') {
     ingestNetworkStatus(msg);
     return;
@@ -1712,12 +1761,6 @@ function handleMsg(msg) {
   if (t === 'process_status') {
     S.processes = msg.processes || [];
     renderProcessMonitor();
-    return;
-  }
-
-  if (t === 'admin_data') {
-    S.faculties = (msg.users || []);
-    renderFacultyFromStatus();
     return;
   }
 
@@ -1796,6 +1839,7 @@ function updateStatus(d) {
   // Faculties from status
   if (d.faculties && d.faculties.length > 0 && S.faculties.length === 0) {
     S.faculties = d.faculties;
+    document.getElementById('badge-fac').textContent = d.faculties.length;
     renderFacultyRegistry();
   }
 
@@ -1822,6 +1866,7 @@ function switchPanel(name, el) {
 
   // Load data when switching
   if (name === 'tools' && S.tools.length === 0) sendCmd('tool-registry');
+  if (name === 'faculties') refreshFaculties();
   if (name === 'network') refreshNetwork();
   if (name === 'processes') refreshProcesses();
   if (name === 'proposals') loadProposals();
@@ -1974,6 +2019,7 @@ function executeTool(name) {
 //  FACULTY REGISTRY
 // ═══════════════════════════════
 const FACULTY_ICONS = {
+  sentinel: 'вљ”',
   crown: '𒀭',
   analyst: '𒁹',
   operator: '𒆳',
@@ -1987,8 +2033,81 @@ const FACULTY_COLORS = {
   guardian: 'ready-fac',
 };
 
+function facultyStatusLabel(faculty) {
+  if (faculty.active === false) return 'inactive';
+  return String(faculty.mode || 'ready').toLowerCase();
+}
+
+function facultyStatusChipClass(faculty) {
+  const label = facultyStatusLabel(faculty);
+  if (label === 'connected') return 'fsc-connected';
+  if (label === 'ready' || label === 'fallback') return 'fsc-ready';
+  if (label === 'inactive') return 'fsc-inactive';
+  return 'fsc-offline';
+}
+
+function facultyCardClass(faculty) {
+  const color = String(faculty.color || '').toLowerCase();
+  if (['rose', 'ivory', 'amber', 'lapis', 'danger'].includes(color)) return `${color}-fac`;
+  const label = facultyStatusLabel(faculty);
+  if (label === 'connected') return 'active-fac';
+  if (label === 'ready' || label === 'fallback') return 'ready-fac';
+  return 'offline-fac';
+}
+
+function facultyLastCalled(faculty) {
+  if (faculty.last_called) return faculty.last_called;
+  if (faculty.last_called_at) return String(faculty.last_called_at).slice(11, 16);
+  return 'never';
+}
+
+function facultyGovernanceText(faculty) {
+  const rules = Array.isArray(faculty.governance_rules) ? faculty.governance_rules : [];
+  return rules.length ? rules[0] : '';
+}
+
+function toggleFacultyCharter(name) {
+  S.openFacultyCharters[name] = !S.openFacultyCharters[name];
+  renderFacultyRegistry();
+}
+
+function renderFacultyCards(faculties) {
+  return faculties.map(faculty => {
+    const name = String(faculty.name || faculty.display_name || 'faculty').toLowerCase();
+    const icon = FACULTY_ICONS[name] || FACULTY_ICONS.default;
+    const calls = faculty.call_count !== undefined ? faculty.call_count : 0;
+    const charterOpen = !!S.openFacultyCharters[name];
+    const governanceText = facultyGovernanceText(faculty);
+    return `
+      <div class="faculty-card ${facultyCardClass(faculty)}">
+        <div class="faculty-icon">${icon}</div>
+        <div class="faculty-info">
+          <div class="faculty-topline">
+            <div class="faculty-labels">
+              <div class="faculty-name">${escapeHtml(faculty.display_name || name.toUpperCase())}</div>
+              <div class="faculty-domain">${escapeHtml(faculty.domain || 'general')} · ${escapeHtml(faculty.description || '')}</div>
+            </div>
+            <span class="faculty-status-chip ${facultyStatusChipClass(faculty)}">${escapeHtml(facultyStatusLabel(faculty))}</span>
+          </div>
+          <div class="faculty-meta">
+            <span class="faculty-status-chip fsc-calls">calls: ${escapeHtml(calls)}</span>
+            <span class="faculty-status-chip" style="border-color:var(--dust);color:var(--dim)">last: ${escapeHtml(facultyLastCalled(faculty))}</span>
+            <span class="faculty-status-chip" style="border-color:var(--dust);color:var(--faded)">${faculty.built_in ? 'built-in' : 'domain'}</span>
+          </div>
+          ${governanceText ? `<div class="faculty-governance">Governance: ${escapeHtml(governanceText)}</div>` : ''}
+          <div class="faculty-actions">
+            <button class="uruk-btn" onclick="toggleFacultyCharter('${escapeHtml(name)}')">[ ${charterOpen ? 'hide charter' : 'view charter'} ]</button>
+            ${faculty.built_in ? '' : '<button class="uruk-btn" disabled title="Domain Faculty activation coming in Phase 5.7">[ activate ]</button>'}
+          </div>
+          ${charterOpen ? `<div class="faculty-charter">${escapeHtml(faculty.charter_preview || '')}</div>` : ''}
+        </div>
+      </div>`;
+  }).join('');
+}
+
 function renderFacultyRegistry() {
   const grid = document.getElementById('faculty-grid');
+  if (!grid) return;
   if (!S.faculties || S.faculties.length === 0) {
     grid.innerHTML = `<div class="empty-state">
       <div class="empty-glyph">𒊩</div>
@@ -1997,7 +2116,20 @@ function renderFacultyRegistry() {
     return;
   }
 
-  const facs = Array.isArray(S.faculties) ? S.faculties : [];
+  const registryFacs = Array.isArray(S.faculties) ? S.faculties : [];
+  const builtIn = registryFacs.filter(f => f.built_in);
+  const domain = registryFacs.filter(f => !f.built_in);
+  let html = `
+    <div class="faculty-section-label">BUILT-IN FACULTIES</div>
+    ${renderFacultyCards(builtIn)}
+    <div class="faculty-section-label">DOMAIN FACULTIES</div>
+  `;
+  html += domain.length
+    ? renderFacultyCards(domain)
+    : `<div class="faculty-empty-note">No domain faculties registered.</div>`;
+  grid.innerHTML = html;
+  document.getElementById('badge-fac').textContent = registryFacs.length;
+  return;
   grid.innerHTML = facs.map(f => {
     const name = f.name || f.display_name || '—';
     const icon = FACULTY_ICONS[name.toLowerCase()] || FACULTY_ICONS.default;
@@ -2394,7 +2526,8 @@ function refreshNetwork() {
   addActivity('sys', 'NETWORK', 'Refreshing Network Eye status…');
 }
 function refreshFaculties() {
-  addActivity('sys', 'CONSOLE', 'Faculty data loaded from status.');
+  sendCmd('faculty-registry');
+  addActivity('sys', 'CONSOLE', 'Refreshing Faculty Registry…');
 }
 function refreshProcesses() {
   sendCmd('process-status');

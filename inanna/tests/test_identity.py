@@ -111,8 +111,8 @@ class IdentityTests(unittest.TestCase):
     def test_current_phase_constant_matches_phase_banner(self) -> None:
         self.assertEqual(CURRENT_PHASE, phase_banner())
 
-    def test_current_phase_names_process_monitor(self) -> None:
-        self.assertIn("Process Monitor", CURRENT_PHASE)
+    def test_current_phase_names_faculty_registry(self) -> None:
+        self.assertIn("Faculty Registry", CURRENT_PHASE)
 
     def test_cycle2_summary_describes_completed_kernel(self) -> None:
         self.assertIn("NAMMU Kernel", CYCLE2_SUMMARY)

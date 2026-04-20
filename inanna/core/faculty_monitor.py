@@ -1,14 +1,26 @@
 from __future__ import annotations
 
+import json
 from dataclasses import dataclass
 from datetime import datetime, timezone
+from pathlib import Path
 from typing import Any
+
+
+FACULTIES_CONFIG_PATH = Path(__file__).resolve().parent.parent / "config" / "faculties.json"
 
 
 @dataclass
 class FacultyRecord:
     name: str
     display_name: str
+    domain: str
+    description: str
+    charter_preview: str
+    governance_rules: list[str]
+    active: bool
+    built_in: bool
+    color: str
     role: str
     mode: str
     last_called_at: str | None = None
@@ -18,37 +30,55 @@ class FacultyRecord:
 
 
 class FacultyMonitor:
-    def __init__(self) -> None:
-        self._records: dict[str, FacultyRecord] = {
-            "crown": FacultyRecord(
-                name="crown",
-                display_name="CROWN",
-                role="Primary conversational voice and relational presence",
-                mode="unavailable",
-            ),
-            "analyst": FacultyRecord(
-                name="analyst",
-                display_name="ANALYST",
-                role="Structured reasoning and comparative analysis",
-                mode="unavailable",
-            ),
-            "operator": FacultyRecord(
-                name="operator",
-                display_name="OPERATOR",
-                role="Bounded tool execution (web_search)",
-                mode="ready",
-            ),
-            "guardian": FacultyRecord(
-                name="guardian",
-                display_name="GUARDIAN",
-                role="System observation and governance health",
-                mode="ready",
-            ),
-        }
+    def __init__(self, faculties_path: Path = FACULTIES_CONFIG_PATH) -> None:
+        self.faculties_path = faculties_path
+        self._records = self._load_records(faculties_path)
+
+    def _load_records(self, faculties_path: Path) -> dict[str, FacultyRecord]:
+        try:
+            payload = json.loads(faculties_path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            payload = {"faculties": {}}
+
+        raw_faculties = payload.get("faculties", {})
+        if not isinstance(raw_faculties, dict):
+            raw_faculties = {}
+
+        records: dict[str, FacultyRecord] = {}
+        for name, definition in raw_faculties.items():
+            if not isinstance(name, str) or not isinstance(definition, dict):
+                continue
+            active = bool(definition.get("active", False))
+            mode = "inactive"
+            if active and name in {"crown", "analyst"}:
+                mode = "unavailable"
+            elif active:
+                mode = "ready"
+            records[name] = FacultyRecord(
+                name=name,
+                display_name=str(definition.get("display_name", "")).strip() or name.upper(),
+                domain=str(definition.get("domain", "")).strip() or "general",
+                description=str(definition.get("description", "")).strip(),
+                charter_preview=str(definition.get("charter_preview", "")).strip(),
+                governance_rules=[
+                    rule
+                    for rule in definition.get("governance_rules", [])
+                    if isinstance(rule, str)
+                ]
+                if isinstance(definition.get("governance_rules", []), list)
+                else [],
+                active=active,
+                built_in=bool(definition.get("built_in", False)),
+                color=str(definition.get("color", "")).strip() or "dim",
+                role=str(definition.get("description", "")).strip(),
+                mode=mode,
+            )
+        return records
 
     def update_model_mode(self, mode: str) -> None:
         for name in ("crown", "analyst"):
-            self._records[name].mode = mode
+            if name in self._records:
+                self._records[name].mode = mode
 
     def record_call(self, faculty: str, response_ms: float, success: bool) -> None:
         if faculty not in self._records:
@@ -64,26 +94,40 @@ class FacultyMonitor:
         return self._records.get(faculty)
 
     def all_records(self) -> list[FacultyRecord]:
-        return list(self._records.values())
+        return [record for record in self._records.values() if record.active]
 
     def summary(self) -> list[dict[str, Any]]:
-        return [
-            {
-                "name": r.name,
-                "display_name": r.display_name,
-                "role": r.role,
-                "mode": r.mode,
-                "last_called_at": r.last_called_at,
-                "last_response_ms": r.last_response_ms,
-                "call_count": r.call_count,
-                "error_count": r.error_count,
-            }
-            for r in self._records.values()
-        ]
+        return [self._record_payload(r) for r in self.all_records()]
+
+    def registry_summary(self) -> list[dict[str, Any]]:
+        return [self._record_payload(r) for r in self._records.values()]
+
+    def _record_payload(self, r: FacultyRecord) -> dict[str, Any]:
+        last_called = "never"
+        if r.last_called_at:
+            last_called = r.last_called_at[11:16]
+        return {
+            "name": r.name,
+            "display_name": r.display_name,
+            "domain": r.domain,
+            "description": r.description,
+            "charter_preview": r.charter_preview,
+            "governance_rules": list(r.governance_rules),
+            "active": r.active,
+            "built_in": r.built_in,
+            "color": r.color,
+            "role": r.role,
+            "mode": r.mode,
+            "last_called": last_called,
+            "last_called_at": r.last_called_at,
+            "last_response_ms": r.last_response_ms,
+            "call_count": r.call_count,
+            "error_count": r.error_count,
+        }
 
     def format_report(self) -> str:
         lines = ["Faculty Monitor:"]
-        for r in self._records.values():
+        for r in self.all_records():
             mode_marker = {
                 "connected": "[connected]",
                 "fallback": "[fallback] ",
@@ -98,5 +142,5 @@ class FacultyMonitor:
                 f"  {mode_marker} {r.display_name:<10} "
                 f"calls:{r.call_count:>4}  last:{last}  {ms}"
             )
-            lines.append(f"               {r.role}")
+            lines.append(f"               {r.description}")
         return "\n".join(lines)

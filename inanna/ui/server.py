@@ -48,6 +48,7 @@ from main import (
     build_admin_surface_payload,
     build_body_report,
     build_body_summary,
+    build_faculty_registry_payload,
     build_history_report,
     build_invites_report,
     build_memory_log_report,
@@ -700,6 +701,10 @@ class InterfaceServer:
                 }
             )
             await self.broadcast_state()
+        elif command_name == "faculty-registry":
+            await self.broadcast(
+                await asyncio.to_thread(build_faculty_registry_payload, self.faculty_monitor)
+            )
         elif command_name == "my-log":
             allowed, reason = check_privilege(self.active_user, self.user_manager, "read_own_log")
             if not allowed or self.active_token is None:

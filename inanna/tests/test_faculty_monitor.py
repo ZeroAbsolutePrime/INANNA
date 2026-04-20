@@ -16,6 +16,16 @@ class FacultyMonitorTests(unittest.TestCase):
 
         self.assertEqual(len(records), 4)
         self.assertTrue(all(isinstance(record, FacultyRecord) for record in records))
+        self.assertNotIn("sentinel", {record.name for record in records})
+
+    def test_monitor_loads_display_name_domain_and_charter_from_config(self) -> None:
+        record = FacultyMonitor().get_record("crown")
+
+        self.assertIsNotNone(record)
+        assert record is not None
+        self.assertEqual(record.display_name, "CROWN")
+        self.assertEqual(record.domain, "general")
+        self.assertTrue(record.charter_preview.startswith("I am CROWN"))
 
     def test_update_model_mode_updates_crown_and_analyst(self) -> None:
         monitor = FacultyMonitor()
@@ -53,6 +63,7 @@ class FacultyMonitorTests(unittest.TestCase):
         self.assertIn("ANALYST", report)
         self.assertIn("OPERATOR", report)
         self.assertIn("GUARDIAN", report)
+        self.assertNotIn("SENTINEL", report)
 
     def test_summary_returns_required_keys(self) -> None:
         summary = FacultyMonitor().summary()
@@ -62,14 +73,30 @@ class FacultyMonitorTests(unittest.TestCase):
             {
                 "name",
                 "display_name",
+                "domain",
+                "description",
+                "charter_preview",
+                "governance_rules",
+                "active",
+                "built_in",
+                "color",
                 "role",
                 "mode",
+                "last_called",
                 "last_called_at",
                 "last_response_ms",
                 "call_count",
                 "error_count",
             }.issubset(summary[0].keys())
         )
+
+    def test_registry_summary_includes_inactive_sentinel(self) -> None:
+        summary = FacultyMonitor().registry_summary()
+
+        self.assertEqual(len(summary), 5)
+        sentinel = next(record for record in summary if record["name"] == "sentinel")
+        self.assertFalse(sentinel["active"])
+        self.assertEqual(sentinel["domain"], "security")
 
 
 if __name__ == "__main__":

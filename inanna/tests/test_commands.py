@@ -505,6 +505,7 @@ class CommandTests(unittest.TestCase):
                 "invites",
                 "admin-surface",
                 "tool-registry",
+                "faculty-registry",
                 "network-status",
                 "process-status",
                 "history",
@@ -529,7 +530,7 @@ class CommandTests(unittest.TestCase):
                 "Commands: users, create-user, login, logout, whoami, reflect, analyse, "
                 "audit, guardian, faculties, realms, create-realm, realm-context, switch-user, "
                 "assign-realm, unassign-realm, my-log, user-log, invite, join, invites, "
-                "admin-surface, tool-registry, network-status, process-status, history, proposal-history, routing-log, nammu-log, "
+                "admin-surface, tool-registry, faculty-registry, network-status, process-status, history, proposal-history, routing-log, nammu-log, "
                 "memory-log, body, status, diagnostics, guardian-dismiss, "
                 "guardian-clear-events, approve, reject, forget, exit"
             ),
@@ -572,6 +573,43 @@ class CommandTests(unittest.TestCase):
         self.assertIn("Resolve Host [enabled]", result)
         self.assertIn("Port Scan [enabled]", result)
         self.assertIn("Privilege: network_tools", result)
+
+    def test_faculty_registry_command_lists_all_configured_faculties(self) -> None:
+        (
+            session,
+            memory,
+            proposal,
+            state_report,
+            engine,
+            analyst,
+            classifier,
+            routing_log,
+            startup_context,
+            config,
+        ) = self.make_runtime()
+        faculty_monitor = FacultyMonitor()
+        faculty_monitor.record_call("crown", 123.0, True)
+
+        result = handle_command(
+            "faculty-registry",
+            session,
+            memory,
+            proposal,
+            state_report,
+            engine,
+            analyst,
+            classifier,
+            routing_log,
+            startup_context,
+            config,
+            faculty_monitor=faculty_monitor,
+        )
+
+        self.assertIn("faculty-registry > Faculties (5 total):", result)
+        self.assertIn("active: 4  inactive: 1", result)
+        self.assertIn("CROWN [unavailable]", result)
+        self.assertIn("SENTINEL [inactive]", result)
+        self.assertIn("security · Cybersecurity analysis", result)
 
     def test_network_status_command_summarizes_recent_network_activity(self) -> None:
         (
