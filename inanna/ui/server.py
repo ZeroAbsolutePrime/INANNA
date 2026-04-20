@@ -27,6 +27,7 @@ from core.nammu_memory import (
 )
 from core.orchestration import OrchestrationEngine
 from core.operator import OperatorFaculty
+from core.profile import ProfileManager
 from core.process_monitor import ProcessMonitor
 from core.proposal import Proposal
 from core.session import AnalystFaculty, Engine, Session
@@ -51,11 +52,13 @@ from main import (
     build_body_report,
     build_body_summary,
     build_faculty_registry_payload,
+    build_grounding_prefix,
     build_history_report,
     build_invites_report,
     build_memory_log_report,
     build_network_audit_entry,
     build_network_status_payload,
+    build_profile_status_payload,
     build_proposal_history_payload,
     build_realm_access_warning_lines,
     build_realm_context_report,
@@ -89,6 +92,7 @@ from main import (
     run_sentinel_response as run_sentinel_backend_response,
     sentinel_response_mode,
     startup_context_items,
+    sync_profile_grounding,
     token_preview,
 )
 
@@ -112,6 +116,7 @@ def run_sentinel_response(
     lm_url: str,
     model_name: str,
     faculties_path: Path,
+    grounding_prefix: str = "",
 ) -> str:
     return run_sentinel_backend_response(
         user_input=user_input,
@@ -119,6 +124,7 @@ def run_sentinel_response(
         lm_url=lm_url,
         model_name=model_name,
         faculties_path=faculties_path,
+        grounding_prefix=grounding_prefix,
     )
 
 
@@ -186,6 +192,7 @@ class InterfaceServer:
             roles_config_path=APP_ROOT / "config" / "roles.json",
         )
         self.guardian_user = ensure_guardian_exists(self.user_manager)
+        self.profile_manager = ProfileManager(self.data_root / "profiles")
         expired_invites = self.user_manager.expire_old_invites()
         if expired_invites:
             self.startup_messages.append(f"Expired {expired_invites} invite(s).")
@@ -196,6 +203,7 @@ class InterfaceServer:
             self.guardian_user.display_name,
             self.guardian_user.role,
         )
+        self.profile_manager.ensure_profile_exists(self.guardian_user.user_id)
         self.active_token = self.guardian_token
         self.original_token = None
         self.user_log = UserLog(self.data_root / "user_logs")
@@ -243,6 +251,12 @@ class InterfaceServer:
         print(f"Model mode: {self.engine.mode}")
         print(
             f"Auto-login: {self.guardian_user.display_name} ({self.guardian_user.role}) | session active"
+        )
+        sync_profile_grounding(
+            self.engine,
+            self.profile_manager,
+            self.active_user,
+            self.active_token,
         )
         self.startup_context = self.memory.load_startup_context(
             user_id=self._memory_scope_user_id()
@@ -363,6 +377,12 @@ class InterfaceServer:
         return self.active_user.user_id
 
     def _refresh_startup_context(self) -> None:
+        sync_profile_grounding(
+            self.engine,
+            self.profile_manager,
+            self.active_user,
+            self.active_token,
+        )
         self.startup_context = self.memory.load_startup_context(
             user_id=self._memory_scope_user_id()
         )
@@ -581,6 +601,11 @@ class InterfaceServer:
                 lm_url=self.config.model_url,
                 model_name=self.config.model_name,
                 faculties_path=FACULTIES_CONFIG_PATH,
+                grounding_prefix=build_grounding_prefix(
+                    self.profile_manager,
+                    self.active_user,
+                    self.active_token,
+                ),
             )
             mode = sentinel_response_mode(sentinel_text)
             self.faculty_monitor.record_call(
@@ -732,6 +757,7 @@ class InterfaceServer:
                 self.active_token = token
                 self.original_user = None
                 self.original_token = None
+                self.profile_manager.ensure_profile_exists(target.user_id)
                 if self.guardian_user is not None and target.user_id == self.guardian_user.user_id:
                     self.guardian_token = token
                 append_audit_event(
@@ -920,6 +946,7 @@ class InterfaceServer:
             self.active_token = token
             self.original_user = None
             self.original_token = None
+            self.profile_manager.ensure_profile_exists(created.user_id)
             append_audit_event(
                 self.session_audit,
                 "join",
@@ -1611,6 +1638,8 @@ class InterfaceServer:
             session_audit=self.session_audit,
             active_realm_name=self.active_realm.name,
             conversation_state=self.conversation_state,
+            current_user=self.active_user,
+            profile_manager=self.profile_manager,
         )
 
     def inspect_guardian(self) -> tuple[list[Any], str]:
@@ -1699,6 +1728,11 @@ class InterfaceServer:
                 self.user_log.entry_count(self.active_token.user_id)
                 if self.active_token is not None
                 else 0
+            ),
+            "profile": build_profile_status_payload(
+                self.profile_manager,
+                self.active_user,
+                self.active_token,
             ),
             "faculties": self.faculty_monitor.summary(),
             "body": build_body_summary(body_report),

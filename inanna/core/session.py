@@ -71,11 +71,13 @@ class Engine:
         model_name: str | None = None,
         api_key: str | None = None,
         realm: "RealmConfig | None" = None,
+        grounding_prefix: str = "",
     ) -> None:
         self.model_url = (model_url or "").strip()
         self.model_name = (model_name or "").strip()
         self.api_key = (api_key or "").strip()
         self.realm = realm
+        self.grounding_prefix = grounding_prefix.strip()
         self.fallback_mode = not (self.model_url and self.model_name)
         self._connected = False
 
@@ -241,11 +243,13 @@ class Engine:
         self,
         context_summary: list[str | dict[str, str]],
     ) -> dict[str, str]:
+        prefix = f"{self.grounding_prefix}\n" if self.grounding_prefix else ""
         if not context_summary:
             return {
                 "role": "assistant",
                 "content": (
-                    "I hold no approved memory of prior conversations yet.\n"
+                    prefix
+                    + "I hold no approved memory of prior conversations yet.\n"
                     "I will not invent or infer anything about this person.\n"
                     "I will respond only to what they tell me now."
                 ),
@@ -258,7 +262,8 @@ class Engine:
         return {
             "role": "assistant",
             "content": (
-                "From my approved memory of our prior conversations:\n"
+                prefix
+                + "From my approved memory of our prior conversations:\n"
                 + grounding_lines
                 + "\n\nI will ground my responses in this approved memory.\n"
                 + "I will not add, invent, or infer anything beyond these lines.\n"

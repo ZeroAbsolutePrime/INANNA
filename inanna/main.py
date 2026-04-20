@@ -25,6 +25,7 @@ from core.nammu_memory import (
 )
 from core.orchestration import OrchestrationEngine, OrchestrationPlan
 from core.operator import OperatorFaculty, ToolResult
+from core.profile import ProfileManager
 from core.process_monitor import ProcessMonitor
 from core.proposal import Proposal
 from core.realm import DEFAULT_REALM, RealmConfig, RealmManager
@@ -50,6 +51,7 @@ DATA_ROOT = APP_ROOT / "data"
 FACULTIES_CONFIG_PATH = APP_ROOT / "config" / "faculties.json"
 ROLES_CONFIG_PATH = APP_ROOT / "config" / "roles.json"
 USER_LOG_DIR = DATA_ROOT / "user_logs"
+PROFILES_DIR = DATA_ROOT / "profiles"
 SESSION_DIR = DATA_ROOT / "sessions"
 MEMORY_DIR = DATA_ROOT / "memory"
 PROPOSAL_DIR = DATA_ROOT / "proposals"
@@ -132,6 +134,7 @@ def load_faculty_definition(
 def build_sentinel_system_prompt(
     grounding: str | list[str | dict[str, str]] | None,
     faculties_path: Path,
+    grounding_prefix: str = "",
 ) -> str:
     default_charter = (
         "I am SENTINEL. I analyze security posture. I reason about threats "
@@ -162,9 +165,13 @@ def build_sentinel_system_prompt(
         gov_rules = default_rules
 
     grounding_text = grounding.strip() if isinstance(grounding, str) else ""
+    if grounding_text and grounding_prefix:
+        grounding_text = f"{grounding_prefix}\n{grounding_text}"
     if not grounding_text:
         grounding_items = list(grounding or []) if isinstance(grounding, list) else []
-        grounding_text = Engine()._build_grounding_turn(grounding_items)["content"]
+        grounding_text = Engine(grounding_prefix=grounding_prefix)._build_grounding_turn(
+            grounding_items
+        )["content"]
 
     rules_text = "\n".join(f"- {rule}" for rule in gov_rules)
     return (
@@ -187,8 +194,13 @@ def run_sentinel_response(
     lm_url: str,
     model_name: str,
     faculties_path: Path,
+    grounding_prefix: str = "",
 ) -> str:
-    system_prompt = build_sentinel_system_prompt(grounding, faculties_path)
+    system_prompt = build_sentinel_system_prompt(
+        grounding,
+        faculties_path,
+        grounding_prefix=grounding_prefix,
+    )
     sentinel_cfg = load_faculty_definition(faculties_path, "sentinel")
     effective_lm_url = str(sentinel_cfg.get("model_url") or lm_url).strip()
     effective_model_name = str(sentinel_cfg.get("model_name") or model_name).strip()
@@ -431,6 +443,83 @@ def refresh_startup_context(
     payload = memory.load_startup_context(user_id=memory_scope_user_id(active_user, user_manager))
     startup_context.clear()
     startup_context.update(payload)
+
+
+def profile_subject(
+    active_user: UserRecord | None,
+    active_token: SessionToken | None,
+) -> tuple[str, str]:
+    if active_user is not None:
+        return active_user.user_id, active_user.display_name
+    if active_token is not None:
+        return active_token.user_id, active_token.display_name
+    return "", ""
+
+
+def build_grounding_prefix(
+    profile_manager: ProfileManager | None,
+    active_user: UserRecord | None,
+    active_token: SessionToken | None,
+) -> str:
+    user_id, fallback = profile_subject(active_user, active_token)
+    if not user_id:
+        return ""
+    if profile_manager is None:
+        display_name = fallback.strip()
+    else:
+        display_name = profile_manager.display_name_for(user_id, fallback=fallback).strip()
+    if not display_name:
+        return ""
+    return f"You are speaking with {display_name}."
+
+
+def sync_profile_grounding(
+    engine: Engine | None,
+    profile_manager: ProfileManager | None,
+    active_user: UserRecord | None,
+    active_token: SessionToken | None,
+) -> None:
+    if engine is None:
+        return
+    engine.grounding_prefix = build_grounding_prefix(
+        profile_manager,
+        active_user,
+        active_token,
+    )
+
+
+def build_profile_status_payload(
+    profile_manager: ProfileManager | None,
+    active_user: UserRecord | None,
+    active_token: SessionToken | None,
+) -> dict[str, Any]:
+    user_id, _ = profile_subject(active_user, active_token)
+    if not user_id or profile_manager is None:
+        return {
+            "exists": False,
+            "preferred_name": "",
+            "onboarding_completed": False,
+            "departments": [],
+            "pronouns": "",
+        }
+
+    profile = profile_manager.load(user_id)
+    if profile is None:
+        return {
+            "exists": False,
+            "preferred_name": "",
+            "onboarding_completed": False,
+            "departments": [],
+            "pronouns": "",
+        }
+
+    return {
+        "exists": True,
+        "preferred_name": profile.preferred_name,
+        "onboarding_completed": profile.onboarding_completed,
+        "departments": list(profile.departments),
+        "pronouns": profile.pronouns,
+    }
 
 
 def token_preview(active_token: SessionToken | None) -> str:
@@ -1383,6 +1472,7 @@ def execute_orchestration_plan(
     engine: Engine,
     orchestration_engine: OrchestrationEngine,
     faculty_monitor: FacultyMonitor | None = None,
+    grounding_prefix: str = "",
 ) -> dict[str, Any]:
     if isinstance(grounding, list):
         grounding_items = list(grounding)
@@ -1411,6 +1501,7 @@ def execute_orchestration_plan(
                 lm_url=config.model_url,
                 model_name=config.model_name,
                 faculties_path=FACULTIES_CONFIG_PATH,
+                grounding_prefix=grounding_prefix,
             )
             mode = sentinel_response_mode(step_output)
             if faculty_monitor is not None:
@@ -1464,6 +1555,8 @@ def complete_orchestration_resolution(
     session_audit: list[dict[str, object]] | None = None,
     active_realm_name: str = "",
     conversation_state: dict[str, int] | None = None,
+    current_user: UserRecord | None = None,
+    profile_manager: ProfileManager | None = None,
 ) -> dict[str, Any]:
     payload = resolved["payload"]
     original_input = str(payload.get("original_input", "")).strip()
@@ -1500,6 +1593,11 @@ def complete_orchestration_resolution(
         engine=engine,
         orchestration_engine=orchestration_engine,
         faculty_monitor=faculty_monitor,
+        grounding_prefix=build_grounding_prefix(
+            profile_manager,
+            current_user,
+            active_token,
+        ),
     )
     final_text = str(outcome["text"]).strip()
     session.add_event("assistant", final_text)
@@ -2004,6 +2102,7 @@ def handle_command(
     process_monitor: ProcessMonitor | None = None,
     conversation_state: dict[str, int] | None = None,
     orchestration_engine: OrchestrationEngine | None = None,
+    profile_manager: ProfileManager | None = None,
 ) -> str | None:
     normalized = command.strip()
     if not normalized:
@@ -2076,6 +2175,8 @@ def handle_command(
         )
         token_store.revoke_all_for_user(target.user_id)
         token = token_store.issue(target.user_id, target.display_name, target.role)
+        if profile_manager is not None:
+            profile_manager.ensure_profile_exists(target.user_id)
         session_state["active_token"] = token
         session_state["active_user"] = target
         if guardian_user is not None and target.user_id == guardian_user.user_id:
@@ -2091,6 +2192,7 @@ def handle_command(
             f"{target.display_name} ({target.role}) logged in",
         )
         refresh_startup_context(startup_context, memory, target, user_manager)
+        sync_profile_grounding(engine, profile_manager, target, token)
         return "\n".join(
             [
                 f"login > session started for {target.display_name} ({target.role})",
@@ -2122,6 +2224,8 @@ def handle_command(
         session_state["active_user"] = None
         session_state["original_token"] = None
         session_state["original_user"] = None
+        refresh_startup_context(startup_context, memory, None, user_manager)
+        sync_profile_grounding(engine, profile_manager, None, None)
         return f"logout > session ended for {active_token.display_name}"
 
     if lowered == "whoami":
@@ -2217,6 +2321,8 @@ def handle_command(
         )
         token_store.revoke_all_for_user(created.user_id)
         token = token_store.issue(created.user_id, created.display_name, created.role)
+        if profile_manager is not None:
+            profile_manager.ensure_profile_exists(created.user_id)
         session_state["active_token"] = token
         session_state["active_user"] = created
         session_state["original_token"] = None
@@ -2227,6 +2333,7 @@ def handle_command(
             f"{created.display_name} joined via invite {invite_code}",
         )
         refresh_startup_context(startup_context, memory, created, user_manager)
+        sync_profile_grounding(engine, profile_manager, created, token)
         return "\n".join(
             [
                 f"join > Welcome, {created.display_name}.",
@@ -2414,6 +2521,12 @@ def handle_command(
             session_state["active_user"] = guardian_record
             session_state["original_user"] = None
             refresh_startup_context(startup_context, memory, guardian_record, user_manager)
+            sync_profile_grounding(
+                engine,
+                profile_manager,
+                guardian_record,
+                active_token,
+            )
             return f"switch-user > Returned to {guardian_record.display_name} ({guardian_record.role})."
         target = user_manager.get_user_by_display_name(target_name)
         if target is None:
@@ -2422,6 +2535,7 @@ def handle_command(
         session_state["guardian_user"] = guardian_record
         session_state["original_user"] = guardian_record
         refresh_startup_context(startup_context, memory, target, user_manager)
+        sync_profile_grounding(engine, profile_manager, target, active_token)
         lines = [f"switch-user > Now operating as: {target.display_name} ({target.role})"]
         if not can_access_realm(target, active_realm_name):
             lines.extend(
@@ -2614,6 +2728,8 @@ def handle_command(
                 session_audit=session_audit,
                 active_realm_name=active_realm_name,
                 conversation_state=conversation_state,
+                current_user=current_user,
+                profile_manager=profile_manager,
             )
             return outcome["display_text"]
 
@@ -2850,6 +2966,7 @@ def handle_command(
             lm_url=config.model_url,
             model_name=config.model_name,
             faculties_path=FACULTIES_CONFIG_PATH,
+            grounding_prefix=build_grounding_prefix(profile_manager, current_user, active_token),
         )
         mode = sentinel_response_mode(sentinel_text)
         if faculty_monitor is not None:
@@ -2919,6 +3036,7 @@ def main() -> None:
     state_report = StateReport()
     user_manager = UserManager(data_root=DATA_ROOT, roles_config_path=ROLES_CONFIG_PATH)
     guardian_user = ensure_guardian_exists(user_manager)
+    profile_manager = ProfileManager(PROFILES_DIR)
     expired_invites = user_manager.expire_old_invites()
     token_store = TokenStore()
     guardian_token = token_store.issue(
@@ -2926,6 +3044,7 @@ def main() -> None:
         guardian_user.display_name,
         guardian_user.role,
     )
+    profile_manager.ensure_profile_exists(guardian_user.user_id)
     user_log = UserLog(USER_LOG_DIR)
     faculty_monitor = FacultyMonitor()
     session_audit: list[dict[str, str]] = []
@@ -2959,6 +3078,7 @@ def main() -> None:
     guardian = GuardianFaculty()
     operator = OperatorFaculty()
     governance = GovernanceLayer(engine=engine)
+    sync_profile_grounding(engine, profile_manager, guardian_user, guardian_token)
     classifier = IntentClassifier(
         engine,
         governance=governance,
@@ -3060,6 +3180,7 @@ def main() -> None:
             process_monitor=process_monitor,
             conversation_state=conversation_state,
             orchestration_engine=orchestration_engine,
+            profile_manager=profile_manager,
         )
         if result is None:
             finalize_auto_memory(
