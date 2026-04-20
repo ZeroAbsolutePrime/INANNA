@@ -6,13 +6,25 @@ if TYPE_CHECKING:
     from core.realm import RealmConfig
 
 
-CURRENT_PHASE = "Cycle 4 - Phase 4.8 - The Admin Surface"
+CURRENT_PHASE = "Cycle 4 - Phase 4.9 - The Civic Proof"
 
 CYCLE2_SUMMARY = (
     "Cycle 2 built the NAMMU Kernel: web interface, two Faculties, "
     "automatic intent routing, governance above routing, bounded tool use, "
     "Guardian monitoring, config-driven signal classification, "
     "and NAMMU memory persistence across sessions."
+)
+
+CYCLE4_PREVIEW = (
+    "Cycle 4 preview: guardian, operator, and user roles govern access to "
+    "memory, logs, invites, realms, and the Admin Surface."
+)
+
+CYCLE4_SUMMARY = (
+    "Cycle 4 built the Civic Layer: user identity with config-driven "
+    "roles and privileges, session tokens, user-scoped memory, "
+    "interaction logs, governed invite flow, realm access control, "
+    "and the Admin Surface giving the Guardian a full civic overview."
 )
 
 

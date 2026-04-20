@@ -55,7 +55,8 @@ class StateTests(unittest.TestCase):
                         "switch-user, assign-realm, unassign-realm, my-log, user-log, invite, "
                         "join, invites, admin-surface, history, proposal-history, routing-log, "
                         "nammu-log, "
-                        "memory-log, body, status, diagnostics, approve, reject, forget, exit"
+                        "memory-log, body, status, diagnostics, guardian-dismiss, "
+                        "guardian-clear-events, approve, reject, forget, exit"
                     ),
                 ]
             ),

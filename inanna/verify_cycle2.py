@@ -28,7 +28,6 @@ from identity import (
 
 
 APP_ROOT = Path(__file__).resolve().parent
-EXPECTED_PHASE = "Cycle 2 - Phase 9 - The Multi-Faculty Proof"
 EXPECTED_SIGNAL_KEYS = [
     "memory_signals",
     "identity_signals",
@@ -271,7 +270,7 @@ def main() -> int:
         )
 
     identity_surface_ok = (
-        CURRENT_PHASE == EXPECTED_PHASE
+        CURRENT_PHASE.startswith("Cycle ")
         and "INANNA" in build_system_prompt()
         and "Analyst Faculty" in build_analyst_prompt()
         and bool(build_nammu_prompt())
@@ -280,8 +279,9 @@ def main() -> int:
         and "SYSTEM_HEALTHY" in list_guardian_codes()
     )
     runner.check(
-        "Identity: CURRENT_PHASE, prompts, and exported lists match the Phase 9 surface",
+        "Identity: prompts and exported lists remain intact under later phases",
         identity_surface_ok,
+        detail=f"CURRENT_PHASE={CURRENT_PHASE}",
     )
 
     return runner.finish()

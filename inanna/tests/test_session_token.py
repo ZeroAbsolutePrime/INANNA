@@ -74,6 +74,16 @@ class SessionTokenTests(unittest.TestCase):
         self.assertTrue(revoked)
         self.assertFalse(token.active)
 
+    def test_issue_revokes_previous_active_token_for_same_user(self) -> None:
+        store = TokenStore()
+        first = store.issue("user_abc12345", "ZAERA", "guardian")
+        second = store.issue("user_abc12345", "ZAERA", "guardian")
+
+        self.assertFalse(first.active)
+        self.assertIsNone(store.validate(first.token))
+        self.assertTrue(second.active)
+        self.assertIsNotNone(store.validate(second.token))
+
     def test_active_tokens_returns_only_active_records(self) -> None:
         store = TokenStore()
         first = store.issue("user_abc12345", "ZAERA", "guardian")
@@ -92,7 +102,7 @@ class SessionTokenTests(unittest.TestCase):
 
         count = store.revoke_all_for_user("user_abc12345")
 
-        self.assertEqual(count, 2)
+        self.assertEqual(count, 1)
         self.assertFalse(first.active)
         self.assertFalse(second.active)
         self.assertTrue(third.active)

@@ -28,6 +28,7 @@ class TokenStore:
         self._tokens: dict[str, SessionToken] = {}
 
     def issue(self, user_id: str, display_name: str, role: str) -> SessionToken:
+        self.revoke_all_for_user(user_id)
         issued_at = datetime.now(timezone.utc)
         record = SessionToken(
             token=str(uuid.uuid4()),

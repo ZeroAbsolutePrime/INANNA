@@ -509,6 +509,8 @@ class CommandTests(unittest.TestCase):
                 "body",
                 "status",
                 "diagnostics",
+                "guardian-dismiss",
+                "guardian-clear-events",
                 "approve",
                 "reject",
                 "forget",
@@ -522,9 +524,76 @@ class CommandTests(unittest.TestCase):
                 "audit, guardian, faculties, realms, create-realm, realm-context, switch-user, "
                 "assign-realm, unassign-realm, my-log, user-log, invite, join, invites, "
                 "admin-surface, history, proposal-history, routing-log, nammu-log, "
-                "memory-log, body, status, diagnostics, approve, reject, forget, exit"
+                "memory-log, body, status, diagnostics, guardian-dismiss, "
+                "guardian-clear-events, approve, reject, forget, exit"
             ),
         )
+
+    def test_guardian_dismiss_returns_acknowledgement(self) -> None:
+        (
+            session,
+            memory,
+            proposal,
+            state_report,
+            engine,
+            analyst,
+            classifier,
+            routing_log,
+            startup_context,
+            config,
+        ) = self.make_runtime()
+
+        result = handle_command(
+            "guardian-dismiss",
+            session,
+            memory,
+            proposal,
+            state_report,
+            engine,
+            analyst,
+            classifier,
+            routing_log,
+            startup_context,
+            config,
+        )
+
+        self.assertEqual("guardian > alerts dismissed.", result)
+
+    def test_guardian_clear_events_clears_session_audit(self) -> None:
+        (
+            session,
+            memory,
+            proposal,
+            state_report,
+            engine,
+            analyst,
+            classifier,
+            routing_log,
+            startup_context,
+            config,
+        ) = self.make_runtime()
+        session_audit = [
+            {"timestamp": "2026-04-20T09:00:00+00:00", "event_type": "guardian", "summary": "warn"},
+            {"timestamp": "2026-04-20T09:01:00+00:00", "event_type": "invite", "summary": "created"},
+        ]
+
+        result = handle_command(
+            "guardian-clear-events",
+            session,
+            memory,
+            proposal,
+            state_report,
+            engine,
+            analyst,
+            classifier,
+            routing_log,
+            startup_context,
+            config,
+            session_audit=session_audit,
+        )
+
+        self.assertEqual("guardian > cleared 2 governance event(s).", result)
+        self.assertEqual([], session_audit)
 
     def test_admin_surface_lists_visible_users_invites_and_realms(self) -> None:
         (

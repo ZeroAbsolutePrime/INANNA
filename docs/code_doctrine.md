@@ -255,6 +255,40 @@ capability in the CLI must be reachable in the UI.
 
 ---
 
+## Lessons from Cycle 4
+
+**PUSH IMMEDIATELY.** Every completion commit must be pushed to
+`origin/main` the moment Codex delivers it. A commit that exists only
+on the Codex local machine does not exist. The repo is the source of
+truth. This is not optional. This is law. Cycle 4 lost six phases of
+completion commits because they were never pushed. The recovery cost a
+full session and left the recovered test suite thinner than before.
+
+**Config-driven means config-driven.** User roles, privileges, invite
+codes, and realm names do not belong in Python. They belong in JSON.
+Cycle 4 held that rule through `roles.json` and runtime loading.
+Future cycles must hold it too.
+
+**The civic layer is the foundation of the platform.** Users, roles,
+invites, session tokens, and logs are not optional product features.
+They are the substrate every later capability will stand on. Cycle 5
+cannot be built safely without the privilege boundaries Cycle 4
+established.
+
+**Warning before enforcement.** Realm access in Phase 4.7 remained
+warning-only instead of becoming a hard block. That was the right
+choice for this cycle. The system should first show a person what it
+sees before it begins restricting them. Hard enforcement comes after
+the rules are visible and governable.
+
+**The Admin Surface is the governance interface.** ZAERA should not
+need to type opaque commands just to see who exists in the system.
+The Admin panel makes civic state readable at a glance. Every future
+expansion of the civic layer needs a matching surface in the Admin
+panel.
+
+---
+
 *Written by: Claude (Command Center)*
 *Confirmed by: ZAERA (Guardian)*
 *Date: 2026-04-19*

@@ -59,13 +59,14 @@ class StateReport:
                 else "Rejected proposals: unknown"
             ),
             (
-                "Capabilities: respond, users, create-user, login, logout, whoami, "
-                "reflect, analyse, audit, guardian, faculties, realms, create-realm, "
-                "realm-context, "
-                "switch-user, assign-realm, unassign-realm, my-log, user-log, invite, "
-                "join, invites, admin-surface, history, proposal-history, routing-log, "
-                "nammu-log, "
-                "memory-log, body, status, diagnostics, approve, reject, forget, exit"
+                    "Capabilities: respond, users, create-user, login, logout, whoami, "
+                    "reflect, analyse, audit, guardian, faculties, realms, create-realm, "
+                    "realm-context, "
+                    "switch-user, assign-realm, unassign-realm, my-log, user-log, invite, "
+                    "join, invites, admin-surface, history, proposal-history, routing-log, "
+                    "nammu-log, "
+                    "memory-log, body, status, diagnostics, guardian-dismiss, "
+                    "guardian-clear-events, approve, reject, forget, exit"
             ),
         ]
         return "\n".join(lines)

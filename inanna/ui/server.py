@@ -192,7 +192,9 @@ class InterfaceServer:
         print(
             f"Auto-login: {self.guardian_user.display_name} ({self.guardian_user.role}) | session active"
         )
-        self.startup_context = self.memory.load_startup_context()
+        self.startup_context = self.memory.load_startup_context(
+            user_id=self._memory_scope_user_id()
+        )
         self.session = Session.create(
             session_dir=self.session_dir,
             context_summary=self.startup_context["summary_lines"],
@@ -290,6 +292,7 @@ class InterfaceServer:
             payload=self.memory.build_candidate(
                 session_id=self.session.session_id,
                 events=self.session.events,
+                user_id=self.active_token.user_id if self.active_token is not None else "",
             ),
         )
         return assistant_text, created
@@ -305,6 +308,21 @@ class InterfaceServer:
             self.guardian_user = (
                 self.user_manager.get_user(self.guardian_user.user_id) or self.guardian_user
             )
+
+    def _memory_scope_user_id(self) -> str | None:
+        if self.active_user is None:
+            return None
+        if self.user_manager.has_privilege(self.active_user.user_id, "all"):
+            return None
+        return self.active_user.user_id
+
+    def _refresh_startup_context(self) -> None:
+        self.startup_context = self.memory.load_startup_context(
+            user_id=self._memory_scope_user_id()
+        )
+
+    def _visible_memory_report(self) -> dict[str, Any]:
+        return self.memory.memory_log_report(user_id=self._memory_scope_user_id())
 
     def _active_user_payload(self) -> dict[str, Any] | None:
         if self.active_user is None:
@@ -379,6 +397,7 @@ class InterfaceServer:
                 session=self.session,
                 user_input=text,
                 reason=governance_result.reason,
+                user_id=self._memory_scope_user_id() or "",
             )
             return {
                 "governance": {
@@ -453,6 +472,7 @@ class InterfaceServer:
                 payload=self.memory.build_candidate(
                     session_id=self.session.session_id,
                     events=self.session.events,
+                    user_id=self.active_token.user_id if self.active_token is not None else "",
                 ),
             )
             label = "[live analysis]" if mode == "live" else "[analysis fallback]"
@@ -500,6 +520,7 @@ class InterfaceServer:
             payload=self.memory.build_candidate(
                 session_id=self.session.session_id,
                 events=self.session.events,
+                user_id=self.active_token.user_id if self.active_token is not None else "",
             ),
         )
         return analysis_text, created, mode
@@ -604,6 +625,7 @@ class InterfaceServer:
                     "login",
                     f"{target.display_name} ({target.role}) logged in",
                 )
+                self._refresh_startup_context()
                 for line in (
                     f"login > session started for {target.display_name} ({target.role})",
                     f"login > token: {token_preview(token)} valid for 8 hours",
@@ -628,6 +650,7 @@ class InterfaceServer:
                 self.active_user = None
                 self.original_token = None
                 self.original_user = None
+                self._refresh_startup_context()
                 await self.broadcast(
                     {
                         "type": "system",
@@ -782,6 +805,7 @@ class InterfaceServer:
                 "join",
                 f"{created.display_name} joined via invite {invite_code}",
             )
+            self._refresh_startup_context()
             for line in (
                 f"join > Welcome, {created.display_name}.",
                 "join > Your account has been created.",
@@ -853,6 +877,28 @@ class InterfaceServer:
             await self.run_audit()
         elif command_name == "guardian":
             await self.run_guardian()
+        elif command_name == "guardian-log":
+            await self.broadcast({"type": "guardian_log", "events": list(self.session_audit)})
+        elif command_name == "guardian-dismiss":
+            await self.broadcast(
+                {"type": "guardian_status", "alerts": [], "timestamp": utc_now()}
+            )
+            await self.broadcast({"type": "system", "text": "guardian > alerts dismissed."})
+            await self.broadcast_state()
+        elif command_name == "guardian-clear-events":
+            cleared = len(self.session_audit)
+            self.session_audit.clear()
+            await self.broadcast({"type": "guardian_log", "events": []})
+            await self.broadcast({"type": "audit_log", "events": []})
+            await self.broadcast(
+                {
+                    "type": "system",
+                    "text": f"guardian > cleared {cleared} governance event(s).",
+                }
+            )
+            await self.broadcast_state()
+        elif command_name == "audit-log":
+            await self.broadcast({"type": "audit_log", "events": list(self.session_audit)})
         elif command_name == "history":
             report = await asyncio.to_thread(self.proposal.history_report)
             await self.broadcast({"type": "system", "text": build_history_report(report)})
@@ -968,6 +1014,7 @@ class InterfaceServer:
             if target_name.lower() in {"off", guardian_record.display_name.lower()}:
                 self.active_user = guardian_record
                 self.original_user = None
+                self._refresh_startup_context()
                 await self.broadcast(
                     {
                         "type": "system",
@@ -985,6 +1032,7 @@ class InterfaceServer:
                 return
             self.active_user = target
             self.original_user = guardian_record
+            self._refresh_startup_context()
             messages = [f"switch-user > Now operating as: {target.display_name} ({target.role})"]
             if not can_access_realm(target, self.active_realm.name):
                 messages.extend(
@@ -1306,6 +1354,7 @@ class InterfaceServer:
                 summary_lines=payload["summary_lines"],
                 approved_at=resolved["resolved_at"],
                 realm_name=self.active_realm.name,
+                user_id=str(payload.get("user_id", "")),
             )
             return f"Approved {resolved['proposal_id']} and wrote a memory record."
         if payload.get("action") == "realm_context_update":
@@ -1375,6 +1424,7 @@ class InterfaceServer:
             payload=self.memory.build_candidate(
                 session_id=self.session.session_id,
                 events=self.session.events,
+                user_id=self.active_token.user_id if self.active_token is not None else "",
             ),
         )
         return {
@@ -1403,7 +1453,8 @@ class InterfaceServer:
 
     def build_status_payload(self) -> dict[str, Any]:
         self._refresh_session_users()
-        mem = self.memory.memory_count()
+        visible_memory_report = self._visible_memory_report()
+        mem = int(visible_memory_report["total"])
         history = self.proposal.history_report()
         pend = history["pending"]
         current_realm = load_current_realm(self.realm_manager, self.active_realm)
@@ -1508,6 +1559,7 @@ class InterfaceServer:
         ]
 
     async def send_initial_state(self, connection: ServerConnection) -> None:
+        visible_memory_report = self._visible_memory_report()
         payloads = [{"type": "status", "data": self.build_status_payload()}]
         payloads.extend(
             {"type": "system", "text": message} for message in self.startup_messages
@@ -1518,7 +1570,7 @@ class InterfaceServer:
         )
         payloads.extend(
             [
-                {"type": "memory_update", "records": self.memory.memory_log_report()["records"]},
+                {"type": "memory_update", "records": visible_memory_report["records"]},
                 {"type": "proposal", "records": self.build_pending_proposals()},
                 {"type": "system", "text": "INANNA NYX interface online."},
             ]
@@ -1530,9 +1582,9 @@ class InterfaceServer:
             await self.send_json(connection, {"type": "guardian", "text": report})
 
     async def broadcast_state(self) -> None:
+        visible_memory_report = self._visible_memory_report()
         await self.broadcast({"type": "status", "data": self.build_status_payload()})
-        await self.broadcast({"type": "memory_update",
-                               "records": self.memory.memory_log_report()["records"]})
+        await self.broadcast({"type": "memory_update", "records": visible_memory_report["records"]})
         await self.broadcast({"type": "proposal", "records": self.build_pending_proposals()})
 
     async def send_json(self, connection: ServerConnection, payload: dict[str, Any]) -> None:

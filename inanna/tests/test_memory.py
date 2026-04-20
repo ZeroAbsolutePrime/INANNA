@@ -92,6 +92,70 @@ class MemoryTests(unittest.TestCase):
         self.assertEqual(report["records"][0]["approved_at"], "2026-04-18T20:21:39")
         self.assertEqual(report["records"][0]["summary_lines"], ["user: hello"])
 
+    def test_write_memory_stores_user_id_and_load_filters_by_user(self) -> None:
+        with TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            session_dir = root / "sessions"
+            memory_dir = root / "memory"
+            session_dir.mkdir()
+            memory_dir.mkdir()
+
+            memory = Memory(session_dir=session_dir, memory_dir=memory_dir)
+            memory.write_memory(
+                proposal_id="proposal-a",
+                session_id="session-1",
+                summary_lines=["user: hello"],
+                approved_at="2026-04-18T20:21:39",
+                user_id="user_alpha",
+            )
+            memory.write_memory(
+                proposal_id="proposal-b",
+                session_id="session-2",
+                summary_lines=["assistant: welcome back"],
+                approved_at="2026-04-18T20:40:10",
+                user_id="user_beta",
+            )
+
+            alpha_records = memory.load_memory_records(user_id="user_alpha")
+            beta_records = memory.load_memory_records(user_id="user_beta")
+
+        self.assertEqual(len(alpha_records), 1)
+        self.assertEqual(alpha_records[0]["user_id"], "user_alpha")
+        self.assertEqual(alpha_records[0]["memory_id"], "proposal-a")
+        self.assertEqual(len(beta_records), 1)
+        self.assertEqual(beta_records[0]["user_id"], "user_beta")
+        self.assertEqual(beta_records[0]["memory_id"], "proposal-b")
+
+    def test_load_startup_context_scopes_to_approved_memory_for_user(self) -> None:
+        with TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            session_dir = root / "sessions"
+            memory_dir = root / "memory"
+            session_dir.mkdir()
+            memory_dir.mkdir()
+
+            memory = Memory(session_dir=session_dir, memory_dir=memory_dir)
+            memory.write_memory(
+                proposal_id="proposal-a",
+                session_id="session-1",
+                summary_lines=["user: alpha note"],
+                approved_at="2026-04-18T20:21:39",
+                user_id="user_alpha",
+            )
+            memory.write_memory(
+                proposal_id="proposal-b",
+                session_id="session-2",
+                summary_lines=["user: beta note"],
+                approved_at="2026-04-18T20:40:10",
+                user_id="user_beta",
+            )
+
+            payload = memory.load_startup_context(user_id="user_alpha")
+
+        self.assertEqual(payload["memory_count"], 1)
+        self.assertEqual(payload["session_count"], 0)
+        self.assertEqual(payload["summary_lines"], ["user: alpha note"])
+
     def test_delete_memory_record_returns_true_and_decreases_count(self) -> None:
         with TemporaryDirectory() as temp_dir:
             root = Path(temp_dir)

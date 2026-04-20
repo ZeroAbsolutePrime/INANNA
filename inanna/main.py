@@ -80,6 +80,8 @@ STARTUP_COMMANDS = (
     "body",
     "status",
     "diagnostics",
+    "guardian-dismiss",
+    "guardian-clear-events",
     "approve",
     "reject",
     "forget",
@@ -280,6 +282,28 @@ def refresh_session_state_user(
         record = session_state.get(key)
         if record is not None and record.user_id == user_id:
             session_state[key] = refreshed
+
+
+def memory_scope_user_id(
+    active_user: UserRecord | None,
+    user_manager: UserManager | None,
+) -> str | None:
+    if active_user is None:
+        return None
+    if user_manager is not None and user_manager.has_privilege(active_user.user_id, "all"):
+        return None
+    return active_user.user_id
+
+
+def refresh_startup_context(
+    startup_context: dict[str, Any],
+    memory: Memory,
+    active_user: UserRecord | None,
+    user_manager: UserManager | None,
+) -> None:
+    payload = memory.load_startup_context(user_id=memory_scope_user_id(active_user, user_manager))
+    startup_context.clear()
+    startup_context.update(payload)
 
 
 def token_preview(active_token: SessionToken | None) -> str:
@@ -970,6 +994,7 @@ def create_memory_request_proposal(
     session: Session,
     user_input: str,
     reason: str,
+    user_id: str = "",
 ) -> dict:
     return proposal.create(
         what="Store a requested memory from direct user instruction",
@@ -977,6 +1002,7 @@ def create_memory_request_proposal(
         payload={
             "session_id": session.session_id,
             "summary_lines": [f"user: {user_input}"],
+            "user_id": user_id,
         },
     )
 
@@ -1086,6 +1112,7 @@ def complete_tool_resolution(
                 payload=memory.build_candidate(
                     session_id=session.session_id,
                     events=session.events,
+                    user_id=active_token.user_id if active_token is not None else "",
                 ),
             )
             return (
@@ -1111,6 +1138,7 @@ def complete_tool_resolution(
         payload=memory.build_candidate(
             session_id=session.session_id,
             events=session.events,
+            user_id=active_token.user_id if active_token is not None else "",
         ),
     )
     return f"operator > {operator_text}\ninanna > {assistant_text}\n{created['line']}"
@@ -1273,6 +1301,7 @@ def handle_command(
             "login",
             f"{target.display_name} ({target.role}) logged in",
         )
+        refresh_startup_context(startup_context, memory, target, user_manager)
         return "\n".join(
             [
                 f"login > session started for {target.display_name} ({target.role})",
@@ -1383,6 +1412,7 @@ def handle_command(
             "join",
             f"{created.display_name} joined via invite {invite_code}",
         )
+        refresh_startup_context(startup_context, memory, created, user_manager)
         return "\n".join(
             [
                 f"join > Welcome, {created.display_name}.",
@@ -1432,7 +1462,9 @@ def handle_command(
         return state_report.render(
             session_id=session.session_id,
             mode=engine.mode,
-            memory_count=memory.memory_count(),
+            memory_count=memory.memory_count(
+                user_id=memory_scope_user_id(current_user, user_manager)
+            ),
             pending_count=history["pending"],
             total_proposals=history["total"],
             approved_proposals=history["approved"],
@@ -1546,6 +1578,7 @@ def handle_command(
         if target_name.lower() in {"off", guardian_record.display_name.lower()}:
             session_state["active_user"] = guardian_record
             session_state["original_user"] = None
+            refresh_startup_context(startup_context, memory, guardian_record, user_manager)
             return f"switch-user > Returned to {guardian_record.display_name} ({guardian_record.role})."
         target = user_manager.get_user_by_display_name(target_name)
         if target is None:
@@ -1553,6 +1586,7 @@ def handle_command(
         session_state["active_user"] = target
         session_state["guardian_user"] = guardian_record
         session_state["original_user"] = guardian_record
+        refresh_startup_context(startup_context, memory, target, user_manager)
         lines = [f"switch-user > Now operating as: {target.display_name} ({target.role})"]
         if not can_access_realm(target, active_realm_name):
             lines.extend(
@@ -1622,7 +1656,9 @@ def handle_command(
         return build_nammu_log_report(resolve_nammu_dir(session, nammu_dir))
 
     if lowered == "memory-log":
-        return build_memory_log_report(memory.memory_log_report())
+        return build_memory_log_report(
+            memory.memory_log_report(user_id=memory_scope_user_id(current_user, user_manager))
+        )
 
     if lowered == "forget":
         return run_forget_flow(memory=memory, proposal=proposal)
@@ -1648,6 +1684,7 @@ def handle_command(
             payload=memory.build_candidate(
                 session_id=session.session_id,
                 events=session.events,
+                user_id=active_token.user_id if active_token is not None else "",
             ),
         )
         if analysis_mode == "live":
@@ -1681,6 +1718,15 @@ def handle_command(
         if faculty_monitor is not None:
             faculty_monitor.record_call("guardian", (time.monotonic() - t0) * 1000, True)
         return f"guardian > {report}"
+
+    if lowered == "guardian-dismiss":
+        return "guardian > alerts dismissed."
+
+    if lowered == "guardian-clear-events":
+        cleared = len(session_audit or [])
+        if session_audit is not None:
+            session_audit.clear()
+        return f"guardian > cleared {cleared} governance event(s)."
 
     if lowered == "reflect":
         reflection_mode, reflection_text = engine.reflect(startup_context_items(startup_context))
@@ -1826,6 +1872,7 @@ def handle_command(
                 summary_lines=payload["summary_lines"],
                 approved_at=resolved["resolved_at"],
                 realm_name=active_realm.name if active_realm else "",
+                user_id=str(payload.get("user_id", "")),
             )
             return (
                 f"Approved {resolved['proposal_id']} and wrote a memory record for the next session."
@@ -1853,6 +1900,7 @@ def handle_command(
             session=session,
             user_input=normalized,
             reason=governance_result.reason,
+            user_id=memory_scope_user_id(current_user, user_manager) or "",
         )
         return (
             f"governance > proposal required: {governance_result.reason}\n"
@@ -1891,6 +1939,7 @@ def handle_command(
             payload=memory.build_candidate(
                 session_id=session.session_id,
                 events=session.events,
+                user_id=active_token.user_id if active_token is not None else "",
             ),
         )
         label = "[live analysis]" if analysis_mode == "live" else "[analysis fallback]"
@@ -1920,6 +1969,7 @@ def handle_command(
         payload=memory.build_candidate(
             session_id=session.session_id,
             events=session.events,
+            user_id=active_token.user_id if active_token is not None else "",
         ),
     )
     lines = [f"nammu > routing to {governance_result.faculty} faculty"]

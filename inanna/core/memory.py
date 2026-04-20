@@ -16,9 +16,9 @@ class Memory:
         self.memory_dir = memory_dir
         self.max_lines = max_lines
 
-    def load_startup_context(self) -> dict[str, Any]:
-        memory_records = self._load_memory_records()
-        session_records = self._load_session_records()
+    def load_startup_context(self, user_id: str | None = None) -> dict[str, Any]:
+        memory_records = self.load_memory_records(user_id=user_id)
+        session_records = [] if user_id else self._load_session_records()
 
         # Approved memory loads first, and raw session lines only supplement
         # the startup context if approved memory provides fewer than
@@ -60,11 +60,13 @@ class Memory:
         self,
         session_id: str,
         events: list[dict[str, str]],
+        user_id: str = "",
     ) -> dict[str, Any]:
         return {
             "session_id": session_id,
             "created_at": utc_now(),
             "summary_lines": self._candidate_lines(events),
+            "user_id": user_id,
         }
 
     def write_memory(
@@ -74,6 +76,7 @@ class Memory:
         summary_lines: list[str],
         approved_at: str,
         realm_name: str = "",
+        user_id: str = "",
     ) -> Path:
         memory_path = self.memory_dir / f"{proposal_id}.json"
         payload = {
@@ -82,19 +85,26 @@ class Memory:
             "approved_at": approved_at,
             "summary_lines": summary_lines[: self.max_lines],
             "realm_name": realm_name,
+            "user_id": user_id,
         }
         memory_path.write_text(json.dumps(payload, indent=2), encoding="utf-8")
         return memory_path
 
-    def memory_count(self) -> int:
-        return len(self._load_memory_records())
+    def memory_count(self, user_id: str | None = None) -> int:
+        return len(self.load_memory_records(user_id=user_id))
 
-    def memory_log_report(self) -> dict[str, Any]:
-        records = self._load_memory_records()
+    def memory_log_report(self, user_id: str | None = None) -> dict[str, Any]:
+        records = self.load_memory_records(user_id=user_id)
         return {
             "total": len(records),
             "records": records,
         }
+
+    def load_memory_records(self, user_id: str | None = None) -> list[dict[str, Any]]:
+        records = self._load_memory_records()
+        if not user_id:
+            return records
+        return [record for record in records if record.get("user_id", "") == user_id]
 
     def delete_memory_record(self, memory_id: str) -> bool:
         memory_path = self.memory_dir / f"{memory_id}.json"
