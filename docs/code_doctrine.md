@@ -289,6 +289,38 @@ panel.
 
 ---
 
+## Lessons from Cycle 5
+
+**CONFIG-DRIVEN EVERYTHING.** Tools live in `tools.json`. Faculties
+live in `faculties.json`. Domain hints live in
+`governance_signals.json`. The Python code reads config. When a new
+tool or Faculty is needed, update the JSON. Never add it to Python
+code directly.
+
+**MODEL DIFFERENTIATION VIA CONFIG.** SENTINEL uses a different model
+than CROWN because `faculties.json` says so. No Python change should
+be required to swap a Faculty model. This is the Faculty architecture
+working as intended. Future domain Faculties follow the same pattern.
+
+**THE ORCHESTRATION PRINCIPLE.** Complex tasks may require multiple
+Faculties. The pattern is always: detect -> propose -> approve ->
+execute chain -> audit. Never execute orchestration without a
+proposal. The user must see what is about to happen.
+
+**PUSH IMMEDIATELY.** Codex's repo confusion in Cycle 5, where work
+was repeatedly run from the wrong directory and stale results were
+reported back as if current, reinforces the lesson from Cycle 4: every
+completion commit must be pushed to `origin/main` the moment it is
+done. The Command Center must verify `git log` after every phase.
+
+**AUTO-MEMORY IS THE RIGHT DEFAULT.** Removing the memory proposal
+from conversation turns was the correct decision. The flow of
+conversation is sacred. Governance applies to structural operations
+such as clear, forget, and export, not to the act of being heard and
+remembered.
+
+---
+
 *Written by: Claude (Command Center)*
 *Confirmed by: ZAERA (Guardian)*
 *Date: 2026-04-19*

@@ -7,6 +7,7 @@ from identity import (
     CYCLE2_SUMMARY,
     CYCLE4_PREVIEW,
     CYCLE4_SUMMARY,
+    CYCLE5_SUMMARY,
     build_analyst_prompt,
     build_nammu_prompt,
     build_system_prompt,
@@ -111,8 +112,8 @@ class IdentityTests(unittest.TestCase):
     def test_current_phase_constant_matches_phase_banner(self) -> None:
         self.assertEqual(CURRENT_PHASE, phase_banner())
 
-    def test_current_phase_names_orchestration_layer(self) -> None:
-        self.assertIn("Orchestration Layer", CURRENT_PHASE)
+    def test_current_phase_names_operator_proof(self) -> None:
+        self.assertIn("Operator Proof", CURRENT_PHASE)
 
     def test_cycle2_summary_describes_completed_kernel(self) -> None:
         self.assertIn("NAMMU Kernel", CYCLE2_SUMMARY)
@@ -128,6 +129,11 @@ class IdentityTests(unittest.TestCase):
         self.assertIn("Civic Layer", CYCLE4_SUMMARY)
         self.assertIn("session tokens", CYCLE4_SUMMARY)
         self.assertIn("Admin Surface", CYCLE4_SUMMARY)
+
+    def test_cycle5_summary_describes_operator_console(self) -> None:
+        self.assertIn("Operator Console", CYCLE5_SUMMARY)
+        self.assertIn("SENTINEL", CYCLE5_SUMMARY)
+        self.assertIn("docs/llm_configuration.md", CYCLE5_SUMMARY)
 
 
 if __name__ == "__main__":

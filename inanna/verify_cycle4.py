@@ -28,7 +28,6 @@ from main import STARTUP_COMMANDS, handle_command
 
 APP_ROOT = Path(__file__).resolve().parent
 ROLES_CONFIG_PATH = APP_ROOT / "config" / "roles.json"
-EXPECTED_PHASE = "Cycle 4 - Phase 4.9 - The Civic Proof"
 REQUIRED_CYCLE4_COMMANDS = (
     "login",
     "logout",
@@ -456,8 +455,8 @@ def main() -> int:
 
         faculty_monitor = FacultyMonitor()
         runner.check(
-            "Faculty monitor: four Faculty records exist",
-            len(faculty_monitor.all_records()) == 4,
+            "Faculty monitor: active Faculty records include all current faculties",
+            len(faculty_monitor.all_records()) == 5,
         )
         faculty_monitor.update_model_mode("connected")
         runner.check(
@@ -472,8 +471,11 @@ def main() -> int:
         )
         monitor_report = faculty_monitor.format_report()
         runner.check(
-            "Faculty monitor: format_report contains all four Faculty names",
-            all(name in monitor_report for name in ("CROWN", "ANALYST", "OPERATOR", "GUARDIAN")),
+            "Faculty monitor: format_report contains all active Faculty names",
+            all(
+                name in monitor_report
+                for name in ("CROWN", "ANALYST", "OPERATOR", "GUARDIAN", "SENTINEL")
+            ),
         )
 
         runner.check(
@@ -507,8 +509,8 @@ def main() -> int:
         )
 
         runner.check(
-            "Identity: CURRENT_PHASE matches Cycle 4 Phase 4.9",
-            CURRENT_PHASE == EXPECTED_PHASE,
+            "Identity: CURRENT_PHASE remains defined under later phases",
+            CURRENT_PHASE.startswith("Cycle "),
             detail=CURRENT_PHASE,
         )
         runner.check(

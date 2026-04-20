@@ -1280,7 +1280,7 @@ html, body {
             <div class="nav-label">TOOLS</div>
             <div class="nav-sublabel">Registry · Execute</div>
           </div>
-          <div class="nav-badge" id="badge-tools">2</div>
+          <div class="nav-badge" id="badge-tools">4</div>
         </div>
         <div class="nav-item" data-panel="network" onclick="switchPanel('network',this)">
           <div class="nav-glyph">𒀸</div>
@@ -1295,7 +1295,7 @@ html, body {
             <div class="nav-label">FACULTIES</div>
             <div class="nav-sublabel">Registry · Deploy</div>
           </div>
-          <div class="nav-badge" id="badge-fac">4</div>
+          <div class="nav-badge" id="badge-fac">5</div>
         </div>
         <div class="nav-item" data-panel="processes" onclick="switchPanel('processes',this)">
           <div class="nav-glyph">⚙</div>
@@ -1790,6 +1790,14 @@ function handleMsg(msg) {
 
   if (t === 'governance') {
     addActivity('gov', 'GOV', (msg.text || '').slice(0, 120));
+    return;
+  }
+
+  if (t === 'orchestration') {
+    const chain = (msg.chain || '').trim()
+      || ((msg.steps || []).map(step => String(step.faculty || '').toUpperCase()).join(' -> '));
+    const preview = chain ? `${chain} · ${(msg.text || '').slice(0, 100)}` : (msg.text || '').slice(0, 120);
+    addActivity('sys', 'ORCH', preview);
     return;
   }
 

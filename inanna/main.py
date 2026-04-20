@@ -112,6 +112,23 @@ def build_sentinel_stub_response() -> str:
     return SENTINEL_STUB_RESPONSE
 
 
+def load_faculty_definition(
+    faculties_path: Path,
+    faculty_name: str,
+) -> dict[str, Any]:
+    try:
+        fac_data = json.loads(faculties_path.read_text(encoding="utf-8"))
+    except Exception:
+        return {}
+
+    faculties = fac_data.get("faculties", {})
+    if not isinstance(faculties, dict):
+        return {}
+
+    definition = faculties.get(faculty_name, {})
+    return definition if isinstance(definition, dict) else {}
+
+
 def build_sentinel_system_prompt(
     grounding: str | list[str | dict[str, str]] | None,
     faculties_path: Path,
@@ -128,8 +145,7 @@ def build_sentinel_system_prompt(
     ]
 
     try:
-        fac_data = json.loads(faculties_path.read_text(encoding="utf-8"))
-        sentinel_cfg = fac_data.get("faculties", {}).get("sentinel", {})
+        sentinel_cfg = load_faculty_definition(faculties_path, "sentinel")
         charter = str(sentinel_cfg.get("charter_preview", "")).strip()
         gov_rules = [
             str(rule).strip()
@@ -173,9 +189,12 @@ def run_sentinel_response(
     faculties_path: Path,
 ) -> str:
     system_prompt = build_sentinel_system_prompt(grounding, faculties_path)
+    sentinel_cfg = load_faculty_definition(faculties_path, "sentinel")
+    effective_lm_url = str(sentinel_cfg.get("model_url") or lm_url).strip()
+    effective_model_name = str(sentinel_cfg.get("model_name") or model_name).strip()
     engine = Engine(
-        model_url=lm_url,
-        model_name=model_name,
+        model_url=effective_lm_url,
+        model_name=effective_model_name,
         api_key=os.getenv("INANNA_API_KEY", "").strip(),
     )
     fallback = (

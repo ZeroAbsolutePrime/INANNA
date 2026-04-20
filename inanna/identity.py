@@ -6,7 +6,11 @@ if TYPE_CHECKING:
     from core.realm import RealmConfig
 
 
-CURRENT_PHASE = "Cycle 5 - Phase 5.8 - The Orchestration Layer"
+# LLM configuration:
+# - Faculty runtime assignments are declared in config/faculties.json.
+# - Full Faculty-to-model mapping is documented in docs/llm_configuration.md.
+# - SENTINEL may use a different model than the core Faculties without changing Python code.
+CURRENT_PHASE = "Cycle 5 - Phase 5.9 - The Operator Proof"
 
 CYCLE2_SUMMARY = (
     "Cycle 2 built the NAMMU Kernel: web interface, two Faculties, "
@@ -25,6 +29,20 @@ CYCLE4_SUMMARY = (
     "roles and privileges, session tokens, user-scoped memory, "
     "interaction logs, governed invite flow, realm access control, "
     "and the Admin Surface giving the Guardian a full civic overview."
+)
+
+CYCLE5_SUMMARY = (
+    "Cycle 5 built the Operator Console: a second browser panel "
+    "at /console for Guardians and Operators, a config-driven Tool "
+    "Registry with four governed tools, the Network Eye with ping/"
+    "resolve/scan, the Process Monitor, the Faculty Registry backed "
+    "by faculties.json, dynamic NAMMU routing across all active "
+    "Faculties, SENTINEL as the first domain Faculty running on "
+    "qwen2.5-14b-instruct, and the Orchestration Layer enabling "
+    "SENTINEL->CROWN two-Faculty chains. Auto-memory removed "
+    "conversation-turn proposals. The Gates of Uruk UI redesign "
+    "unified both interfaces. The LLM configuration is documented "
+    "in code and in docs/llm_configuration.md."
 )
 
 
