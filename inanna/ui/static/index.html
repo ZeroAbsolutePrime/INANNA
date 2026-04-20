@@ -427,6 +427,13 @@
       border-color: var(--fallback);
     }
 
+    .list-toggle-row {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      margin-top: 8px;
+    }
+
     .admin-counts {
       margin-left: 8px;
       color: var(--dim);
@@ -1292,6 +1299,10 @@
 
   <script>
     const MEMORY_DISPLAY_CAP = 100;
+    const PROPOSAL_DEFAULT_VISIBLE = 5;
+    const MEMORY_DEFAULT_VISIBLE = 5;
+    const GUARDIAN_EVENTS_DEFAULT_VISIBLE = 5;
+    const AUDIT_DEFAULT_VISIBLE = 10;
     const SECTION_STORAGE_KEY = "inanna.ui.section-state";
     const DEFAULT_SECTIONS = {
       admin: false,
@@ -1380,16 +1391,20 @@
       proposalHistoryRecords: [],
       proposalFilter: "all",
       fullHistoryLoaded: false,
+      proposalExpanded: false,
       faculties: [],
       guardianAlerts: [],
       guardianTimestamp: "",
       guardianEvents: [],
       guardianLogLoaded: false,
+      guardianExpanded: false,
       auditEvents: [],
       auditLogLoaded: false,
       clientAuditEvents: [],
+      auditExpanded: false,
       sections: loadSectionState(),
       expandedMemoryIds: new Set(),
+      memoryExpanded: false,
       startupContextShown: false,
       auditSequence: 0,
     };
@@ -1584,6 +1599,23 @@
       });
     }
 
+    function appendListToggle(container, label, onClick) {
+      const row = document.createElement("div");
+      row.className = "list-toggle-row";
+
+      const button = document.createElement("button");
+      button.className = "panel-btn";
+      button.type = "button";
+      button.textContent = label;
+      button.addEventListener("click", (event) => {
+        event.stopPropagation();
+        onClick();
+      });
+
+      row.appendChild(button);
+      container.appendChild(row);
+    }
+
     function memoryTotalLines() {
       if (typeof state.status.memory_total_lines === "number") {
         return state.status.memory_total_lines;
@@ -1631,11 +1663,19 @@
       }
     }
 
-    function visibleAuditEvents() {
+    function auditEventRecords() {
       if (state.auditLogLoaded && state.auditEvents.length > 0) {
-        return newestFirst(state.auditEvents, "timestamp").slice(0, 20);
+        return newestFirst(state.auditEvents, "timestamp");
       }
-      return newestFirst(state.clientAuditEvents, "timestamp").slice(0, 20);
+      return newestFirst(state.clientAuditEvents, "timestamp");
+    }
+
+    function visibleAuditEvents() {
+      const events = auditEventRecords();
+      if (state.auditExpanded) {
+        return events;
+      }
+      return events.slice(0, AUDIT_DEFAULT_VISIBLE);
     }
 
     function ensureSectionData(sectionName) {
@@ -1694,7 +1734,7 @@
         summary,
         detail: detail || "",
       });
-      state.clientAuditEvents = newestFirst(state.clientAuditEvents, "timestamp").slice(0, 20);
+      state.clientAuditEvents = newestFirst(state.clientAuditEvents, "timestamp");
       if (!state.auditLogLoaded || state.auditEvents.length === 0) {
         renderAudit();
         renderSectionBadges();
@@ -1798,14 +1838,14 @@
       }
 
       if (payload.type === "guardian_log") {
-        state.guardianEvents = newestFirst(payload.events || [], "timestamp").slice(0, 10);
+        state.guardianEvents = newestFirst(payload.events || [], "timestamp");
         state.guardianLogLoaded = true;
         renderGuardian();
         return;
       }
 
       if (payload.type === "audit_log") {
-        state.auditEvents = newestFirst(payload.events || [], "timestamp").slice(0, 20);
+        state.auditEvents = newestFirst(payload.events || [], "timestamp");
         state.auditLogLoaded = true;
         renderAudit();
         renderSectionBadges();
@@ -2033,7 +2073,7 @@
             const rejectButton = document.createElement("button");
             rejectButton.className = "panel-btn warn";
             rejectButton.type = "button";
-            rejectButton.textContent = "[ reject ]";
+            rejectButton.textContent = "[ decline ]";
             rejectButton.addEventListener("click", () => {
               sendCommand("reject", { proposal_id: proposalId });
             });
@@ -2080,7 +2120,7 @@
       guardianBadge.textContent = String(alertCount);
       guardianBadge.className = `section-badge${alertCount > 0 ? " warn" : ""}`;
 
-      const auditCount = visibleAuditEvents().length;
+      const auditCount = auditEventRecords().length;
       auditBadge.textContent = String(auditCount);
       auditBadge.className = "section-badge";
     }
@@ -2493,10 +2533,13 @@
       }
 
       const sortedRecords = sortByTimestamp(state.memoryRecords, "approved_at");
+      const visibleRecords = state.memoryExpanded
+        ? sortedRecords
+        : sortedRecords.slice(-MEMORY_DEFAULT_VISIBLE);
       memoryPanel.innerHTML = "";
 
       let currentDay = "";
-      sortedRecords.forEach((record) => {
+      visibleRecords.forEach((record) => {
         const recordDay = formatDayLabel(record.approved_at);
         if (recordDay !== currentDay) {
           currentDay = recordDay;
@@ -2588,6 +2631,17 @@
         wrapper.appendChild(row);
         memoryPanel.appendChild(wrapper);
       });
+
+      if (sortedRecords.length > MEMORY_DEFAULT_VISIBLE) {
+        appendListToggle(
+          memoryPanel,
+          state.memoryExpanded ? "[ show less ]" : "[ load more ]",
+          () => {
+            state.memoryExpanded = !state.memoryExpanded;
+            renderMemory();
+          }
+        );
+      }
     }
 
     function visibleProposals() {
@@ -2596,6 +2650,38 @@
         return source;
       }
       return source.filter((record) => record.status === state.proposalFilter);
+    }
+
+    function displayedProposalRecords(records) {
+      if (state.proposalFilter === "pending" || state.proposalExpanded) {
+        return records;
+      }
+
+      if (state.proposalFilter === "all") {
+        const pending = records.filter((record) => (record.status || "pending") === "pending");
+        const nonPending = records.filter((record) => (record.status || "pending") !== "pending");
+        return newestFirst(
+          [...pending, ...nonPending.slice(0, PROPOSAL_DEFAULT_VISIBLE)],
+          "timestamp"
+        );
+      }
+
+      return records.slice(0, PROPOSAL_DEFAULT_VISIBLE);
+    }
+
+    function proposalToggleVisible(records) {
+      if (state.proposalFilter === "pending") {
+        return false;
+      }
+
+      if (state.proposalFilter === "all") {
+        const nonPendingCount = records.filter(
+          (record) => (record.status || "pending") !== "pending"
+        ).length;
+        return state.proposalExpanded || nonPendingCount > PROPOSAL_DEFAULT_VISIBLE;
+      }
+
+      return state.proposalExpanded || records.length > PROPOSAL_DEFAULT_VISIBLE;
     }
 
     function renderProposalFilters() {
@@ -2607,6 +2693,7 @@
     function renderProposals() {
       renderProposalFilters();
       const records = newestFirst(visibleProposals(), "timestamp");
+      const displayedRecords = displayedProposalRecords(records);
       if (records.length === 0) {
         proposalPanel.innerHTML = `<div class="empty-state">${
           state.proposalFilter === "all"
@@ -2617,7 +2704,7 @@
       }
 
       proposalPanel.innerHTML = "";
-      records.forEach((record) => {
+      displayedRecords.forEach((record) => {
         const wrapper = document.createElement("div");
         wrapper.className = "proposal-record";
 
@@ -2663,7 +2750,7 @@
           const rejectButton = document.createElement("button");
           rejectButton.className = "panel-btn warn";
           rejectButton.type = "button";
-          rejectButton.textContent = "[ reject ]";
+          rejectButton.textContent = "[ decline ]";
           rejectButton.addEventListener("click", () => {
             sendCommand("reject", { proposal_id: record.proposal_id || record.id });
           });
@@ -2674,6 +2761,17 @@
 
         proposalPanel.appendChild(wrapper);
       });
+
+      if (proposalToggleVisible(records)) {
+        appendListToggle(
+          proposalPanel,
+          state.proposalExpanded ? "[ show less ]" : "[ load more ]",
+          () => {
+            state.proposalExpanded = !state.proposalExpanded;
+            renderProposals();
+          }
+        );
+      }
     }
 
     function renderFaculties() {
@@ -2752,11 +2850,16 @@
         });
       }
 
-      if (state.guardianEvents.length === 0) {
+      const allEvents = newestFirst(state.guardianEvents, "timestamp");
+      const visibleEvents = state.guardianExpanded
+        ? allEvents
+        : allEvents.slice(0, GUARDIAN_EVENTS_DEFAULT_VISIBLE);
+
+      if (allEvents.length === 0) {
         guardianEvents.innerHTML = '<div class="empty-state">No governance events loaded yet.</div>';
       } else {
         guardianEvents.innerHTML = "";
-        newestFirst(state.guardianEvents, "timestamp").slice(0, 10).forEach((event) => {
+        visibleEvents.forEach((event) => {
           const row = document.createElement("div");
           row.className = "guardian-event";
 
@@ -2786,6 +2889,17 @@
 
           guardianEvents.appendChild(row);
         });
+
+        if (allEvents.length > GUARDIAN_EVENTS_DEFAULT_VISIBLE) {
+          appendListToggle(
+            guardianEvents,
+            state.guardianExpanded ? "[ show less ]" : "[ show all ]",
+            () => {
+              state.guardianExpanded = !state.guardianExpanded;
+              renderGuardian();
+            }
+          );
+        }
       }
 
       const diskFree = typeof body.disk_free_gb === "number" ? `${body.disk_free_gb.toFixed(1)} GB` : "unknown";
@@ -2798,8 +2912,9 @@
     }
 
     function renderAudit() {
+      const allEvents = auditEventRecords();
       const events = visibleAuditEvents();
-      if (events.length === 0) {
+      if (allEvents.length === 0) {
         auditPanel.innerHTML = '<div class="empty-state">No audit events available yet.</div>';
         return;
       }
@@ -2837,6 +2952,17 @@
 
         auditPanel.appendChild(row);
       });
+
+      if (allEvents.length > AUDIT_DEFAULT_VISIBLE) {
+        appendListToggle(
+          auditPanel,
+          state.auditExpanded ? "[ show less ]" : "[ show all ]",
+          () => {
+            state.auditExpanded = !state.auditExpanded;
+            renderAudit();
+          }
+        );
+      }
     }
 
     inputForm.addEventListener("submit", (event) => {
@@ -2863,6 +2989,7 @@
     proposalFilterTabs.querySelectorAll(".filter-tab").forEach((button) => {
       button.addEventListener("click", () => {
         state.proposalFilter = button.dataset.filter || "all";
+        state.proposalExpanded = false;
         renderProposals();
       });
     });
