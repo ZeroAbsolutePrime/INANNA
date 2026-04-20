@@ -133,3 +133,78 @@ class ProfileManager:
         if profile is not None:
             return profile.pronouns
         return ""
+
+
+class CommunicationObserver:
+    """Observes conversation patterns and updates the user profile silently."""
+
+    SHORT_MSG_CHARS = 80
+    LONG_MSG_CHARS = 300
+    FORMAL_INDICATORS = [
+        "please",
+        "would you",
+        "could you",
+        "kindly",
+        "regard",
+        "sincerely",
+        "thank you",
+        "appreciate",
+        "request",
+    ]
+    CASUAL_INDICATORS = [
+        "hey",
+        "yeah",
+        "ok",
+        "cool",
+        "awesome",
+        "sure",
+        "nope",
+        "thanks",
+        "thx",
+        "lol",
+        "btw",
+        "idk",
+    ]
+
+    def __init__(self, profile_manager: ProfileManager) -> None:
+        self.profile_manager = profile_manager
+
+    def observe_session(
+        self,
+        user_id: str,
+        messages: list[str],
+        topics: list[str],
+    ) -> None:
+        if not messages or not user_id:
+            return
+
+        profile = self.profile_manager.load(user_id)
+        if profile is None:
+            return
+
+        avg_len = sum(len(message) for message in messages) / len(messages)
+        if avg_len < self.SHORT_MSG_CHARS:
+            length_pref = "short"
+        elif avg_len > self.LONG_MSG_CHARS:
+            length_pref = "long"
+        else:
+            length_pref = "medium"
+
+        all_text = " ".join(messages).lower()
+        formal_score = sum(1 for word in self.FORMAL_INDICATORS if word in all_text)
+        casual_score = sum(1 for word in self.CASUAL_INDICATORS if word in all_text)
+        if formal_score > casual_score + 1:
+            formality = "formal"
+        elif casual_score > formal_score + 1:
+            formality = "casual"
+        else:
+            formality = "mixed"
+
+        self.profile_manager.update_field(user_id, "preferred_length", length_pref)
+        self.profile_manager.update_field(user_id, "formality", formality)
+
+        if topics:
+            existing = profile.recurring_topics or []
+            normalized_topics = [topic.strip().lower() for topic in topics if topic.strip()]
+            merged = list(dict.fromkeys(existing + normalized_topics))[-20:]
+            self.profile_manager.update_field(user_id, "recurring_topics", merged)

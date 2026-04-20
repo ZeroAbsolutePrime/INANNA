@@ -87,6 +87,7 @@ from main import (
     create_realm_context_proposal,
     create_tool_use_proposal,
     coerce_profile_field_value,
+    clear_communication_observations,
     complete_orchestration_resolution as complete_orchestration_backend_resolution,
     default_profile_field_value,
     finalize_auto_memory,
@@ -99,6 +100,7 @@ from main import (
     inspect_body_report,
     load_current_realm,
     needs_onboarding,
+    observe_session_communication,
     parse_user_realm_command,
     parse_profile_clear_command,
     parse_profile_edit_command,
@@ -315,6 +317,13 @@ class InterfaceServer:
         finally:
             self.connections.discard(connection)
             if not self.connections:
+                await asyncio.to_thread(
+                    observe_session_communication,
+                    self.profile_manager,
+                    self.active_token,
+                    self.session,
+                    self.routing_log,
+                )
                 await asyncio.to_thread(self._finalize_auto_memory, "session end")
             print(f"Client disconnected. Total: {len(self.connections)}")
 
@@ -989,6 +998,50 @@ class InterfaceServer:
                         {
                             "type": "system",
                             "text": "my-profile > usage: my-profile clear [field]",
+                        }
+                    )
+                    await self.broadcast_state()
+                    return
+                if field_name == "communication":
+                    user_id, _, profile = await asyncio.to_thread(
+                        resolve_profile_subject,
+                        self.profile_manager,
+                        self.active_user,
+                        self.active_token,
+                    )
+                    if profile is None:
+                        await self.broadcast(
+                            {
+                                "type": "system",
+                                "text": "my-profile > profile management is unavailable.",
+                            }
+                        )
+                        await self.broadcast_state()
+                        return
+                    cleared = await asyncio.to_thread(
+                        clear_communication_observations,
+                        self.profile_manager,
+                        user_id,
+                    )
+                    if not cleared:
+                        await self.broadcast(
+                            {
+                                "type": "system",
+                                "text": "profile > unable to clear communication observations.",
+                            }
+                        )
+                        await self.broadcast_state()
+                        return
+                    sync_profile_grounding(
+                        self.engine,
+                        self.profile_manager,
+                        self.active_user,
+                        self.active_token,
+                    )
+                    await self.broadcast(
+                        {
+                            "type": "system",
+                            "text": "profile > Communication observations cleared.",
                         }
                     )
                     await self.broadcast_state()

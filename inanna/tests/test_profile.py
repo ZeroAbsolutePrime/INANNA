@@ -5,9 +5,10 @@ import unittest
 from pathlib import Path
 from tempfile import TemporaryDirectory
 
-from core.profile import ProfileManager, UserProfile
+from core.profile import CommunicationObserver, ProfileManager, UserProfile
 from main import (
     PROFILE_PROTECTED_CLEAR_FIELDS,
+    clear_communication_observations,
     coerce_profile_field_value,
     format_profile_output,
     needs_onboarding,
@@ -211,6 +212,7 @@ class ProfileTests(unittest.TestCase):
             location_region="Catalonia",
             location_country="Spain",
             communication_style="Direct",
+            preferred_length="medium",
             formality="Warm",
             observed_patterns=["Concise"],
             domains=["Systems"],
@@ -229,6 +231,7 @@ class ProfileTests(unittest.TestCase):
         self.assertIn("Preferred    ZAERA", rendered)
         self.assertIn("Languages    es, en, pt", rendered)
         self.assertIn("Location     Barcelona, Catalonia, Spain", rendered)
+        self.assertIn("Length       medium", rendered)
         self.assertIn("Onboarding   completed Apr 19 22:15", rendered)
 
     def test_format_profile_output_shows_empty_marker_for_blank_fields(self) -> None:
@@ -237,6 +240,7 @@ class ProfileTests(unittest.TestCase):
         self.assertIn("Preferred    —", rendered)
         self.assertIn("Languages    —", rendered)
         self.assertIn("Location     —", rendered)
+        self.assertIn("Length       —", rendered)
         self.assertIn("Departments  —", rendered)
 
     def test_parse_profile_edit_command_extracts_field_and_value(self) -> None:
@@ -266,6 +270,134 @@ class ProfileTests(unittest.TestCase):
                 PROFILE_PROTECTED_CLEAR_FIELDS
             )
         )
+
+    def test_communication_observer_instantiates_with_profile_manager(self) -> None:
+        _, _, manager = self.make_manager()
+
+        observer = CommunicationObserver(manager)
+
+        self.assertIs(observer.profile_manager, manager)
+
+    def test_observe_session_sets_short_length_for_short_messages(self) -> None:
+        _, _, manager = self.make_manager()
+        manager.ensure_profile_exists("user_123")
+        observer = CommunicationObserver(manager)
+
+        observer.observe_session("user_123", ["hey", "ok thanks"], ["governance"])
+
+        self.assertEqual(manager.load("user_123").preferred_length, "short")
+
+    def test_observe_session_sets_long_length_for_long_messages(self) -> None:
+        _, _, manager = self.make_manager()
+        manager.ensure_profile_exists("user_123")
+        observer = CommunicationObserver(manager)
+        long_message = " ".join(["careful"] * 80)
+
+        observer.observe_session("user_123", [long_message], ["architecture"])
+
+        self.assertEqual(manager.load("user_123").preferred_length, "long")
+
+    def test_observe_session_sets_formality_to_formal(self) -> None:
+        _, _, manager = self.make_manager()
+        manager.ensure_profile_exists("user_123")
+        observer = CommunicationObserver(manager)
+
+        observer.observe_session(
+            "user_123",
+            ["Please review this request. Thank you, I would appreciate it."],
+            [],
+        )
+
+        self.assertEqual(manager.load("user_123").formality, "formal")
+
+    def test_observe_session_sets_formality_to_casual(self) -> None:
+        _, _, manager = self.make_manager()
+        manager.ensure_profile_exists("user_123")
+        observer = CommunicationObserver(manager)
+
+        observer.observe_session(
+            "user_123",
+            ["hey yeah ok cool thanks lol"],
+            [],
+        )
+
+        self.assertEqual(manager.load("user_123").formality, "casual")
+
+    def test_observe_session_updates_recurring_topics(self) -> None:
+        _, _, manager = self.make_manager()
+        manager.ensure_profile_exists("user_123")
+        observer = CommunicationObserver(manager)
+
+        observer.observe_session("user_123", ["hello there"], ["security", "networks"])
+
+        self.assertEqual(manager.load("user_123").recurring_topics, ["security", "networks"])
+
+    def test_observe_session_deduplicates_topics(self) -> None:
+        _, _, manager = self.make_manager()
+        manager.save(UserProfile(user_id="user_123", recurring_topics=["security"]))
+        observer = CommunicationObserver(manager)
+
+        observer.observe_session("user_123", ["hello there"], ["security", "governance"])
+
+        self.assertEqual(
+            manager.load("user_123").recurring_topics,
+            ["security", "governance"],
+        )
+
+    def test_observe_session_caps_topics_at_twenty(self) -> None:
+        _, _, manager = self.make_manager()
+        existing = [f"topic{i}" for i in range(10)]
+        manager.save(UserProfile(user_id="user_123", recurring_topics=existing))
+        observer = CommunicationObserver(manager)
+        new_topics = [f"new{i}" for i in range(15)]
+
+        observer.observe_session("user_123", ["hello there"], new_topics)
+
+        recurring_topics = manager.load("user_123").recurring_topics
+        self.assertEqual(len(recurring_topics), 20)
+        self.assertEqual(recurring_topics[0], "topic5")
+        self.assertEqual(recurring_topics[-1], "new14")
+
+    def test_observe_session_with_empty_messages_makes_no_updates(self) -> None:
+        _, _, manager = self.make_manager()
+        manager.ensure_profile_exists("user_123")
+        observer = CommunicationObserver(manager)
+
+        observer.observe_session("user_123", [], ["security"])
+
+        profile = manager.load("user_123")
+        self.assertEqual(profile.preferred_length, "")
+        self.assertEqual(profile.formality, "")
+        self.assertEqual(profile.recurring_topics, [])
+
+    def test_observe_session_with_unknown_user_id_makes_no_changes(self) -> None:
+        _, root, manager = self.make_manager()
+        observer = CommunicationObserver(manager)
+
+        observer.observe_session("missing_user", ["hello"], ["security"])
+
+        self.assertFalse((root / "profiles" / "missing_user.json").exists())
+
+    def test_clear_communication_observations_resets_all_fields(self) -> None:
+        _, _, manager = self.make_manager()
+        manager.save(
+            UserProfile(
+                user_id="user_123",
+                communication_style="direct",
+                preferred_length="short",
+                formality="casual",
+                observed_patterns=["brief"],
+            )
+        )
+
+        cleared = clear_communication_observations(manager, "user_123")
+        profile = manager.load("user_123")
+
+        self.assertTrue(cleared)
+        self.assertEqual(profile.communication_style, "")
+        self.assertEqual(profile.preferred_length, "")
+        self.assertEqual(profile.formality, "")
+        self.assertEqual(profile.observed_patterns, [])
 
 
 if __name__ == "__main__":

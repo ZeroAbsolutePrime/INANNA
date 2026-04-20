@@ -26,7 +26,7 @@ from core.nammu_memory import (
 )
 from core.orchestration import OrchestrationEngine, OrchestrationPlan
 from core.operator import OperatorFaculty, ToolResult
-from core.profile import ProfileManager, UserProfile, utc_now
+from core.profile import CommunicationObserver, ProfileManager, UserProfile, utc_now
 from core.process_monitor import ProcessMonitor
 from core.proposal import Proposal
 from core.realm import DEFAULT_REALM, RealmConfig, RealmManager
@@ -158,6 +158,12 @@ PROFILE_READ_ONLY_FIELDS = {
     "created_at",
     "last_updated",
 }
+PROFILE_COMMUNICATION_CLEAR_FIELDS = (
+    "preferred_length",
+    "formality",
+    "communication_style",
+    "observed_patterns",
+)
 
 
 def get_active_realm_name() -> str:
@@ -656,6 +662,7 @@ def format_profile_output(
         "",
         "  Communication",
         f"  {'Style':<12} {format_profile_value(profile.communication_style)}",
+        f"  {'Length':<12} {format_profile_value(profile.preferred_length)}",
         f"  {'Formality':<12} {format_profile_value(profile.formality)}",
         f"  {'Patterns':<12} {format_profile_value(profile.observed_patterns)}",
         "",
@@ -720,6 +727,57 @@ def resolve_profile_subject(
         return user_id, display_name, None
     profile = profile_manager.ensure_profile_exists(user_id)
     return user_id, display_name, profile
+
+
+def clear_communication_observations(
+    profile_manager: ProfileManager | None,
+    user_id: str,
+) -> bool:
+    if profile_manager is None or not user_id:
+        return False
+    for field_name in PROFILE_COMMUNICATION_CLEAR_FIELDS:
+        profile_manager.update_field(
+            user_id,
+            field_name,
+            default_profile_field_value(field_name),
+        )
+    return True
+
+
+def collect_session_user_messages(session: Session) -> list[str]:
+    messages: list[str] = []
+    for event in session.events:
+        if event.get("role") != "user":
+            continue
+        text = str(event.get("content", "")).strip()
+        if text:
+            messages.append(text)
+    return messages
+
+
+def collect_session_topics(routing_log: list[dict[str, str]] | None) -> list[str]:
+    topics: list[str] = []
+    for record in routing_log or []:
+        topic = str(record.get("faculty") or record.get("route") or "").strip().lower()
+        if topic and topic not in {"crown", "analyst"}:
+            topics.append(topic)
+    return topics
+
+
+def observe_session_communication(
+    profile_manager: ProfileManager | None,
+    active_token: SessionToken | None,
+    session: Session,
+    routing_log: list[dict[str, str]] | None,
+) -> None:
+    if profile_manager is None or active_token is None:
+        return
+    observer = CommunicationObserver(profile_manager)
+    observer.observe_session(
+        user_id=active_token.user_id,
+        messages=collect_session_user_messages(session),
+        topics=collect_session_topics(routing_log),
+    )
 
 
 def needs_onboarding(profile: UserProfile | None) -> bool:
@@ -2685,6 +2743,18 @@ def handle_command(
         field_name = parse_profile_clear_command(normalized)
         if field_name is None:
             return "my-profile > usage: my-profile clear [field]"
+        if field_name == "communication":
+            user_id, _, profile = resolve_profile_subject(
+                profile_manager,
+                current_user,
+                active_token,
+            )
+            if profile is None or profile_manager is None:
+                return "my-profile > profile management is unavailable."
+            if not clear_communication_observations(profile_manager, user_id):
+                return "profile > unable to clear communication observations."
+            sync_profile_grounding(engine, profile_manager, current_user, active_token)
+            return "profile > Communication observations cleared."
         if not has_profile_field(field_name):
             return f"profile > unknown field: {field_name}"
         if field_name in PROFILE_PROTECTED_CLEAR_FIELDS:
@@ -3671,6 +3741,12 @@ def main() -> None:
         try:
             user_input = input("you> ")
         except EOFError:
+            observe_session_communication(
+                profile_manager,
+                session_state.get("active_token"),
+                session,
+                routing_log,
+            )
             finalize_auto_memory(
                 conversation_state=conversation_state,
                 memory=memory,
@@ -3685,6 +3761,12 @@ def main() -> None:
             print("Session closed.")
             break
         except KeyboardInterrupt:
+            observe_session_communication(
+                profile_manager,
+                session_state.get("active_token"),
+                session,
+                routing_log,
+            )
             finalize_auto_memory(
                 conversation_state=conversation_state,
                 memory=memory,
@@ -3729,6 +3811,12 @@ def main() -> None:
             profile_manager=profile_manager,
         )
         if result is None:
+            observe_session_communication(
+                profile_manager,
+                session_state.get("active_token"),
+                session,
+                routing_log,
+            )
             finalize_auto_memory(
                 conversation_state=conversation_state,
                 memory=memory,

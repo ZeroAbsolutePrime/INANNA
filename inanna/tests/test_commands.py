@@ -666,6 +666,56 @@ class CommandTests(unittest.TestCase):
 
         self.assertEqual("profile > onboarding_completed cannot be cleared.", result)
 
+    def test_my_profile_clear_communication_resets_observed_fields(self) -> None:
+        (
+            session,
+            memory,
+            proposal,
+            state_report,
+            engine,
+            analyst,
+            classifier,
+            routing_log,
+            startup_context,
+            config,
+        ) = self.make_runtime()
+        root = session.session_path.parent.parent
+        user_manager, session_state, token_store, user_log, faculty_monitor = self.make_user_context(root)
+        profile_manager = ProfileManager(root / "profiles")
+        active_user = session_state["active_user"]
+        assert active_user is not None
+        profile_manager.update_field(active_user.user_id, "preferred_length", "short")
+        profile_manager.update_field(active_user.user_id, "formality", "casual")
+        profile_manager.update_field(active_user.user_id, "communication_style", "direct")
+        profile_manager.update_field(active_user.user_id, "observed_patterns", ["brief"])
+
+        result = handle_command(
+            "my-profile clear communication",
+            session,
+            memory,
+            proposal,
+            state_report,
+            engine,
+            analyst,
+            classifier,
+            routing_log,
+            startup_context,
+            config,
+            user_manager=user_manager,
+            session_state=session_state,  # type: ignore[arg-type]
+            token_store=token_store,
+            user_log=user_log,
+            faculty_monitor=faculty_monitor,
+            profile_manager=profile_manager,
+        )
+
+        profile = profile_manager.load(active_user.user_id)
+        self.assertEqual("profile > Communication observations cleared.", result)
+        self.assertEqual(profile.preferred_length, "")
+        self.assertEqual(profile.formality, "")
+        self.assertEqual(profile.communication_style, "")
+        self.assertEqual(profile.observed_patterns, [])
+
     def test_view_profile_returns_formatted_target_profile_for_guardian(self) -> None:
         (
             session,
