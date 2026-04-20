@@ -60,7 +60,7 @@
       "description": "Cybersecurity analysis, network threat assessment, vulnerability reasoning.",
       "charter_preview": "I am SENTINEL. I analyze security posture. I reason about threats and vulnerabilities. I perform passive analysis only. Any offensive or active capability requires explicit Guardian proposal approval.",
       "model_url": "http://localhost:1234/v1",
-      "model_name": "deepseek-coder-v2-lite-instruct",
+      "model_name": "qwen2.5-14b-instruct",
       "governance_rules": [
         "Passive analysis only without explicit Guardian approval",
         "All offensive actions require Guardian proposal",
