@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import dataclasses
 import unittest
-from unittest.mock import Mock, patch
+from unittest.mock import MagicMock, Mock, patch
 
 from core.operator import OperatorFaculty, ToolResult
 
@@ -11,12 +11,27 @@ class OperatorFacultyTests(unittest.TestCase):
     def test_operator_loads_tools_from_config(self) -> None:
         operator = OperatorFaculty()
 
-        self.assertEqual(operator.PERMITTED_TOOLS, {"web_search", "ping"})
+        self.assertEqual(
+            operator.PERMITTED_TOOLS,
+            {"web_search", "ping", "resolve_host", "scan_ports"},
+        )
         self.assertEqual(
             operator.get_tool_definition("ping"),
             {
                 "display_name": "Ping Host",
                 "description": "Check network connectivity to a hostname or IP address.",
+                "category": "network",
+                "requires_approval": True,
+                "requires_privilege": "network_tools",
+                "parameters": ["host"],
+                "enabled": True,
+            },
+        )
+        self.assertEqual(
+            operator.get_tool_definition("resolve_host"),
+            {
+                "display_name": "Resolve Host",
+                "description": "Resolve a hostname to its IP address and FQDN.",
                 "category": "network",
                 "requires_approval": True,
                 "requires_privilege": "network_tools",
@@ -65,6 +80,60 @@ class OperatorFacultyTests(unittest.TestCase):
             text=True,
             timeout=10,
         )
+
+    def test_resolve_host_returns_ip_and_fqdn(self) -> None:
+        with patch("core.operator.socket.gethostbyname", return_value="127.0.0.1"), patch(
+            "core.operator.socket.getfqdn",
+            return_value="localhost",
+        ):
+            result = OperatorFaculty().execute("resolve_host", {"host": "localhost"})
+
+        self.assertTrue(result.success)
+        self.assertEqual(result.data["ip"], "127.0.0.1")
+        self.assertEqual(result.data["fqdn"], "localhost")
+
+    def test_resolve_host_empty_host_returns_unsuccessful_result(self) -> None:
+        result = OperatorFaculty().execute("resolve_host", {"host": ""})
+
+        self.assertFalse(result.success)
+        self.assertEqual(result.error, "Empty host.")
+
+    def test_scan_ports_returns_successful_result(self) -> None:
+        fake_socket = MagicMock()
+        fake_socket.__enter__.return_value = fake_socket
+        fake_socket.__exit__.return_value = False
+        with patch("core.operator.socket.create_connection", return_value=fake_socket):
+            result = OperatorFaculty().execute(
+                "scan_ports",
+                {"host": "127.0.0.1", "port_range": "80-80"},
+            )
+
+        self.assertTrue(result.success)
+        self.assertEqual(result.data["host"], "127.0.0.1")
+        self.assertEqual(result.data["port_range"], "80")
+        self.assertEqual(result.data["open_ports"], [80])
+        self.assertEqual(result.data["scanned"], 1)
+
+    def test_scan_ports_empty_host_returns_unsuccessful_result(self) -> None:
+        result = OperatorFaculty().execute("scan_ports", {"host": "", "port_range": "80-80"})
+
+        self.assertFalse(result.success)
+        self.assertEqual(result.error, "Empty host.")
+
+    def test_scan_ports_caps_range_to_one_hundred_ports(self) -> None:
+        with patch(
+            "core.operator.socket.create_connection",
+            side_effect=OSError("closed"),
+        ) as create_connection:
+            result = OperatorFaculty().execute(
+                "scan_ports",
+                {"host": "127.0.0.1", "port_range": "80-500"},
+            )
+
+        self.assertTrue(result.success)
+        self.assertEqual(result.data["port_range"], "80-179")
+        self.assertEqual(result.data["scanned"], 100)
+        self.assertEqual(create_connection.call_count, 100)
 
     def test_tool_result_is_dataclass_with_expected_fields(self) -> None:
         field_names = [field.name for field in dataclasses.fields(ToolResult)]

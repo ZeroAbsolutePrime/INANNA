@@ -63,7 +63,15 @@
     "can you ping",
     "check connectivity",
     "is host reachable",
-    "test connection to"
+    "test connection to",
+    "resolve ",
+    "resolve host",
+    "what is the ip",
+    "scan ports",
+    "port scan",
+    "check ports on",
+    "open ports",
+    "what ports"
   ],
   "analyst_signals": [
     "analyse",

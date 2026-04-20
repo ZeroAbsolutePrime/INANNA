@@ -50,6 +50,8 @@ from main import (
     build_history_report,
     build_invites_report,
     build_memory_log_report,
+    build_network_audit_entry,
+    build_network_status_payload,
     build_proposal_history_payload,
     build_realm_access_warning_lines,
     build_realm_context_report,
@@ -57,6 +59,7 @@ from main import (
     build_realms_report,
     build_routing_log_report,
     build_tool_registry_payload,
+    build_tool_result_payload,
     build_tool_result_text,
     build_users_report,
     build_whoami_report,
@@ -890,6 +893,10 @@ class InterfaceServer:
             await self.broadcast(
                 await asyncio.to_thread(build_tool_registry_payload, self.operator)
             )
+        elif command_name == "network-status":
+            await self.broadcast(
+                await asyncio.to_thread(build_network_status_payload, self.session_audit)
+            )
         elif command_name == "reflect":
             await self.run_reflect()
         elif command_name == "audit":
@@ -1190,8 +1197,8 @@ class InterfaceServer:
                     outcome = await asyncio.to_thread(
                         self.complete_tool_resolution, resolved, command_name
                     )
-                    for message in outcome["operator_messages"]:
-                        await self.broadcast({"type": "operator", "text": message})
+                    for operator_payload in outcome["operator_payloads"]:
+                        await self.broadcast(operator_payload)
                     if outcome["assistant_text"]:
                         await self.broadcast({"type": "assistant", "text": outcome["assistant_text"]})
                     await self.broadcast({"type": "system", "text": outcome["proposal_line"]})
@@ -1407,7 +1414,21 @@ class InterfaceServer:
                 (time.monotonic() - t0) * 1000,
                 result.success,
             )
-            operator_messages = [build_tool_result_text(result)]
+            audit_entry = build_network_audit_entry(result)
+            if audit_entry is not None:
+                append_audit_event(
+                    self.session_audit,
+                    "tool_use",
+                    str(audit_entry["summary"]),
+                    {key: value for key, value in audit_entry.items() if key != "summary"},
+                )
+            operator_payloads = [
+                {
+                    "type": "operator",
+                    "text": build_tool_result_text(result),
+                    "tool_result": build_tool_result_payload(result),
+                }
+            ]
             model_connected = self.engine._connected
             t0 = time.monotonic()
             assistant_text = self.engine.respond(
@@ -1418,9 +1439,19 @@ class InterfaceServer:
             self.faculty_monitor.record_call("crown", (time.monotonic() - t0) * 1000, True)
             if result.success and model_connected and self.engine.mode == "fallback":
                 assistant_text = ""
-                operator_messages.append("model unavailable to summarize. Raw results shown above.")
+                operator_payloads.append(
+                    {
+                        "type": "operator",
+                        "text": "model unavailable to summarize. Raw results shown above.",
+                    }
+                )
         else:
-            operator_messages = ["tool use rejected. Proceeding without tool execution."]
+            operator_payloads = [
+                {
+                    "type": "operator",
+                    "text": "tool use rejected. Proceeding without tool execution.",
+                }
+            ]
             t0 = time.monotonic()
             assistant_text = self.engine.respond(
                 context_summary=startup_context_items(self.startup_context),
@@ -1447,7 +1478,7 @@ class InterfaceServer:
             ),
         )
         return {
-            "operator_messages": operator_messages,
+            "operator_payloads": operator_payloads,
             "assistant_text": assistant_text,
             "proposal_line": created["line"],
         }

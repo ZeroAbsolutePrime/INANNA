@@ -81,8 +81,15 @@ class GovernanceLayer:
                 continue
             query = user_input[index + len(signal_lower) :].strip(" :,-")
             if query:
-                return query
-        return user_input.strip()
+                return self._clean_tool_query(query)
+        return self._clean_tool_query(user_input.strip())
+
+    def _clean_tool_query(self, query: str) -> str:
+        cleaned = str(query or "").strip(" :,-")
+        for prefix in ("of ", "for ", "on ", "host "):
+            if cleaned.lower().startswith(prefix):
+                cleaned = cleaned[len(prefix) :].strip()
+        return cleaned
 
     def _resolve_tool_request(self, user_input: str) -> tuple[str, str]:
         lower = user_input.lower().strip()
@@ -91,7 +98,14 @@ class GovernanceLayer:
             if not signal_lower or signal_lower not in lower:
                 continue
             tool_name = "web_search"
-            if signal_lower.startswith("ping") or any(
+            if signal_lower.startswith("resolve") or "what is the ip" in signal_lower:
+                tool_name = "resolve_host"
+            elif any(
+                keyword in signal_lower
+                for keyword in ("scan ports", "port scan", "check ports", "open ports", "what ports")
+            ):
+                tool_name = "scan_ports"
+            elif signal_lower.startswith("ping") or any(
                 keyword in signal_lower
                 for keyword in ("connectivity", "reachable", "connection")
             ):

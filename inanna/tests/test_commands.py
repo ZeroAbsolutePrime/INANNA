@@ -503,6 +503,7 @@ class CommandTests(unittest.TestCase):
                 "invites",
                 "admin-surface",
                 "tool-registry",
+                "network-status",
                 "history",
                 "proposal-history",
                 "routing-log",
@@ -525,7 +526,7 @@ class CommandTests(unittest.TestCase):
                 "Commands: users, create-user, login, logout, whoami, reflect, analyse, "
                 "audit, guardian, faculties, realms, create-realm, realm-context, switch-user, "
                 "assign-realm, unassign-realm, my-log, user-log, invite, join, invites, "
-                "admin-surface, tool-registry, history, proposal-history, routing-log, nammu-log, "
+                "admin-surface, tool-registry, network-status, history, proposal-history, routing-log, nammu-log, "
                 "memory-log, body, status, diagnostics, guardian-dismiss, "
                 "guardian-clear-events, approve, reject, forget, exit"
             ),
@@ -559,13 +560,69 @@ class CommandTests(unittest.TestCase):
             config,
         )
 
-        self.assertIn("tool-registry > Registered tools (2 total):", result)
+        self.assertIn("tool-registry > Registered tools (4 total):", result)
         self.assertIn("INFORMATION", result)
         self.assertIn("Web Search [enabled]", result)
         self.assertIn("Privilege: converse", result)
         self.assertIn("NETWORK", result)
         self.assertIn("Ping Host [enabled]", result)
+        self.assertIn("Resolve Host [enabled]", result)
+        self.assertIn("Port Scan [enabled]", result)
         self.assertIn("Privilege: network_tools", result)
+
+    def test_network_status_command_summarizes_recent_network_activity(self) -> None:
+        (
+            session,
+            memory,
+            proposal,
+            state_report,
+            engine,
+            analyst,
+            classifier,
+            routing_log,
+            startup_context,
+            config,
+        ) = self.make_runtime()
+        session_audit = [
+            {
+                "timestamp": "2026-04-20T10:00:00+00:00",
+                "event_type": "tool_use",
+                "tool": "ping",
+                "host": "8.8.8.8",
+                "result": "reachable",
+            },
+            {
+                "timestamp": "2026-04-20T10:02:00+00:00",
+                "event_type": "tool_use",
+                "tool": "resolve_host",
+                "host": "google.com",
+                "result": "142.250.0.1",
+            },
+            {
+                "timestamp": "2026-04-20T10:03:00+00:00",
+                "event_type": "invite",
+                "summary": "not network",
+            },
+        ]
+
+        result = handle_command(
+            "network-status",
+            session,
+            memory,
+            proposal,
+            state_report,
+            engine,
+            analyst,
+            classifier,
+            routing_log,
+            startup_context,
+            config,
+            session_audit=session_audit,
+        )
+
+        self.assertIn("network-status > Recent network activity (2 total):", result)
+        self.assertIn("[resolve_host] google.com -> 142.250.0.1", result)
+        self.assertIn("[ping] 8.8.8.8 -> reachable", result)
 
     def test_guardian_dismiss_returns_acknowledgement(self) -> None:
         (

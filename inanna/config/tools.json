@@ -21,6 +21,29 @@
         "host"
       ],
       "enabled": true
+    },
+    "resolve_host": {
+      "display_name": "Resolve Host",
+      "description": "Resolve a hostname to its IP address and FQDN.",
+      "category": "network",
+      "requires_approval": true,
+      "requires_privilege": "network_tools",
+      "parameters": [
+        "host"
+      ],
+      "enabled": true
+    },
+    "scan_ports": {
+      "display_name": "Port Scan",
+      "description": "Scan open ports on a host (max 100 ports per scan).",
+      "category": "network",
+      "requires_approval": true,
+      "requires_privilege": "network_tools",
+      "parameters": [
+        "host",
+        "port_range"
+      ],
+      "enabled": true
     }
   }
 }

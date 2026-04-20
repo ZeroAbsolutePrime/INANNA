@@ -73,6 +73,7 @@ STARTUP_COMMANDS = (
     "invites",
     "admin-surface",
     "tool-registry",
+    "network-status",
     "history",
     "proposal-history",
     "routing-log",
@@ -314,19 +315,21 @@ def token_preview(active_token: SessionToken | None) -> str:
 
 
 def append_audit_event(
-    session_audit: list[dict[str, str]] | None,
+    session_audit: list[dict[str, object]] | None,
     event_type: str,
     summary: str,
+    details: dict[str, object] | None = None,
 ) -> None:
     if session_audit is None:
         return
-    session_audit.append(
-        {
-            "timestamp": datetime.now(timezone.utc).isoformat(),
-            "event_type": event_type,
-            "summary": summary,
-        }
-    )
+    event: dict[str, object] = {
+        "timestamp": datetime.now(timezone.utc).isoformat(),
+        "event_type": event_type,
+        "summary": summary,
+    }
+    if details:
+        event.update(details)
+    session_audit.append(event)
 
 
 def build_users_report(user_manager: UserManager) -> str:
@@ -1055,6 +1058,29 @@ def build_tool_result_text(result: ToolResult) -> str:
             lines.append(f"  Output: {output[:160]}")
         return "\n".join(lines)
 
+    if result.tool == "resolve_host":
+        lines = ["resolve result:"]
+        if not result.success:
+            lines.append(f"  Error: {result.error}")
+            return "\n".join(lines)
+        lines.append(f"  Host: {result.data.get('host', result.query) or 'unknown'}")
+        lines.append(f"  IP: {result.data.get('ip', 'unknown')}")
+        lines.append(f"  FQDN: {result.data.get('fqdn', 'unknown')}")
+        return "\n".join(lines)
+
+    if result.tool == "scan_ports":
+        lines = ["port scan result:"]
+        if not result.success:
+            lines.append(f"  Error: {result.error}")
+            return "\n".join(lines)
+        open_ports = result.data.get("open_ports", [])
+        ports_text = ", ".join(str(port) for port in open_ports) if open_ports else "none"
+        lines.append(f"  Host: {result.data.get('host', 'unknown')}")
+        lines.append(f"  Range: {result.data.get('port_range', 'unknown')}")
+        lines.append(f"  Scanned: {result.data.get('scanned', 0)}")
+        lines.append(f"  Open ports: {ports_text}")
+        return "\n".join(lines)
+
     lines = ["search result:"]
     if not result.success:
         lines.append(f"  Error: {result.error}")
@@ -1086,6 +1112,32 @@ def build_tool_context_lines(result: ToolResult) -> list[str]:
             f"error: {result.error or 'unknown tool error'}",
         ]
 
+    if result.tool == "resolve_host":
+        if result.success:
+            return [
+                f"tool result ({result.tool}) host: {result.data.get('host', result.query) or result.query}",
+                f"ip: {result.data.get('ip', 'unknown')}",
+                f"fqdn: {result.data.get('fqdn', 'unknown')}",
+            ]
+        return [
+            f"tool result ({result.tool}) host: {result.query}",
+            f"error: {result.error or 'unknown tool error'}",
+        ]
+
+    if result.tool == "scan_ports":
+        if result.success:
+            open_ports = result.data.get("open_ports", [])
+            ports_text = ", ".join(str(port) for port in open_ports) if open_ports else "none"
+            return [
+                f"tool result ({result.tool}) host: {result.data.get('host', result.query) or result.query}",
+                f"port_range: {result.data.get('port_range', 'unknown')}",
+                f"open_ports: {ports_text}",
+            ]
+        return [
+            f"tool result ({result.tool}) query: {result.query}",
+            f"error: {result.error or 'unknown tool error'}",
+        ]
+
     if result.success:
         related = result.data.get("related", [])
         related_text = related[0].get("text", "") if related else ""
@@ -1110,6 +1162,52 @@ def build_tool_registry_payload(operator: OperatorFaculty) -> dict[str, object]:
         "tools": tools,
         "total": len(tools),
     }
+
+
+def build_tool_result_payload(result: ToolResult) -> dict[str, object]:
+    return {
+        "tool": result.tool,
+        "query": result.query,
+        "success": result.success,
+        "data": dict(result.data),
+        "error": result.error,
+    }
+
+
+NETWORK_TOOL_NAMES = {"ping", "resolve_host", "scan_ports"}
+
+
+def build_network_audit_entry(result: ToolResult) -> dict[str, object] | None:
+    if result.tool not in NETWORK_TOOL_NAMES:
+        return None
+
+    host = str(result.data.get("host") or result.query.split(":", 1)[0] or result.query).strip()
+    result_text = result.error or "unknown"
+    details: dict[str, object] = {
+        "tool": result.tool,
+        "host": host,
+    }
+
+    if result.tool == "ping":
+        result_text = "reachable" if result.data.get("reachable") else "unreachable"
+        details["reachable"] = bool(result.data.get("reachable"))
+        if result.data.get("latency_ms") is not None:
+            details["latency_ms"] = result.data.get("latency_ms")
+    elif result.tool == "resolve_host":
+        result_text = str(result.data.get("ip") or result.error or "unresolved")
+        if result.success:
+            details["ip"] = str(result.data.get("ip", ""))
+            details["fqdn"] = str(result.data.get("fqdn", ""))
+    elif result.tool == "scan_ports":
+        open_ports = list(result.data.get("open_ports", []))
+        result_text = ", ".join(str(port) for port in open_ports) if open_ports else "none"
+        details["port_range"] = str(result.data.get("port_range", ""))
+        details["open_ports"] = open_ports
+        details["scanned"] = int(result.data.get("scanned", 0))
+
+    details["result"] = result_text
+    details["summary"] = f"{result.tool} {host} -> {result_text}"
+    return details
 
 
 def build_tool_registry_report(payload: dict[str, object]) -> str:
@@ -1137,6 +1235,55 @@ def build_tool_registry_report(payload: dict[str, object]) -> str:
     return "\n".join(lines)
 
 
+def build_network_status_payload(
+    session_audit: list[dict[str, object]] | None,
+) -> dict[str, object]:
+    events = list(session_audit or [])
+    filtered = [
+        event
+        for event in events
+        if event.get("event_type") == "tool_use"
+        and str(event.get("tool", "")) in NETWORK_TOOL_NAMES
+    ]
+    recent = []
+    for event in reversed(filtered[-20:]):
+        recent.append(
+            {
+                "tool": str(event.get("tool", "")),
+                "host": str(event.get("host", "")),
+                "result": str(event.get("result", "")),
+                "ts": str(event.get("timestamp", "")),
+                "port_range": str(event.get("port_range", "")),
+                "ip": str(event.get("ip", "")),
+                "fqdn": str(event.get("fqdn", "")),
+                "open_ports": list(event.get("open_ports", [])),
+                "latency_ms": event.get("latency_ms"),
+                "reachable": event.get("reachable"),
+            }
+        )
+    return {
+        "type": "network_status",
+        "recent_scans": recent,
+        "total_scans": len(filtered),
+    }
+
+
+def build_network_status_report(payload: dict[str, object]) -> str:
+    recent = list(payload.get("recent_scans", []))
+    total = int(payload.get("total_scans", len(recent)))
+    lines = [f"network-status > Recent network activity ({total} total):"]
+    if not recent:
+        lines.append("  No network activity recorded yet.")
+        return "\n".join(lines)
+    for event in recent:
+        lines.append(
+            f"  [{event.get('tool', '')}] "
+            f"{event.get('host', '')} -> {event.get('result', '')} "
+            f"@ {event.get('ts', '')}"
+        )
+    return "\n".join(lines)
+
+
 def complete_tool_resolution(
     resolved: dict,
     decision: str,
@@ -1150,6 +1297,7 @@ def complete_tool_resolution(
     active_token: SessionToken | None = None,
     user_log: UserLog | None = None,
     faculty_monitor: FacultyMonitor | None = None,
+    session_audit: list[dict[str, object]] | None = None,
 ) -> str:
     payload = resolved["payload"]
     original_input = payload.get("original_input", "")
@@ -1164,6 +1312,14 @@ def complete_tool_resolution(
         result = operator.execute(tool, {"query": query})
         if faculty_monitor is not None:
             faculty_monitor.record_call("operator", (time.monotonic() - t0) * 1000, result.success)
+        audit_entry = build_network_audit_entry(result)
+        if audit_entry is not None:
+            append_audit_event(
+                session_audit,
+                "tool_use",
+                str(audit_entry["summary"]),
+                {key: value for key, value in audit_entry.items() if key != "summary"},
+            )
         operator_text = build_tool_result_text(result)
         model_connected = engine._connected
         t0 = time.monotonic()
@@ -1530,6 +1686,9 @@ def handle_command(
         operator = operator or OperatorFaculty()
         return build_tool_registry_report(build_tool_registry_payload(operator))
 
+    if lowered == "network-status":
+        return build_network_status_report(build_network_status_payload(session_audit))
+
     if lowered == "status":
         history = proposal.history_report()
         return state_report.render(
@@ -1831,6 +1990,7 @@ def handle_command(
                 active_token=active_token,
                 user_log=user_log,
                 faculty_monitor=faculty_monitor,
+                session_audit=session_audit,
             )
 
         if payload.get("action") == "realm_context_update":

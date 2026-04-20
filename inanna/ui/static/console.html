@@ -742,6 +742,191 @@ html, body {
   color: var(--dim); text-align: center;
   padding: 24px 0; font-style: italic;
 }
+.net-surface {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  gap: 16px;
+}
+.net-card {
+  background: rgba(20,16,10,.6);
+  border: 1px solid var(--dust);
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+.net-card-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 12px;
+}
+.net-card-title {
+  font-family: var(--serif);
+  font-size: 10px;
+  letter-spacing: 2px;
+  color: var(--cream);
+}
+.net-card-copy {
+  font-size: 8px;
+  letter-spacing: 2px;
+  color: var(--dim);
+  line-height: 1.7;
+  margin-top: 4px;
+}
+.net-form {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.net-field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.net-field-label {
+  font-size: 8px;
+  letter-spacing: 3px;
+  color: var(--faded);
+}
+.net-field-input {
+  background: rgba(6,6,6,.35);
+  border: 1px solid var(--dust);
+  color: var(--cream);
+  font-family: var(--mono);
+  font-size: 10px;
+  letter-spacing: 1px;
+  padding: 8px 10px;
+}
+.net-field-input:focus {
+  outline: none;
+  border-color: var(--gold2);
+  box-shadow: 0 0 0 1px rgba(200,150,42,.18);
+}
+.net-form-actions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.net-results {
+  display: grid;
+  grid-template-columns: minmax(220px, .95fr) minmax(280px, 1.2fr);
+  gap: 16px;
+  align-items: start;
+}
+.net-recent-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-height: 120px;
+}
+.net-recent-row {
+  display: grid;
+  grid-template-columns: 52px 1fr;
+  gap: 10px;
+  padding: 10px 0;
+  border-top: 1px solid rgba(38,28,16,.9);
+}
+.net-recent-row:first-child {
+  border-top: 0;
+  padding-top: 0;
+}
+.net-recent-ts {
+  font-size: 8px;
+  letter-spacing: 2px;
+  color: var(--dim);
+  padding-top: 2px;
+}
+.net-recent-body {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.net-recent-main {
+  font-size: 9px;
+  letter-spacing: 1px;
+  color: var(--cream);
+  line-height: 1.5;
+}
+.net-recent-meta {
+  font-size: 8px;
+  letter-spacing: 2px;
+  color: var(--faded);
+}
+.net-chip-row,
+.net-host-badges {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+.net-chip {
+  font-size: 8px;
+  letter-spacing: 2px;
+  padding: 2px 7px;
+  border: 1px solid var(--dust);
+  color: var(--faded);
+}
+.net-chip.ok {
+  border-color: rgba(90,170,112,.35);
+  color: var(--connected);
+}
+.net-chip.warn {
+  border-color: rgba(208,112,32,.35);
+  color: var(--gold2);
+}
+.net-chip.alert {
+  border-color: rgba(170,48,32,.35);
+  color: var(--danger);
+}
+.net-host-card {
+  background: rgba(10,8,5,.45);
+  border: 1px solid var(--dust);
+  border-left: 2px solid var(--dust);
+  padding: 12px 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.net-host-card.up { border-left-color: var(--connected); }
+.net-host-card.down { border-left-color: var(--danger); }
+.net-host-card.seen { border-left-color: var(--gold2); }
+.net-host-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 12px;
+}
+.net-host-name {
+  font-family: var(--dec);
+  font-size: 12px;
+  letter-spacing: 2px;
+  color: var(--gold4);
+}
+.net-host-sub {
+  font-size: 8px;
+  letter-spacing: 2px;
+  color: var(--faded);
+  margin-top: 3px;
+}
+.net-host-facts {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+  gap: 8px 12px;
+}
+.net-host-fact-label {
+  font-size: 7px;
+  letter-spacing: 3px;
+  color: var(--dim);
+}
+.net-host-fact-value {
+  font-size: 9px;
+  letter-spacing: 1px;
+  color: var(--cream);
+  line-height: 1.4;
+}
+@media (max-width: 1240px) {
+  .net-results { grid-template-columns: 1fr; }
+}
 
 /* ─── FACULTIES PANEL ─── */
 .faculty-grid {
@@ -1080,6 +1265,9 @@ html, body {
             <div class="panel-title-main">NETWORK EYE</div>
             <div class="panel-title-sub">Phase 5.3 · All scans are proposal-governed</div>
           </div>
+          <div class="panel-title-actions">
+            <button class="uruk-btn" onclick="refreshNetwork()">[ refresh ]</button>
+          </div>
         </div>
         <div class="network-grid">
           <div class="net-instruction">
@@ -1093,12 +1281,71 @@ html, body {
               <div class="net-quick-actions">
                 <button class="net-action-btn" onclick="sendNetAction('ping localhost')">[ ping localhost ]</button>
                 <button class="net-action-btn" onclick="sendNetAction('ping 8.8.8.8')">[ ping 8.8.8.8 ]</button>
-                <button class="net-action-btn" onclick="sendNetAction('ping gateway')">[ ping gateway ]</button>
+                <button class="net-action-btn" onclick="sendNetAction('resolve host localhost')">[ resolve localhost ]</button>
+                <button class="net-action-btn" onclick="sendNetAction('scan ports localhost 22-80')">[ scan localhost 22-80 ]</button>
               </div>
             </div>
           </div>
-          <div class="net-host-list" id="net-hosts">
-            <div class="net-host-empty">No hosts discovered yet. Use ping to begin mapping the network.</div>
+          <div class="net-surface">
+            <div class="net-card">
+              <div>
+                <div class="net-card-title">RESOLVE HOST</div>
+                <div class="net-card-copy">Resolve a host to its current IP and FQDN through the governed Operator path.</div>
+              </div>
+              <div class="net-form">
+                <div class="net-field">
+                  <div class="net-field-label">HOST</div>
+                  <input class="net-field-input" id="net-resolve-host" placeholder="localhost"
+                    onkeydown="if(event.key==='Enter')submitResolveForm()">
+                </div>
+                <div class="net-form-actions">
+                  <button class="net-action-btn" onclick="submitResolveForm()">[ send resolve ]</button>
+                </div>
+              </div>
+            </div>
+            <div class="net-card">
+              <div>
+                <div class="net-card-title">SCAN PORTS</div>
+                <div class="net-card-copy">Run a bounded host scan. Range input is optional and remains capped by the backend at 100 ports.</div>
+              </div>
+              <div class="net-form">
+                <div class="net-field">
+                  <div class="net-field-label">HOST</div>
+                  <input class="net-field-input" id="net-scan-host" placeholder="localhost"
+                    onkeydown="if(event.key==='Enter')submitScanForm()">
+                </div>
+                <div class="net-field">
+                  <div class="net-field-label">PORT RANGE</div>
+                  <input class="net-field-input" id="net-scan-range" placeholder="22-80"
+                    onkeydown="if(event.key==='Enter')submitScanForm()">
+                </div>
+                <div class="net-form-actions">
+                  <button class="net-action-btn" onclick="submitScanForm()">[ send scan ]</button>
+                </div>
+              </div>
+            </div>
+          </div>
+          <div class="net-results">
+            <div class="net-card">
+              <div class="net-card-head">
+                <div>
+                  <div class="net-card-title">RECENT ACTIVITY</div>
+                  <div class="net-card-copy"><span id="net-total">0</span> governed network actions recorded in the current session.</div>
+                </div>
+              </div>
+              <div class="net-recent-list" id="net-recent">
+                <div class="net-host-empty">No governed network activity recorded yet.</div>
+              </div>
+            </div>
+            <div class="net-card">
+              <div>
+                <div class="net-card-title">HOST CARDS</div>
+                <div class="net-card-copy">Hosts update from approved ping, resolve, and scan results. No persistent host database is kept.</div>
+              </div>
+              <div class="net-host-list" id="net-hosts">
+                <div class="net-host-empty">No hosts discovered yet. Use ping, resolve, or scan to begin mapping the network.</div>
+              </div>
+            </div>
           </div>
         </div>
       </div>
@@ -1285,11 +1532,23 @@ const S = {
   startTime: Date.now(),
   tools: [],
   faculties: [],
+  networkHosts: {},
+  networkRecent: [],
+  networkTotal: 0,
 };
 
 function ts() {
   const s = Math.floor((Date.now() - S.startTime) / 1000);
   return String(Math.floor(s/60)).padStart(2,'0') + ':' + String(s%60).padStart(2,'0');
+}
+
+function escapeHtml(value) {
+  return String(value ?? '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
 }
 
 // ═══════════════════════════════
@@ -1384,8 +1643,11 @@ function connectWS() {
     document.getElementById('ws-dot').className = 'chip-dot green';
     document.getElementById('ws-val').textContent = 'live';
     addActivity('sys', 'CONSOLE', 'Connected to INANNA NYX.');
-    // Request tool registry immediately
-    setTimeout(() => { sendCmd('tool-registry'); }, 600);
+    // Request governed console surfaces immediately
+    setTimeout(() => {
+      sendCmd('tool-registry');
+      sendCmd('network-status');
+    }, 600);
   };
 
   S.ws.onclose = () => {
@@ -1438,6 +1700,11 @@ function handleMsg(msg) {
     return;
   }
 
+  if (t === 'network_status') {
+    ingestNetworkStatus(msg);
+    return;
+  }
+
   if (t === 'admin_data') {
     S.faculties = (msg.users || []);
     renderFacultyFromStatus();
@@ -1463,6 +1730,7 @@ function handleMsg(msg) {
   }
 
   if (t === 'operator') {
+    if (msg.tool_result) ingestToolResult(msg.tool_result);
     addActivity('tool', 'TOOL', (msg.text || '').slice(0, 120));
     return;
   }
@@ -1543,6 +1811,7 @@ function switchPanel(name, el) {
 
   // Load data when switching
   if (name === 'tools' && S.tools.length === 0) sendCmd('tool-registry');
+  if (name === 'network') refreshNetwork();
   if (name === 'proposals') loadProposals();
 }
 
@@ -1552,6 +1821,8 @@ function switchPanel(name, el) {
 const TOOL_ICONS = {
   web_search: '𒀀',
   ping: '𒀸',
+  resolve_host: '𒁹',
+  scan_ports: '𒌷',
   default: '𒆳',
 };
 
@@ -1603,13 +1874,37 @@ function renderToolRegistry() {
   grid.innerHTML = html;
 }
 
+function toolInputPlaceholder(toolName, param) {
+  if (param === 'query') return 'What do you want to search for?';
+  if (param === 'host') return 'hostname or IP address';
+  if (param === 'port_range') return '22-80';
+  return param;
+}
+
+function buildToolCommand(name, values) {
+  const host = (values.host || '').trim();
+  if (name === 'web_search') {
+    const query = (values.query || '').trim();
+    return query ? `search for ${query}` : '';
+  }
+  if (name === 'ping') return host ? `ping ${host}` : '';
+  if (name === 'resolve_host') return host ? `resolve host ${host}` : '';
+  if (name === 'scan_ports') {
+    const portRange = (values.port_range || '').trim();
+    if (!host) return '';
+    return portRange ? `scan ports ${host} ${portRange}` : `scan ports ${host}`;
+  }
+  const parts = (Array.isArray(values) ? values : Object.values(values)).filter(Boolean);
+  return `${name} ${parts.join(' ')}`.trim();
+}
+
 function renderToolForm(tool) {
   const params = tool.parameters || [];
   const fields = params.map(p => `
     <div class="form-row">
       <div class="form-label">${p.toUpperCase()}</div>
       <input class="form-input" id="tf-input-${tool.name}-${p}"
-        placeholder="${p === 'query' ? 'What do you want to search for?' : p === 'host' ? 'hostname or IP address' : p}"
+        placeholder="${toolInputPlaceholder(tool.name, p)}"
         onkeydown="if(event.key==='Enter')executeTool('${tool.name}')">
     </div>`).join('');
 
@@ -1645,22 +1940,12 @@ function executeTool(name) {
   const tool = S.tools.find(t => t.name === name);
   if (!tool) return;
   const params = tool.parameters || [];
-  let text = '';
-
-  if (name === 'web_search') {
-    const q = document.getElementById(`tf-input-${name}-query`);
-    if (q && q.value.trim()) text = `search for ${q.value.trim()}`;
-  } else if (name === 'ping') {
-    const h = document.getElementById(`tf-input-${name}-host`);
-    if (h && h.value.trim()) text = `ping ${h.value.trim()}`;
-  } else {
-    // Generic
-    const vals = params.map(p => {
-      const el = document.getElementById(`tf-input-${name}-${p}`);
-      return el ? el.value.trim() : '';
-    }).filter(Boolean);
-    text = `${name} ${vals.join(' ')}`;
-  }
+  const values = {};
+  params.forEach(p => {
+    const el = document.getElementById(`tf-input-${name}-${p}`);
+    values[p] = el ? el.value.trim() : '';
+  });
+  const text = buildToolCommand(name, values);
 
   if (!text) return;
 
@@ -1764,8 +2049,235 @@ function handleBannerDecline() {
 // ═══════════════════════════════
 //  NETWORK ACTIONS
 // ═══════════════════════════════
+function isNetworkTool(name) {
+  return ['ping', 'resolve_host', 'scan_ports'].includes(name);
+}
+
+function toolLabel(name) {
+  if (name === 'web_search') return 'Web Search';
+  if (name === 'ping') return 'Ping';
+  if (name === 'resolve_host') return 'Resolve';
+  if (name === 'scan_ports') return 'Port Scan';
+  return name || 'Tool';
+}
+
+function formatRecentTime(value) {
+  if (!value) return 'now';
+  const dt = new Date(value);
+  if (Number.isNaN(dt.getTime())) return 'now';
+  return dt.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+}
+
+function buildNetworkEventFromToolResult(payload) {
+  if (!payload || !isNetworkTool(payload.tool)) return null;
+  const data = payload.data || {};
+  const host = String(data.host || (payload.query || '').split(':', 1)[0] || payload.query || '').trim();
+  if (!host) return null;
+
+  let result = payload.error || 'unknown';
+  if (payload.tool === 'ping') {
+    result = payload.success
+      ? (data.reachable ? 'reachable' : 'unreachable')
+      : (payload.error || 'unreachable');
+  } else if (payload.tool === 'resolve_host') {
+    result = payload.success ? String(data.ip || data.fqdn || 'resolved') : (payload.error || 'unresolved');
+  } else if (payload.tool === 'scan_ports') {
+    const openPorts = Array.isArray(data.open_ports) ? data.open_ports : [];
+    result = payload.success
+      ? (openPorts.length ? openPorts.join(', ') : 'none')
+      : (payload.error || 'scan failed');
+  }
+
+  return {
+    tool: payload.tool,
+    host,
+    result,
+    ts: new Date().toISOString(),
+    port_range: data.port_range || '',
+    ip: data.ip || '',
+    fqdn: data.fqdn || '',
+    open_ports: Array.isArray(data.open_ports) ? data.open_ports.slice() : [],
+    latency_ms: data.latency_ms,
+    reachable: data.reachable,
+    scanned: data.scanned,
+  };
+}
+
+function ensureNetworkHost(host) {
+  const key = String(host || '').trim().toLowerCase();
+  if (!key) return null;
+  if (!S.networkHosts[key]) {
+    S.networkHosts[key] = {
+      host: String(host || '').trim(),
+      lastTool: '',
+      lastResult: '',
+      lastSeen: '',
+      ip: '',
+      fqdn: '',
+      reachable: null,
+      latencyMs: null,
+      portRange: '',
+      openPorts: [],
+      scanned: null,
+    };
+  }
+  return S.networkHosts[key];
+}
+
+function applyNetworkEvent(event) {
+  if (!event || !isNetworkTool(event.tool)) return;
+  const record = ensureNetworkHost(event.host);
+  if (!record) return;
+
+  record.host = String(event.host || record.host || '').trim();
+  record.lastTool = event.tool || record.lastTool;
+  record.lastResult = event.result || record.lastResult;
+  record.lastSeen = event.ts || record.lastSeen;
+
+  if (event.ip) record.ip = String(event.ip);
+  if (event.fqdn) record.fqdn = String(event.fqdn);
+  if (typeof event.reachable === 'boolean') record.reachable = event.reachable;
+  if (event.latency_ms !== undefined && event.latency_ms !== null) record.latencyMs = event.latency_ms;
+  if (event.port_range) record.portRange = String(event.port_range);
+  if (Array.isArray(event.open_ports)) record.openPorts = event.open_ports.slice();
+  if (event.scanned !== undefined && event.scanned !== null) record.scanned = event.scanned;
+}
+
+function renderNetworkRecent() {
+  const total = document.getElementById('net-total');
+  const list = document.getElementById('net-recent');
+  if (total) total.textContent = String(S.networkTotal || 0);
+  if (!list) return;
+
+  if (!S.networkRecent.length) {
+    list.innerHTML = `<div class="net-host-empty">No governed network activity recorded yet.</div>`;
+    return;
+  }
+
+  list.innerHTML = S.networkRecent.map(event => {
+    const host = escapeHtml(event.host || 'host');
+    const result = escapeHtml(event.result || 'pending');
+    const meta = [];
+    if (event.ip) meta.push(`IP ${escapeHtml(event.ip)}`);
+    if (event.fqdn) meta.push(escapeHtml(event.fqdn));
+    if (event.port_range) meta.push(`ports ${escapeHtml(event.port_range)}`);
+    if (Array.isArray(event.open_ports) && event.open_ports.length) meta.push(`open ${escapeHtml(event.open_ports.join(', '))}`);
+    if (event.latency_ms !== undefined && event.latency_ms !== null) meta.push(`${escapeHtml(event.latency_ms)} ms`);
+    return `
+      <div class="net-recent-row">
+        <div class="net-recent-ts">${escapeHtml(formatRecentTime(event.ts))}</div>
+        <div class="net-recent-body">
+          <div class="net-recent-main">${escapeHtml(toolLabel(event.tool))} · ${host} → ${result}</div>
+          <div class="net-recent-meta">${meta.length ? meta.join(' · ') : 'Awaiting more signal.'}</div>
+        </div>
+      </div>`;
+  }).join('');
+}
+
+function renderNetworkHosts() {
+  const list = document.getElementById('net-hosts');
+  if (!list) return;
+
+  const hosts = Object.values(S.networkHosts).sort((a, b) => {
+    return String(b.lastSeen || '').localeCompare(String(a.lastSeen || '')) || a.host.localeCompare(b.host);
+  });
+
+  if (!hosts.length) {
+    list.innerHTML = `<div class="net-host-empty">No hosts discovered yet. Use ping, resolve, or scan to begin mapping the network.</div>`;
+    return;
+  }
+
+  list.innerHTML = hosts.map(host => {
+    let stateClass = 'seen';
+    if (host.reachable === true) stateClass = 'up';
+    if (host.reachable === false) stateClass = 'down';
+
+    const chips = [];
+    if (host.reachable === true) chips.push('<span class="net-chip ok">reachable</span>');
+    if (host.reachable === false) chips.push('<span class="net-chip alert">unreachable</span>');
+    if (host.ip) chips.push('<span class="net-chip warn">resolved</span>');
+    if (host.openPorts.length || host.portRange || (host.scanned !== undefined && host.scanned !== null)) {
+      chips.push(
+        host.openPorts.length
+          ? `<span class="net-chip ok">${escapeHtml(host.openPorts.length)} open</span>`
+          : '<span class="net-chip warn">0 open</span>'
+      );
+    }
+
+    const facts = [
+      ['last tool', toolLabel(host.lastTool || 'pending')],
+      ['last result', host.lastResult || 'awaiting data'],
+      ['last seen', formatRecentTime(host.lastSeen)],
+    ];
+    if (host.ip) facts.push(['ip', host.ip]);
+    if (host.fqdn) facts.push(['fqdn', host.fqdn]);
+    if (host.portRange) facts.push(['port range', host.portRange]);
+    if (host.openPorts.length || host.portRange || (host.scanned !== undefined && host.scanned !== null)) {
+      facts.push(['open ports', host.openPorts.length ? host.openPorts.join(', ') : 'none']);
+    }
+    if (host.latencyMs !== undefined && host.latencyMs !== null) facts.push(['latency', `${host.latencyMs} ms`]);
+    if (host.scanned !== undefined && host.scanned !== null) facts.push(['scanned', `${host.scanned} ports`]);
+
+    return `
+      <div class="net-host-card ${stateClass}">
+        <div class="net-host-head">
+          <div>
+            <div class="net-host-name">${escapeHtml(host.host)}</div>
+            <div class="net-host-sub">${escapeHtml(host.ip || host.fqdn || 'Awaiting governed results')}</div>
+          </div>
+          <div class="net-host-badges">${chips.join('')}</div>
+        </div>
+        <div class="net-host-facts">
+          ${facts.map(([label, value]) => `
+            <div>
+              <div class="net-host-fact-label">${escapeHtml(label)}</div>
+              <div class="net-host-fact-value">${escapeHtml(value)}</div>
+            </div>`).join('')}
+        </div>
+      </div>`;
+  }).join('');
+}
+
+function ingestToolResult(payload) {
+  const event = buildNetworkEventFromToolResult(payload);
+  if (!event) return;
+  S.networkTotal = Math.max((S.networkTotal || 0) + 1, S.networkRecent.length + 1);
+  S.networkRecent = [event, ...S.networkRecent].slice(0, 20);
+  applyNetworkEvent(event);
+  renderNetworkRecent();
+  renderNetworkHosts();
+}
+
+function ingestNetworkStatus(payload) {
+  S.networkRecent = Array.isArray(payload.recent_scans) ? payload.recent_scans.slice() : [];
+  S.networkTotal = payload.total_scans || S.networkRecent.length;
+  S.networkHosts = {};
+  S.networkRecent.slice().reverse().forEach(applyNetworkEvent);
+  renderNetworkRecent();
+  renderNetworkHosts();
+}
+
 function sendNetAction(text) {
   sendInput(text);
+}
+
+function submitResolveForm() {
+  const input = document.getElementById('net-resolve-host');
+  const host = input ? input.value.trim() : '';
+  if (!host) return;
+  sendNetAction(`resolve host ${host}`);
+  input.value = '';
+}
+
+function submitScanForm() {
+  const hostInput = document.getElementById('net-scan-host');
+  const rangeInput = document.getElementById('net-scan-range');
+  const host = hostInput ? hostInput.value.trim() : '';
+  const portRange = rangeInput ? rangeInput.value.trim() : '';
+  if (!host) return;
+  sendNetAction(portRange ? `scan ports ${host} ${portRange}` : `scan ports ${host}`);
+  if (hostInput) hostInput.value = '';
+  if (rangeInput) rangeInput.value = '';
 }
 
 // ═══════════════════════════════
@@ -1782,6 +2294,10 @@ function loadProposals() {
 function refreshTools() {
   sendCmd('tool-registry');
   addActivity('sys', 'CONSOLE', 'Refreshing tool registry…');
+}
+function refreshNetwork() {
+  sendCmd('network-status');
+  addActivity('sys', 'NETWORK', 'Refreshing Network Eye status…');
 }
 function refreshFaculties() {
   addActivity('sys', 'CONSOLE', 'Faculty data loaded from status.');
@@ -1801,7 +2317,7 @@ function addActivity(type, label, msg) {
     <div class="ae-ts">${ts()}</div>
     <div class="ae-content">
       <div class="ae-type ${type}">${label}</div>
-      <div class="ae-msg">${(msg||'').replace(/</g,'&lt;')}</div>
+      <div class="ae-msg">${escapeHtml(msg || '')}</div>
     </div>`;
   feed.appendChild(entry);
   feed.scrollTop = feed.scrollHeight;

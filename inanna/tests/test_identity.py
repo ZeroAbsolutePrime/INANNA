@@ -93,12 +93,14 @@ class IdentityTests(unittest.TestCase):
         self.assertEqual(len(rules), 4)
         self.assertTrue(all(isinstance(rule, str) for rule in rules))
 
-    def test_permitted_tools_list_web_search_and_ping(self) -> None:
+    def test_permitted_tools_list_network_eye_tools(self) -> None:
         tools = list_permitted_tools()
 
         self.assertIsInstance(tools, list)
         self.assertIn("web_search", tools)
         self.assertIn("ping", tools)
+        self.assertIn("resolve_host", tools)
+        self.assertIn("scan_ports", tools)
 
     def test_guardian_codes_list_system_healthy(self) -> None:
         codes = list_guardian_codes()
@@ -109,8 +111,8 @@ class IdentityTests(unittest.TestCase):
     def test_current_phase_constant_matches_phase_banner(self) -> None:
         self.assertEqual(CURRENT_PHASE, phase_banner())
 
-    def test_current_phase_names_tool_registry(self) -> None:
-        self.assertIn("Tool Registry", CURRENT_PHASE)
+    def test_current_phase_names_network_eye(self) -> None:
+        self.assertIn("Network Eye", CURRENT_PHASE)
 
     def test_cycle2_summary_describes_completed_kernel(self) -> None:
         self.assertIn("NAMMU Kernel", CYCLE2_SUMMARY)

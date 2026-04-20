@@ -157,6 +157,36 @@ class GovernanceLayerTests(unittest.TestCase):
             self.assertEqual(result.proposed_tool, "ping")
             self.assertEqual(result.tool_query, "127.0.0.1")
 
+    def test_resolve_signal_sets_resolve_host_tool(self) -> None:
+        with TemporaryDirectory() as temp_dir:
+            config_path = self.write_config(
+                Path(temp_dir),
+                signal_payload(tool_signal="resolve host"),
+            )
+            result = GovernanceLayer(config_path=config_path).check(
+                "resolve host localhost",
+                "crown",
+            )
+
+            self.assertTrue(result.suggests_tool)
+            self.assertEqual(result.proposed_tool, "resolve_host")
+            self.assertEqual(result.tool_query, "localhost")
+
+    def test_scan_signal_sets_scan_ports_tool(self) -> None:
+        with TemporaryDirectory() as temp_dir:
+            config_path = self.write_config(
+                Path(temp_dir),
+                signal_payload(tool_signal="scan ports"),
+            )
+            result = GovernanceLayer(config_path=config_path).check(
+                "scan ports localhost 22-80",
+                "crown",
+            )
+
+            self.assertTrue(result.suggests_tool)
+            self.assertEqual(result.proposed_tool, "scan_ports")
+            self.assertEqual(result.tool_query, "localhost 22-80")
+
 
 if __name__ == "__main__":
     unittest.main()

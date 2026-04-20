@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import platform
 import re
+import socket
 import subprocess
 import urllib.parse
 import urllib.request
@@ -92,7 +93,27 @@ class OperatorFaculty:
         if tool_name == "ping":
             host = str(params.get("host") or params.get("query", ""))
             return self._ping(host)
+        if tool_name == "resolve_host":
+            host = str(params.get("host") or params.get("query", ""))
+            return self._resolve_host(host)
+        if tool_name == "scan_ports":
+            host = str(params.get("host") or "").strip()
+            port_range = str(params.get("port_range") or "").strip()
+            if not host:
+                host, port_range = self._parse_scan_request(str(params.get("query", "")))
+            if not port_range:
+                port_range = "1-1024"
+            return self._scan_ports(host, port_range)
         return ToolResult(tool=tool_name, query="", success=False, data={}, error="Unknown tool.")
+
+    def _parse_scan_request(self, query: str) -> tuple[str, str]:
+        cleaned = str(query or "").strip()
+        if not cleaned:
+            return "", "1-1024"
+        parts = cleaned.rsplit(" ", 1)
+        if len(parts) == 2 and re.fullmatch(r"\d+\s*[-–]\s*\d+|\d+", parts[1].strip()):
+            return parts[0].strip(), parts[1].replace(" ", "")
+        return cleaned, "1-1024"
 
     def _web_search(self, query: str) -> ToolResult:
         if not query.strip():
@@ -190,6 +211,85 @@ class OperatorFaculty:
         except Exception as error:
             return ToolResult(
                 tool="ping",
+                query=target,
+                success=False,
+                data={},
+                error=str(error),
+            )
+
+    def _resolve_host(self, host: str) -> ToolResult:
+        target = str(host or "").strip()
+        if not target:
+            return ToolResult(
+                tool="resolve_host",
+                query=host,
+                success=False,
+                data={},
+                error="Empty host.",
+            )
+        try:
+            ip_address = socket.gethostbyname(target)
+            fqdn = socket.getfqdn(target)
+            return ToolResult(
+                tool="resolve_host",
+                query=target,
+                success=True,
+                data={"host": target, "ip": ip_address, "fqdn": fqdn},
+            )
+        except Exception as error:
+            return ToolResult(
+                tool="resolve_host",
+                query=target,
+                success=False,
+                data={},
+                error=str(error),
+            )
+
+    def _scan_ports(self, host: str, port_range: str = "1-1024") -> ToolResult:
+        target = str(host or "").strip()
+        cleaned_range = str(port_range or "1-1024").strip().replace(" ", "")
+        if not target:
+            return ToolResult(
+                tool="scan_ports",
+                query=host,
+                success=False,
+                data={},
+                error="Empty host.",
+            )
+        try:
+            match = re.fullmatch(r"(\d+)[-–](\d+)", cleaned_range)
+            if match:
+                start = int(match.group(1))
+                end = int(match.group(2))
+            else:
+                start = end = int(cleaned_range)
+            if end < start:
+                start, end = end, start
+            start = max(1, start)
+            end = min(65535, end)
+            end = min(end, start + 99)
+            open_ports: list[int] = []
+            for port in range(start, end + 1):
+                try:
+                    with socket.create_connection((target, port), timeout=0.3):
+                        open_ports.append(port)
+                except Exception:
+                    pass
+            normalized_range = f"{start}-{end}" if start != end else str(start)
+            return ToolResult(
+                tool="scan_ports",
+                query=f"{target}:{normalized_range}",
+                success=True,
+                data={
+                    "host": target,
+                    "port_range": normalized_range,
+                    "open_ports": open_ports,
+                    "scanned": end - start + 1,
+                },
+            )
+        except Exception as error:
+            return ToolResult(
+                tool="scan_ports",
                 query=target,
                 success=False,
                 data={},
