@@ -1,168 +1,192 @@
-# CURRENT PHASE: Cycle 5 - Phase 5.6 - The Faculty Router
+# CURRENT PHASE: Cycle 5 - Phase 5.7 - The Domain Faculty
 **Status: ACTIVE**
 **Authorized by: ZAERA (Guardian) + Claude (Command Center)**
 **Date opened: 2026-04-20**
 **Cycle: 5 - The Operator Console**
-**Replaces: Cycle 5 Phase 5.5 - The Faculty Registry (COMPLETE)**
+**Replaces: Cycle 5 Phase 5.6 - The Faculty Router (COMPLETE)**
 
 ---
 
 ## What This Phase Is
 
-Phase 5.5 gave every Faculty a name, a charter, and a domain.
-Phase 5.6 makes NAMMU aware of those domains.
+Phase 5.6 gave NAMMU the ability to route to any registered Faculty.
+Phase 5.7 activates the first domain-specialized Faculty: SENTINEL.
 
-Right now NAMMU routes between two destinations:
-  crown — for conversational input
-  analyst — for analytical input
+SENTINEL is the cybersecurity Faculty. It reasons about security posture,
+network threats, vulnerabilities, and risk — with strict governance rules
+enforced at the code level, not just the prompt level.
 
-The classification is binary. It does not know about tools,
-security, research, or any future domain Faculty.
-
-Phase 5.6 expands NAMMU's routing to read from faculties.json.
-When active Faculties include domain-specialized intelligences,
-NAMMU learns to recognize their domains and route accordingly.
-
-The result: NAMMU becomes a living router whose knowledge
-of available intelligences grows as the Faculty Registry grows.
-Add a Faculty to faculties.json, and NAMMU automatically learns
-to route to it — without any code changes.
-
-This is the MCP progressive discovery principle applied to Faculties:
-NAMMU discovers what is available and routes on demand.
+A note on model differentiation:
+There is currently no widely-deployed security-specialized GGUF model
+ready for local use. SENTINEL in Phase 5.7 uses the same LM Studio
+endpoint as CROWN but with a completely different system prompt — its
+charter, enforced as a hard prefix on every call. The faculty architecture
+is already designed for model differentiation: when a specialized model
+becomes available, updating the model_url and model_name in faculties.json
+is all that is required. The governance layer works identically regardless.
 
 ---
 
 ## What You Are Building
 
-### Task 1 - Update IntentClassifier in nammu.py
+### Task 1 - Activate SENTINEL in faculties.json
 
-The IntentClassifier currently classifies between "crown" and "analyst".
+Change in inanna/config/faculties.json:
+  sentinel.active: false  →  sentinel.active: true
 
-Update it to:
-1. Load active Faculties from faculties.json at init
-2. Build the classification prompt dynamically from loaded Faculties
-3. Return the Faculty name as the routing target
+No other changes to faculties.json.
 
-```python
-class IntentClassifier:
-    def __init__(self, faculties_path: Path):
-        self.faculties = self._load_active_faculties(faculties_path)
+### Task 2 - run_sentinel_response() in main.py and server.py
 
-    def _load_active_faculties(self, path: Path) -> dict:
-        try:
-            data = json.loads(path.read_text(encoding="utf-8"))
-            return {
-                name: cfg
-                for name, cfg in data.get("faculties", {}).items()
-                if cfg.get("active", False)
-            }
-        except Exception:
-            # Fallback to built-in defaults if config unreadable
-            return {
-                "crown":   {"domain": "general",   "description": "General conversation"},
-                "analyst": {"domain": "reasoning", "description": "Analysis and reasoning"},
-            }
+Add a real implementation of run_sentinel_response() to both
+main.py and server.py, replacing the stub.
 
-    def _build_classification_prompt(self, user_input: str) -> str:
-        faculty_lines = "\n".join(
-            f"  {name}: {cfg.get('domain','general')} — {cfg.get('description','')}"
-            for name, cfg in self.faculties.items()
-        )
-        return (
-            f"Route this input to exactly one Faculty.\n\n"
-            f"Available Faculties:\n{faculty_lines}\n\n"
-            f"Input: {user_input}\n\n"
-            f"Reply with exactly one Faculty name from the list above. "
-            f"No explanation. No punctuation. Just the name."
-        )
+SENTINEL uses the same LM Studio endpoint as CROWN.
+The difference is the system prompt — SENTINEL's charter is
+prepended as a hard system message on every call.
 
-    def classify(self, user_input: str) -> str:
-        # ... existing LM Studio call ...
-        # Use _build_classification_prompt instead of hardcoded prompt
-        # Parse response: strip, lowercase, check against known Faculty names
-        # If response not in known Faculties, fall back to "crown"
+The SENTINEL system prompt (built from faculties.json charter):
+```
+You are SENTINEL, the cybersecurity Faculty of INANNA NYX.
+
+Your domain: network security, threat analysis, vulnerability assessment,
+risk reasoning, defensive security posture.
+
+Your governance rules (enforced, not negotiable):
+- You perform passive analysis only.
+- You do not provide working exploit code.
+- You do not assist in active attack planning without explicit Guardian approval.
+- You flag uncertainty clearly — you do not speculate about specific targets.
+- Every response involving a potential vulnerability ends with a
+  recommendation for responsible disclosure or defensive action.
+
+You reason carefully, cite known frameworks (MITRE ATT&CK, CVE, OWASP)
+where relevant, and always distinguish between what is known and what is
+inferred. You are honest about the limits of your knowledge.
 ```
 
-Key behaviors:
-- If faculties.json has only crown + analyst active: behaves exactly as before
-- If SENTINEL is active: security-domain inputs route to sentinel
-- If an unknown Faculty name is returned by the LLM: fallback to crown
-- If faculties.json is missing or unreadable: fallback to crown/analyst defaults
-- All routing results logged to NAMMU memory as before
+Implementation:
 
-### Task 2 - Update NAMMU routing display
+```python
+def run_sentinel_response(
+    user_input: str,
+    grounding: str,
+    lm_url: str,
+    model_name: str,
+    faculties_path: Path,
+) -> str:
+    # Load SENTINEL charter from faculties.json
+    try:
+        fac_data = json.loads(faculties_path.read_text(encoding="utf-8"))
+        sentinel_cfg = fac_data.get("faculties", {}).get("sentinel", {})
+        charter = sentinel_cfg.get("charter_preview", "")
+        gov_rules = sentinel_cfg.get("governance_rules", [])
+    except Exception:
+        charter = ""
+        gov_rules = []
 
-The "routing to crown faculty" message in the UI should now show
-the actual Faculty name from the registry:
-  "routing to crown faculty"
-  "routing to analyst faculty"
-  (future) "routing to sentinel faculty"
+    rules_text = "\n".join(f"- {r}" for r in gov_rules) if gov_rules else ""
+    system_prompt = (
+        f"You are SENTINEL, the cybersecurity Faculty of INANNA NYX.\n\n"
+        f"Charter: {charter}\n\n"
+        f"Governance rules (enforced):\n{rules_text}\n\n"
+        f"{grounding}"
+    ).strip()
 
-No change needed if the existing code already uses the classified name.
-Verify and adjust if needed.
+    # Call LM Studio with SENTINEL system prompt
+    # Same structure as run_crown_response but with the above system_prompt
+    # ... existing LM Studio call pattern ...
+```
 
-### Task 3 - Domain signal hints in governance_signals.json
+### Task 3 - SENTINEL response display in UI
 
-Add domain routing hints to governance_signals.json.
-These are not hard rules — they are hints that improve
-NAMMU's classification accuracy via the LLM prompt context.
+SENTINEL responses must be visually distinct from CROWN.
 
-Add a "domain_hints" section:
-```json
-"domain_hints": {
-  "security": [
-    "vulnerability", "exploit", "CVE", "penetration",
-    "threat", "firewall", "intrusion", "malware",
-    "network security", "port scan", "attack surface"
-  ],
-  "reasoning": [
-    "analyze", "compare", "evaluate", "pros and cons",
-    "what is the difference", "break down", "systematically",
-    "step by step", "logical", "deduce"
-  ]
+In index.html:
+When a message arrives from the "sentinel" Faculty
+(detectable via a new "sentinel" message type OR
+by checking the last_routed_faculty in the status payload),
+render it with a distinct visual treatment:
+
+Add CSS class for sentinel messages:
+```css
+.msg-row.sentinel .msg-bubble {
+    background: rgba(170, 48, 32, .07);
+    border: 1px solid rgba(170, 48, 32, .35);
+    border-left: 2px solid var(--danger);
+    font-size: 13px;
+    color: rgba(240, 190, 180, .9);
+    line-height: 1.85;
+}
+.msg-row.sentinel .msg-label {
+    color: var(--danger);
 }
 ```
 
-These hints can be included in the classification prompt
-to help the LLM route more accurately:
-  "Domain hints for security Faculty: vulnerability, exploit, CVE..."
+Add "sentinel" as a handled message type in handleMsg():
+```javascript
+if (t === 'sentinel') { addMessage('sentinel', m.text); return; }
+```
 
-### Task 4 - Faculty routing in status payload
+In server.py, when SENTINEL produces a response, broadcast it
+as type "sentinel" instead of "assistant":
+```python
+await self.broadcast({"type": "sentinel", "text": sentinel_text})
+```
 
-Add to the status payload:
-  "last_routed_faculty": "crown"  (the Faculty name from the last routing decision)
+### Task 4 - SENTINEL routing test
 
-This lets the UI show which Faculty is currently active.
-The main interface already shows NAMMU routing messages —
-this adds it to the structured status data as well.
+Verify that security-domain inputs now route to SENTINEL.
 
-### Task 5 - Update NAMMU in server.py and main.py
+Add to the conversation handling: after NAMMU classifies a route
+as "sentinel", log an audit event:
+  "sentinel: routed to SENTINEL Faculty — input classified as security domain"
 
-Pass the faculties.json path to IntentClassifier at init.
-Ensure the classified Faculty name is used to select the
-correct run function:
-  "crown"    → run_crown_response()
-  "analyst"  → run_analyst_analysis()
-  "sentinel" → run_sentinel_response() (stub — returns
-                "SENTINEL Faculty is registered but not yet
-                 deployed. Activate it in the Faculty Registry."
-                until Phase 5.7)
-  unknown    → run_crown_response() (fallback)
+### Task 5 - SENTINEL activation visible in Console
 
-### Task 6 - Update identity.py and state.py
+The Faculty Registry panel in console.html should now show
+SENTINEL with status "connected" (or "ready" if LM Studio
+is up but SENTINEL has not been called yet) instead of "inactive".
 
-CURRENT_PHASE = "Cycle 5 - Phase 5.6 - The Faculty Router"
+The [ activate ] button should disappear now that SENTINEL is active.
+Display its governance rules clearly in the expanded card:
+```
+⚔ SENTINEL                        ● ready
+  security · Cybersecurity analysis
+  Governance rules:
+    · Passive analysis only without explicit Guardian approval
+    · All offensive actions require Guardian proposal
+    · Never recommend exploiting a vulnerability without consent
+  calls: 0 · last: never
+  [ view charter ]
+```
+
+### Task 6 - SENTINEL grounding from memory
+
+Like CROWN and ANALYST, SENTINEL should receive grounding from
+the active user's approved memory records. It uses the same
+grounding mechanism — filtered to the active user's records.
+
+No change to memory infrastructure needed. Just ensure
+run_sentinel_response() receives and uses the grounding
+parameter the same way run_crown_response() does.
+
+### Task 7 - Update identity.py and state.py
+
+CURRENT_PHASE = "Cycle 5 - Phase 5.7 - The Domain Faculty"
 No new commands in this phase.
 
-### Task 7 - Tests
+### Task 8 - Tests
 
 Update inanna/tests/test_nammu.py:
-  - IntentClassifier loads from faculties.json
-  - IntentClassifier fallback works when faculties.json missing
-  - _build_classification_prompt includes all active Faculty names
-  - Routing to unknown Faculty name falls back to crown
-  - When only crown + analyst active: existing routing tests still pass
+  - When SENTINEL is active in faculties.json, it appears in
+    IntentClassifier.faculties
+  - Classification prompt now includes "sentinel"
+
+Add to inanna/tests/test_operator.py or a new test file:
+  - run_sentinel_response() can be called without error
+  - SENTINEL system prompt contains governance rules
+  - SENTINEL system prompt contains "passive analysis only"
 
 Update test_identity.py: update CURRENT_PHASE assertion.
 
@@ -171,46 +195,67 @@ Update test_identity.py: update CURRENT_PHASE assertion.
 ## Permitted file changes
 
 inanna/identity.py
-inanna/main.py                  <- pass faculties_path to IntentClassifier,
-                                   add sentinel stub routing
+inanna/main.py                  <- activate SENTINEL, real
+                                   run_sentinel_response()
 inanna/config/
-  governance_signals.json       <- add domain_hints section
+  faculties.json                <- sentinel.active: true
 inanna/core/
-  nammu.py                      <- update IntentClassifier to load
-                                   from faculties.json
   state.py                      <- update phase only
 inanna/ui/
-  server.py                     <- pass faculties_path to IntentClassifier,
-                                   add sentinel stub routing,
-                                   last_routed_faculty in status payload
+  server.py                     <- real run_sentinel_response(),
+                                   broadcast as "sentinel" type
+  static/index.html             <- add sentinel message type CSS
+                                   and handler
+  static/console.html           <- SENTINEL card shows active status
 inanna/tests/
-  test_nammu.py                 <- update routing tests
+  test_nammu.py                 <- SENTINEL in active faculties
   test_identity.py              <- update phase assertion
 
 ---
 
 ## What You Are NOT Building
 
-- No SENTINEL model endpoint (Phase 5.7)
-- No new tools or network capabilities
-- No changes to console.html or index.html
+- No new LM Studio model endpoint (SENTINEL uses same as CROWN)
+- No offensive capability of any kind
+- No network scanning triggered by SENTINEL
 - No multi-Faculty orchestration (Phase 5.8)
-- Do not activate SENTINEL in faculties.json —
-  it remains active: false until Phase 5.7
-- The SENTINEL stub response is a placeholder only
+- Do not change tools.json or governance_signals.json
+- SENTINEL does not have access to tools in this phase —
+  it is a pure reasoning Faculty, no tool execution
+
+---
+
+## A Note on SENTINEL's Governance
+
+SENTINEL's governance rules are not just in its system prompt.
+They are enforced at two levels:
+
+Level 1 — Prompt level (this phase):
+  The system prompt explicitly states passive analysis only.
+  The LLM is instructed not to provide working exploits.
+
+Level 2 — Code level (future phase):
+  A post-processing check on SENTINEL's output will scan for
+  patterns indicating active exploit code and refuse to forward them.
+  This is defense in depth — the model should refuse, but the code
+  checks too.
+
+Phase 5.7 implements Level 1.
+Level 2 is documented here for future implementation.
 
 ---
 
 ## Definition of Done
 
-- [ ] IntentClassifier reads active Faculties from faculties.json
-- [ ] Classification prompt built dynamically from loaded Faculties
-- [ ] Unknown Faculty name falls back to crown
-- [ ] Missing faculties.json falls back to crown/analyst defaults
-- [ ] Sentinel stub response present (not an error, a clear message)
-- [ ] domain_hints added to governance_signals.json
-- [ ] last_routed_faculty in status payload
-- [ ] Existing routing behavior unchanged when only crown/analyst active
+- [ ] faculties.json: sentinel.active = true
+- [ ] run_sentinel_response() real implementation in main.py and server.py
+- [ ] SENTINEL uses CROWN's LM Studio endpoint with its own system prompt
+- [ ] SENTINEL governance rules in system prompt
+- [ ] Responses broadcast as "sentinel" type, not "assistant"
+- [ ] index.html renders sentinel messages in danger-red styling
+- [ ] Console shows SENTINEL as active/ready (not inactive)
+- [ ] Governance rules visible in SENTINEL Faculty card
+- [ ] SENTINEL receives memory grounding
 - [ ] CURRENT_PHASE updated
 - [ ] All tests pass: py -3 -m unittest discover -s tests
 - [ ] Pushed to origin/main immediately
@@ -219,17 +264,17 @@ inanna/tests/
 
 ## Handoff
 
-Commit: cycle5-phase6-complete
+Commit: cycle5-phase7-complete
 Push immediately to origin/main.
-Report: docs/implementation/CYCLE5_PHASE6_REPORT.md
-Stop. Do not begin Phase 5.7 without new CURRENT_PHASE.md.
+Report: docs/implementation/CYCLE5_PHASE7_REPORT.md
+Stop. Do not begin Phase 5.8 without new CURRENT_PHASE.md.
 
 ---
 
 *Written by: Claude (Command Center)*
 *Guardian approval: ZAERA*
 *Date: 2026-04-20*
-*NAMMU does not hardcode what it knows.*
-*It reads what is available and routes accordingly.*
-*The router grows as the registry grows.*
-*That is the principle.*
+*SENTINEL awakens.*
+*Passive analysis only. Governance rules enforced.*
+*The first domain Faculty is live.*
+*The orchestra gains its second voice.*
