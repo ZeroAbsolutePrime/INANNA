@@ -1,259 +1,270 @@
-# CURRENT PHASE: Cycle 5 - Phase 5.8 - The Orchestration Layer
+# CURRENT PHASE: Cycle 5 - Phase 5.9 - The Operator Proof
 **Status: ACTIVE**
 **Authorized by: ZAERA (Guardian) + Claude (Command Center)**
 **Date opened: 2026-04-20**
 **Cycle: 5 - The Operator Console**
-**Replaces: Cycle 5 Phase 5.7 - The Domain Faculty (COMPLETE)**
+**Replaces: Cycle 5 Phase 5.8 - The Orchestration Layer (COMPLETE)**
 
 ---
 
 ## What This Phase Is
 
-Phase 5.7 gave INANNA a second voice: SENTINEL.
-Phase 5.8 teaches two voices to work together.
+Eight phases built the Operator Console:
+5.1 Console Surface, 5.2 Tool Registry, 5.3 Network Eye,
+5.4 Process Monitor (+ auto-memory fix), 5.5 Faculty Registry,
+5.6 Faculty Router, 5.7 Domain Faculty (SENTINEL),
+5.8 Orchestration Layer.
 
-Orchestration is the ability to route a complex task through multiple
-Faculties in sequence, passing results from one to the next, and
-synthesizing a final response that reflects the combined intelligence.
+Phase 5.9 is the completion phase.
 
-Example:
-  "Analyze the security of this Python code and explain the risks in simple terms."
-  → SENTINEL analyzes the code for vulnerabilities (security domain)
-  → CROWN synthesizes the findings into clear, human language (general domain)
-  → The user receives one coherent response
+Its purpose: verify everything works as a coherent whole,
+write verify_cycle5.py with 40+ integration checks,
+write the Cycle 5 Completion Record,
+update the Code Doctrine with Lessons from Cycle 5,
+and declare Cycle 5 complete.
 
-This is not two separate messages. It is one governed orchestration:
-  propose → approve → SENTINEL → CROWN → respond
-
-The governed MCP principle applies:
-  discover → propose → approve → execute → result → audit
+Build almost nothing. Verify everything. Document honestly.
 
 ---
 
 ## What You Are Building
 
-### Task 1 - OrchestrationEngine in core/orchestration.py
+### Task 1 - inanna/verify_cycle5.py
 
-Create: inanna/core/orchestration.py
+Create a standalone verification script.
+Run with: py -3 verify_cycle5.py
+No live model or browser required.
 
+The script verifies:
+
+1. TOOLS CONFIG
+   - config/tools.json exists with 4 tools registered
+   - web_search, ping, resolve_host, scan_ports all enabled
+   - All tools have requires_approval: true
+   - OperatorFaculty reads PERMITTED_TOOLS from tools.json (not hardcoded)
+   - ping executes and returns ToolResult
+   - resolve_host("localhost") returns ip: "127.0.0.1"
+   - scan_ports caps at 100 ports per scan
+
+2. FACULTIES CONFIG
+   - config/faculties.json exists with 5 Faculty definitions
+   - crown, analyst, operator, guardian all active: true
+   - sentinel active: true
+   - sentinel model_name: "qwen2.5-14b-instruct"
+   - sentinel has 3 governance_rules
+   - All active Faculties have domain, description, charter_preview
+
+3. FACULTY MONITOR
+   - FacultyMonitor loads from faculties.json
+   - all_records() returns 5 records (all Faculties now active)
+   - Each record has display_name, domain, charter_preview
+   - format_report() contains CROWN, ANALYST, OPERATOR, GUARDIAN, SENTINEL
+
+4. NAMMU ROUTING
+   - IntentClassifier loads from faculties.json
+   - SENTINEL in active faculties (active: true)
+   - Classification prompt includes sentinel
+   - Classification prompt includes all 5 Faculty names
+   - Fallback on missing config returns crown/analyst defaults
+   - Unknown Faculty name falls back to crown
+
+5. ORCHESTRATION
+   - OrchestrationEngine instantiates from faculties.json
+   - detect_orchestration() finds plan for security+explain input
+   - detect_orchestration() returns None for unrelated input
+   - Plan has 2 steps: sentinel → crown
+   - format_synthesis_prompt() includes previous Faculty output
+   - OrchestrationStep has correct faculty, purpose, input_from, output_to
+
+6. NETWORK TOOLS
+   - resolve_host exists in PERMITTED_TOOLS
+   - scan_ports exists in PERMITTED_TOOLS
+   - governance_signals.json has domain_hints section
+   - domain_hints.security has at least 5 entries
+   - domain_hints.reasoning has at least 5 entries
+
+7. PROCESS MONITOR
+   - ProcessMonitor instantiates
+   - inanna_record() returns status "running"
+   - format_uptime(3700) returns "1h 1m"
+   - all_records() returns at least 2 records
+
+8. AUTO-MEMORY
+   - AUTO_MEMORY_TURN_THRESHOLD constant exists in main.py
+   - Value is 20
+   - No create_memory_request_proposal call after conversation turns
+     in the standard crown/analyst routing path
+
+9. CONSOLE SURFACE
+   - ui/static/console.html exists
+   - console.html has panel sections: tools, network, faculties, processes
+   - console.html has faculty-registry command
+   - console.html has process-status command
+   - console.html has tool-registry command
+   - console.html has orchestration rendering
+
+10. MAIN UI
+    - ui/static/index.html has entrance gate (openGate function)
+    - ui/static/index.html has sentinel message type handler
+    - ui/static/index.html has orchestration message type handler
+    - ui/static/index.html has arrow key history (ArrowUp)
+    - ui/static/index.html has attach button
+    - ui/static/index.html has governance suggestion logic
+
+11. LLM CONFIGURATION DOCUMENTATION
+    - docs/llm_configuration.md exists
+    - Contains qwen2.5-7b-instruct-1m entry
+    - Contains qwen2.5-14b-instruct entry
+    - Contains Faculty mapping table
+    - identity.py has LLM configuration comment block
+
+12. CYCLE 4 REGRESSION
+    - py -3 verify_cycle4.py still passes all 68 checks
+
+Format: same as verify_cycle4.py
+[PASS] / [FAIL] per check, exit 0 if all pass.
+Target: 40+ checks.
+
+### Task 2 - Fix any integration gaps found
+
+If verify_cycle5.py finds any failing check, fix it
+before writing the completion record.
+Document every gap found and fixed in the phase report.
+
+### Task 3 - docs/cycle5_completion.md
+
+Create the Cycle 5 Completion Record containing:
+
+- What Cycle 5 set out to build (from cycle5_master_plan.md)
+- What was actually built — one paragraph per phase
+- The Codex repo confusion incident: honest account of Codex
+  repeatedly running in the wrong repo root, reporting stale work,
+  and the recovery pattern (Command Center committed directly
+  when needed)
+- What verify_cycle5.py confirmed
+- What Cycle 5 did not build:
+  - No persistent host database in Network Eye
+  - No topology graph visualization
+  - No multi-step orchestration beyond 2-Faculty chain
+  - No Faculty activation UI (activate button is placeholder)
+  - Orchestration plans are built-in, not config-driven
+- The bridge to Cycle 6 (Relational Memory, User Profiles,
+  Onboarding Survey, Departments, Notification Routing)
+
+### Task 4 - docs/code_doctrine.md update
+
+Add section: "Lessons from Cycle 5"
+
+Must include:
+
+1. CONFIG-DRIVEN EVERYTHING. Tools live in tools.json.
+   Faculties live in faculties.json. Domain hints live in
+   governance_signals.json. The Python code reads config.
+   When a new tool or Faculty is needed, update the JSON.
+   Never add it to Python code directly.
+
+2. MODEL DIFFERENTIATION VIA CONFIG. SENTINEL uses a different
+   model than CROWN because faculties.json says so. No Python
+   change required. This is the Faculty architecture working
+   as intended. Future domain Faculties follow the same pattern.
+
+3. THE ORCHESTRATION PRINCIPLE. Complex tasks may require
+   multiple Faculties. The pattern is always:
+   detect → propose → approve → execute chain → audit.
+   Never execute orchestration without a proposal.
+   The user must see what is about to happen.
+
+4. PUSH IMMEDIATELY. Codex's repo confusion in Cycle 5
+   (running in a wrong directory, reporting stale work)
+   reinforces the lesson from Cycle 4: every completion commit
+   must be pushed to origin/main the moment it is done.
+   The Command Center must verify git log after every phase.
+
+5. AUTO-MEMORY IS THE RIGHT DEFAULT. Removing the memory
+   proposal from conversation turns was the correct decision.
+   The flow of conversation is sacred. Governance applies to
+   structural operations (clear, forget, export), not to the
+   act of being heard and remembered.
+
+### Task 5 - Update identity.py
+
+CURRENT_PHASE = "Cycle 5 - Phase 5.9 - The Operator Proof"
+
+Add CYCLE5_SUMMARY:
 ```python
-from dataclasses import dataclass
-from pathlib import Path
-from typing import Callable
-
-@dataclass
-class OrchestrationStep:
-    faculty: str
-    purpose: str        # "analyze" | "synthesize" | "verify" | "summarize"
-    input_from: str     # "user" | previous faculty name
-    output_to: str      # next faculty name | "user"
-
-@dataclass
-class OrchestrationPlan:
-    steps: list[OrchestrationStep]
-    trigger_pattern: str   # what input pattern triggers this plan
-    requires_approval: bool = True
-
-class OrchestrationEngine:
-    def __init__(self, faculties_path: Path):
-        self.faculties_path = faculties_path
-        self._plans = self._load_plans()
-
-    def _load_plans(self) -> list[OrchestrationPlan]:
-        # Built-in plans — later phases can load from config
-        return [
-            OrchestrationPlan(
-                trigger_pattern="security.*explain|analyze.*security.*simple|"
-                                "vulnerabilit.*plain|security.*non.*technical",
-                steps=[
-                    OrchestrationStep("sentinel", "analyze", "user", "crown"),
-                    OrchestrationStep("crown", "synthesize", "sentinel", "user"),
-                ],
-                requires_approval=True,
-            ),
-        ]
-
-    def detect_orchestration(self, user_input: str) -> OrchestrationPlan | None:
-        import re
-        for plan in self._plans:
-            if re.search(plan.trigger_pattern, user_input, re.IGNORECASE):
-                return plan
-        return None
-
-    def format_synthesis_prompt(
-        self,
-        user_input: str,
-        previous_output: str,
-        step: OrchestrationStep,
-    ) -> str:
-        if step.purpose == "synthesize":
-            return (
-                f"The user asked: {user_input}\n\n"
-                f"The {step.input_from.upper()} Faculty analyzed this and found:\n"
-                f"{previous_output}\n\n"
-                f"Please synthesize these findings into a clear, accessible response "
-                f"for the user. Preserve the important insights while making them "
-                f"understandable. Do not add information not present in the analysis."
-            )
-        return user_input
+CYCLE5_SUMMARY = (
+    "Cycle 5 built the Operator Console: a second browser panel "
+    "at /console for Guardians and Operators, a config-driven Tool "
+    "Registry with four governed tools, the Network Eye with ping/"
+    "resolve/scan, the Process Monitor, the Faculty Registry backed "
+    "by faculties.json, dynamic NAMMU routing across all active "
+    "Faculties, SENTINEL as the first domain Faculty running on "
+    "qwen2.5-14b-instruct, and the Orchestration Layer enabling "
+    "SENTINEL→CROWN two-Faculty chains. Auto-memory removed "
+    "conversation-turn proposals. The Gates of Uruk UI redesign "
+    "unified both interfaces. The LLM configuration is documented "
+    "in code and in docs/llm_configuration.md."
+)
 ```
 
-### Task 2 - Orchestration proposal type
+### Task 6 - Final verification runs
 
-When an orchestration is detected, generate a special proposal:
-
-```
-[ORCHESTRATION PROPOSAL] 2026-04-20T... |
-Multi-Faculty task: SENTINEL → CROWN |
-SENTINEL will analyze, CROWN will synthesize. |
-status: pending
-```
-
-This gives the operator visibility into what is about to happen
-before it happens. One proposal covers the full orchestration chain.
-
-After approval, both Faculty calls execute without additional proposals.
-
-### Task 3 - Orchestration execution in server.py and main.py
-
-In the conversation handling flow, after NAMMU classification,
-check for orchestration before routing:
-
-```python
-# In handle_conversation_turn():
-
-# 1. Check orchestration first
-plan = orchestration_engine.detect_orchestration(text)
-if plan:
-    # Generate orchestration proposal
-    # After approval: execute chain
-    first_output = run_faculty(plan.steps[0].faculty, text, grounding)
-    for step in plan.steps[1:]:
-        synthesized_input = orchestration_engine.format_synthesis_prompt(
-            text, first_output, step
-        )
-        final_output = run_faculty(step.faculty, synthesized_input, grounding)
-    broadcast as: {"type": "orchestration", "steps": [...], "text": final_output}
-    return
-
-# 2. Otherwise: normal NAMMU routing
-```
-
-### Task 4 - Orchestration message type in index.html
-
-Add "orchestration" message type — rendered with a distinct visual:
-A subtle header showing the chain that produced the response:
-
-```css
-.msg-row.orchestration .msg-bubble {
-    background: rgba(120, 72, 176, .06);
-    border: 1px solid rgba(120, 72, 176, .25);
-    border-left: 2px solid var(--vio3);
-    font-size: 13px;
-    color: var(--rose5);  /* same as INANNA */
-    line-height: 2;
-    font-family: var(--serif);
-}
-.msg-chain-header {
-    font-size: 8px;
-    letter-spacing: 3px;
-    color: var(--vio3);
-    margin-bottom: 10px;
-    padding-bottom: 6px;
-    border-bottom: 1px solid rgba(120, 72, 176, .2);
-}
-```
-
-The chain header shows: `𒊩 SENTINEL → CROWN · orchestrated response`
-
-### Task 5 - Orchestration audit trail
-
-Each orchestration execution appends to the audit surface:
-```
-orchestration: SENTINEL→CROWN | input: "..." | steps: 2 | approved: proposal-xxx
-```
-
-### Task 6 - Orchestration visible in Console
-
-The Operator Console activity feed shows orchestration events distinctly.
-The Faculties panel shows call counts for both SENTINEL and CROWN
-after an orchestration run.
-
-### Task 7 - Update identity.py and state.py
-
-CURRENT_PHASE = "Cycle 5 - Phase 5.8 - The Orchestration Layer"
-No new commands in this phase.
-
-### Task 8 - Tests
-
-Create inanna/tests/test_orchestration.py:
-  - OrchestrationEngine can be instantiated
-  - detect_orchestration() returns a plan for "analyze security and explain simply"
-  - detect_orchestration() returns None for unrelated input
-  - format_synthesis_prompt() includes previous output
-  - format_synthesis_prompt() includes user input
-  - OrchestrationPlan has correct step count
-  - OrchestrationStep has faculty, purpose, input_from, output_to
-
-Update test_identity.py: update CURRENT_PHASE assertion.
+Run: py -3 -m unittest discover -s tests
+Run: py -3 verify_cycle4.py
+Run: py -3 verify_cycle5.py
+All must pass. Report all counts in the phase report.
 
 ---
 
 ## Permitted file changes
 
-inanna/identity.py
-inanna/main.py                  <- orchestration detection and execution
-inanna/core/
-  orchestration.py              <- NEW
-  state.py                      <- update phase only
-inanna/ui/
-  server.py                     <- orchestration detection and execution,
-                                   broadcast as "orchestration" type,
-                                   audit trail
-  static/index.html             <- add orchestration message type CSS + handler
-inanna/tests/
-  test_orchestration.py         <- NEW
-  test_identity.py              <- update phase assertion
+inanna/identity.py              <- MODIFY: CURRENT_PHASE, CYCLE5_SUMMARY
+inanna/verify_cycle5.py         <- NEW
+docs/cycle5_completion.md       <- NEW
+docs/code_doctrine.md           <- MODIFY: add Lessons from Cycle 5
+tests/test_identity.py          <- MODIFY: update phase assertion
+Core/UI files only if fixing gaps found by verify_cycle5.py.
 
 ---
 
 ## What You Are NOT Building
 
-- No dynamic orchestration plan loading from config (plans are built-in)
-- No more than 2 steps in a chain (SENTINEL → CROWN only)
-- No parallel Faculty execution (sequential only)
-- No orchestration for non-security inputs in Phase 5.8
-- No changes to console.html beyond activity feed
-- Do not modify faculties.json or tools.json
+No new capabilities. No new commands. No new panels.
+Verify and document only.
+Do not begin Cycle 6 work.
 
 ---
 
 ## Definition of Done
 
-- [ ] core/orchestration.py with OrchestrationEngine
-- [ ] detect_orchestration() recognizes security+explain patterns
-- [ ] Orchestration proposal generated before chain executes
-- [ ] SENTINEL → CROWN chain executes on approval
-- [ ] Final response broadcast as "orchestration" type
-- [ ] index.html renders orchestration messages with chain header
-- [ ] Audit trail entry for each orchestration
-- [ ] CURRENT_PHASE updated
-- [ ] All tests pass: py -3 -m unittest discover -s tests
-- [ ] Pushed to origin/main immediately
+- [ ] verify_cycle5.py exists and all 40+ checks pass
+- [ ] py -3 verify_cycle4.py still passes (regression)
+- [ ] py -3 -m unittest discover -s tests passes
+- [ ] docs/cycle5_completion.md with honest account of Codex confusion
+- [ ] docs/code_doctrine.md has Lessons from Cycle 5
+- [ ] CURRENT_PHASE updated to Phase 5.9
+- [ ] CYCLE5_SUMMARY in identity.py
+- [ ] Any gaps found are fixed and documented
 
 ---
 
-## Handoff
+## Handoff to Command Center
 
-Commit: cycle5-phase8-complete
-Push immediately to origin/main.
-Report: docs/implementation/CYCLE5_PHASE8_REPORT.md
-Stop. Do not begin Phase 5.9 without new CURRENT_PHASE.md.
+When Definition of Done is met, Codex must:
+1. Commit with message: cycle5-phase9-complete
+2. PUSH TO ORIGIN/MAIN IMMEDIATELY.
+3. Write docs/implementation/CYCLE5_PHASE9_REPORT.md containing:
+   - verify_cycle5.py results (all checks)
+   - verify_cycle4.py result (regression)
+   - Final unittest count
+   - Any gaps found and fixed
+4. Stop. Cycle 5 is complete.
+   Do not begin Cycle 6 without authorization from Command Center.
 
 ---
 
 *Written by: Claude (Command Center)*
 *Guardian approval: ZAERA*
 *Date: 2026-04-20*
-*Two voices. One response.*
-*The orchestra begins to play as one.*
+*Eight phases of building. One phase of truth.*
+*The Operator Console proves itself.*
