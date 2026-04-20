@@ -285,6 +285,13 @@
       color: var(--system);
     }
 
+    .message-actions {
+      margin-top: 10px;
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+    }
+
     .side-panel {
       min-height: 0;
       overflow-y: auto;
@@ -1530,6 +1537,37 @@
       return realms.map((realm) => String(realm || "").trim()).filter(Boolean).join(", ") || "(none)";
     }
 
+    function extractProposalId(text) {
+      const match = String(text || "").match(/\bproposal-[a-z0-9-]+\b/i);
+      return match ? match[0] : "";
+    }
+
+    function extractToolProposalTimestamp(text) {
+      const match = String(text || "").match(/\[TOOL PROPOSAL\]\s+([^|]+?)\s+\|/i);
+      return match ? match[1].trim() : "";
+    }
+
+    function findToolProposalId(text) {
+      const directId = extractProposalId(text);
+      if (directId) {
+        return directId;
+      }
+      if (!/\[TOOL PROPOSAL\]/i.test(String(text || ""))) {
+        return "";
+      }
+      const timestamp = extractToolProposalTimestamp(text);
+      if (!timestamp) {
+        return "";
+      }
+      const match = (state.proposalRecords || []).find((record) => {
+        return (
+          String(record.timestamp || "") === timestamp &&
+          String(record.status || "pending") === "pending"
+        );
+      });
+      return match ? String(match.proposal_id || match.id || "") : "";
+    }
+
     function sortByTimestamp(records, key) {
       return [...records].sort((a, b) => {
         const left = parseIsoDate(a[key])?.getTime() || 0;
@@ -1863,6 +1901,7 @@
           requestProposalHistory();
         }
         renderProposals();
+        renderMessages();
         renderSectionBadges();
         return;
       }
@@ -1972,6 +2011,38 @@
         }
 
         article.append(prefix, content);
+
+        if (
+          message.role === "system" &&
+          /\[TOOL PROPOSAL\]/i.test(String(message.text || "")) &&
+          /status:\s*pending/i.test(String(message.text || ""))
+        ) {
+          const proposalId = findToolProposalId(message.text);
+          if (proposalId) {
+            const actions = document.createElement("div");
+            actions.className = "message-actions";
+
+            const approveButton = document.createElement("button");
+            approveButton.className = "panel-btn";
+            approveButton.type = "button";
+            approveButton.textContent = "[ approve ]";
+            approveButton.addEventListener("click", () => {
+              sendCommand("approve", { proposal_id: proposalId });
+            });
+
+            const rejectButton = document.createElement("button");
+            rejectButton.className = "panel-btn warn";
+            rejectButton.type = "button";
+            rejectButton.textContent = "[ reject ]";
+            rejectButton.addEventListener("click", () => {
+              sendCommand("reject", { proposal_id: proposalId });
+            });
+
+            actions.append(approveButton, rejectButton);
+            article.appendChild(actions);
+          }
+        }
+
         conversationLog.appendChild(article);
       });
       conversationLog.scrollTop = conversationLog.scrollHeight;
