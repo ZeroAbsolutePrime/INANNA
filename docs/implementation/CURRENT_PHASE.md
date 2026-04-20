@@ -1,113 +1,168 @@
-﻿# CURRENT PHASE: Cycle 4 - Phase 4.7 - The Realm Access
+﻿# CURRENT PHASE: Cycle 4 - Phase 4.8 - The Admin Surface
 **Status: ACTIVE**
 **Authorized by: ZAERA (Guardian) + Claude (Command Center)**
-**Date opened: 2026-04-19**
+**Date opened: 2026-04-20**
 **Cycle: 4 - The Civic Layer**
-**Replaces: Cycle 4 Phase 4.6 - The Governed Invite (COMPLETE)**
+**Replaces: Cycle 4 Phase 4.7 - The Realm Access (COMPLETE)**
 
-Phase 4.6 governs how users arrive. Phase 4.7 governs where they can go.
+## What This Phase Is
 
-Every user has assigned_realms in their UserRecord but until now that
-field is decorative. Phase 4.7 makes realm access real: session startup
-checks the active user against the active realm, warnings are shown if
-denied, and Guardian commands let realm assignments be managed.
+Seven phases built the civic infrastructure: user records, session tokens,
+privilege maps, user memory, interaction logs, invite flow, realm access.
+All of it accessible via commands. None visible at a glance.
 
-## Task 1 - can_access_realm() and UserManager helpers in user.py
+Phase 4.8 builds the Admin Surface: a dedicated Guardian/Operator panel
+showing the full civic state without typing a single command.
+Who exists, what roles they hold, which realms they access,
+which invites are active, what the realm structure looks like.
 
-Add module-level function:
-  can_access_realm(user_record, realm_name) -> bool
-  Returns True if "all" in assigned_realms or realm_name in assigned_realms.
+Visible only to Guardian and Operator roles.
 
-Add to UserManager:
-  assign_realm(user_id, realm_name) -> bool
-    Adds realm to assigned_realms, saves to disk. Returns False if already present.
+---
 
-  unassign_realm(user_id, realm_name) -> bool
-    Removes realm from assigned_realms. Returns False if only realm or if "all".
+## Task 1 - Admin Surface panel in index.html
 
-## Task 2 - Realm access check at session start
+Add a new collapsible section at the top of the side panel.
+Visible only when active user has role guardian or operator.
+Default state: collapsed.
 
-In server.py and main.py after active token is set, check can_access_realm().
-If denied: broadcast/print a prominent access warning and continue (no hard block).
-Warning format:
-  access > Alice does not have access to realm work.
-  access > Assigned realms: default.
-  access > Start with INANNA_REALM=default or use assign-realm.
+Header: ADMIN  (3 users  2 realms)  badge  toggle-arrow
 
-## Task 3 - assign-realm command
+When expanded, three sub-sections:
 
-Command: assign-realm [user_name] [realm_name]
+USERS sub-section:
+  Shows each user: display_name, role, assigned_realms, status
+  Action buttons: [ invite ]  [ + user ]
+
+INVITES sub-section:
+  Shows each invite: code, role/realm, status, date
+  Action button: [ + invite ]
+
+REALMS sub-section:
+  Shows each realm: name, purpose, governance_sensitivity
+  Action button: [ + realm ]
+
+Panel sends {"type":"command","cmd":"admin-surface"} on expand.
+
+[ invite ] and [ + invite ] open an inline form:
+  Role selector, realm input, [ create invite ] button
+  On submit: sends invite command via WebSocket.
+
+[ + realm ] opens inline form:
+  Realm name input, purpose input, [ create realm ] button
+  On submit: sends create-realm command via WebSocket.
+
+Role-gated visibility:
+  Guardian and operator see the panel.
+  User role: panel hidden entirely.
+  Update visibility in the status handler from active_user.role.
+
+## Task 2 - admin-surface WebSocket command
+
+Privilege required: all OR invite_users
+
+Returns: {"type": "admin_data", "users": [...], "invites": [...],
+"realms": [...], "total_users": N, "total_invites": N, "total_realms": N}
+
+Each user record includes: user_id, display_name, role, assigned_realms,
+status, log_count (from UserLog.entry_count).
+
+Each invite record includes: invite_code, role, assigned_realms,
+status, created_at.
+
+Each realm record includes: name, purpose, governance_sensitivity,
+user_count (users assigned to this realm), memory_count.
+
+## Task 3 - create-realm command
+
+Command: create-realm [name] [purpose]
 Privilege: all (Guardian only)
-Creates proposal: [REALM PROPOSAL] | Assign realm X to Y | status: pending
-After approval: user_manager.assign_realm()
-Shows: assign-realm > Realm X assigned to Y.
 
-## Task 4 - unassign-realm command
+Creates a proposal:
+  [REALM PROPOSAL] | Create realm: [name] | status: pending
+After approval: RealmManager.create_realm(name, purpose)
+Shows: create-realm > Realm [name] created.
 
-Command: unassign-realm [user_name] [realm_name]
-Privilege: all (Guardian only)
-Same flow, calls unassign_realm().
-If only realm: unassign-realm > Cannot remove last realm for Y.
+Add to STARTUP_COMMANDS and capabilities.
 
-## Task 5 - realm_access in status payload
+## Task 4 - Admin Surface CSS
 
-Add: "realm_access": true | false
+New CSS classes:
+  .admin-panel, .admin-sub-title
+  .admin-user-row, .admin-user-name, .admin-user-role
+  .admin-user-realms, .admin-user-status (active=green, suspended=amber)
+  .admin-invite-row, .admin-invite-code (monospace)
+  .admin-realm-row, .admin-realm-name
+  .admin-inline-form with select and input styled to match theme
 
-## Task 6 - Realm warning in switch-user
+All action buttons use the existing .panel-btn class.
 
-When switching to a user who lacks access to the current realm, show:
-  switch-user > Warning: Alice does not have access to realm X.
-  switch-user > Operating as Alice in an unassigned realm.
-  switch-user > Use assign-realm to grant access.
-Switch still proceeds - warning is informational only.
+## Task 5 - Role-gated visibility in JS
 
-## Task 7 - Update identity.py and state.py
+updateAdminVisibility(activeUser) function:
+  Show admin panel only for role guardian or operator.
+  Hide completely for role user or null.
+  Called from the status handler on every status message.
 
-CURRENT_PHASE = "Cycle 4 - Phase 4.7 - The Realm Access"
-Add assign-realm and unassign-realm to STARTUP_COMMANDS and capabilities.
+## Task 6 - Update identity.py and state.py
 
-## Task 8 - Tests
+CURRENT_PHASE = "Cycle 4 - Phase 4.8 - The Admin Surface"
+Add "admin-surface" and "create-realm" to STARTUP_COMMANDS and capabilities.
 
-Add to test_user.py:
-- can_access_realm() True for "all", True for assigned, False for unassigned
-- assign_realm() adds realm, returns False if already present
-- unassign_realm() removes realm, returns False when only realm remains
+## Task 7 - Tests
 
-Update test_identity.py, test_state.py, test_commands.py.
+Add to test_commands.py: "admin-surface" and "create-realm" in capabilities.
+Update test_identity.py: update CURRENT_PHASE assertion.
+Update test_state.py: add new commands.
+
+---
 
 ## Permitted file changes
 
-inanna/identity.py, main.py, core/user.py, core/state.py,
-ui/server.py, tests/test_user.py, tests/test_identity.py,
-tests/test_state.py, tests/test_commands.py.
-No changes to index.html.
+inanna/identity.py, main.py, core/state.py,
+ui/server.py, ui/static/index.html,
+tests/test_commands.py, tests/test_identity.py, tests/test_state.py
+
+---
 
 ## What You Are NOT Building
 
-No realm creation via command (Phase 4.8). No hard block on access denial.
-No UI panel for realm management. No per-realm governance rules.
-Do not change invite or create-user flow.
+No user editing via the admin panel (commands only).
+No user deletion (suspend only).
+No bulk operations.
+No realm editing via the admin panel.
+No cross-realm admin views for operators.
+No email notification on invite creation.
+Actions go through existing command/proposal flow.
+
+---
 
 ## Definition of Done
 
-- [ ] can_access_realm() exists in user.py
-- [ ] assign_realm() and unassign_realm() exist in UserManager
-- [ ] Realm access warning shown at session startup if denied
-- [ ] assign-realm and unassign-realm work via proposal
-- [ ] Last-realm protection in unassign_realm
-- [ ] switch-user shows realm warning when target lacks access
-- [ ] realm_access in status payload
+- [ ] Admin Surface panel in side panel, role-gated
+- [ ] Panel hidden for user role, visible for guardian/operator
+- [ ] Users sub-section with role, realms, status
+- [ ] Invites sub-section with status
+- [ ] Realms sub-section with sensitivity
+- [ ] admin-surface command returns admin_data payload
+- [ ] create-realm command works via proposal
+- [ ] Inline invite form triggers invite flow
 - [ ] CURRENT_PHASE updated
 - [ ] All tests pass
 
+---
+
 ## Handoff
 
-Commit: cycle4-phase7-complete
-Report: docs/implementation/CYCLE4_PHASE7_REPORT.md
-Stop. Do not begin Phase 4.8 without new CURRENT_PHASE.md.
+Commit: cycle4-phase8-complete
+Report: docs/implementation/CYCLE4_PHASE8_REPORT.md
+Stop. Do not begin Phase 4.9 without new CURRENT_PHASE.md.
+
+---
 
 *Written by: Claude (Command Center)*
 *Guardian approval: ZAERA*
-*Date: 2026-04-19*
-*A realm is not just a name. It is a boundary.*
-*Phase 4.7 makes that boundary real.*
+*Date: 2026-04-20*
+*The civic layer becomes visible.*
+*Who is here. What they can do. Where they can go.*
+*All of it, at a glance, for the Guardian.*
