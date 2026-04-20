@@ -14,6 +14,7 @@ from core.faculty_monitor import FacultyMonitor
 from core.memory import Memory
 from core.nammu import IntentClassifier
 from core.operator import ToolResult
+from core.profile import ProfileManager
 from core.process_monitor import ProcessMonitor
 from core.proposal import Proposal
 from core.realm import RealmManager
@@ -487,6 +488,8 @@ class CommandTests(unittest.TestCase):
                 "login",
                 "logout",
                 "whoami",
+                "my-profile",
+                "view-profile",
                 "reflect",
                 "analyse",
                 "audit",
@@ -527,14 +530,185 @@ class CommandTests(unittest.TestCase):
         self.assertEqual(
             startup_commands_line(),
             (
-                "Commands: users, create-user, login, logout, whoami, reflect, analyse, "
-                "audit, guardian, faculties, realms, create-realm, realm-context, switch-user, "
+                "Commands: users, create-user, login, logout, whoami, my-profile, view-profile, "
+                "reflect, analyse, audit, guardian, faculties, realms, create-realm, realm-context, switch-user, "
                 "assign-realm, unassign-realm, my-log, user-log, invite, join, invites, "
                 "admin-surface, tool-registry, faculty-registry, network-status, process-status, history, proposal-history, routing-log, nammu-log, "
                 "memory-log, body, status, diagnostics, guardian-dismiss, "
                 "guardian-clear-events, approve, reject, forget, exit"
             ),
         )
+
+    def test_my_profile_returns_formatted_profile(self) -> None:
+        (
+            session,
+            memory,
+            proposal,
+            state_report,
+            engine,
+            analyst,
+            classifier,
+            routing_log,
+            startup_context,
+            config,
+        ) = self.make_runtime()
+        root = session.session_path.parent.parent
+        user_manager, session_state, token_store, user_log, faculty_monitor = self.make_user_context(root)
+        profile_manager = ProfileManager(root / "profiles")
+        active_user = session_state["active_user"]
+        assert active_user is not None
+        profile_manager.update_field(active_user.user_id, "preferred_name", "ZAERA")
+
+        result = handle_command(
+            "my-profile",
+            session,
+            memory,
+            proposal,
+            state_report,
+            engine,
+            analyst,
+            classifier,
+            routing_log,
+            startup_context,
+            config,
+            user_manager=user_manager,
+            session_state=session_state,  # type: ignore[arg-type]
+            token_store=token_store,
+            user_log=user_log,
+            faculty_monitor=faculty_monitor,
+            profile_manager=profile_manager,
+        )
+
+        self.assertIn("Your profile", result)
+        self.assertIn("Preferred    ZAERA", result)
+        self.assertIn('Type "my-profile edit [field] [value]"', result)
+
+    def test_my_profile_edit_updates_profile_and_refreshes_grounding(self) -> None:
+        (
+            session,
+            memory,
+            proposal,
+            state_report,
+            engine,
+            analyst,
+            classifier,
+            routing_log,
+            startup_context,
+            config,
+        ) = self.make_runtime()
+        root = session.session_path.parent.parent
+        user_manager, session_state, token_store, user_log, faculty_monitor = self.make_user_context(root)
+        profile_manager = ProfileManager(root / "profiles")
+        active_user = session_state["active_user"]
+        assert active_user is not None
+        profile_manager.ensure_profile_exists(active_user.user_id)
+
+        result = handle_command(
+            "my-profile edit preferred_name Oracle",
+            session,
+            memory,
+            proposal,
+            state_report,
+            engine,
+            analyst,
+            classifier,
+            routing_log,
+            startup_context,
+            config,
+            user_manager=user_manager,
+            session_state=session_state,  # type: ignore[arg-type]
+            token_store=token_store,
+            user_log=user_log,
+            faculty_monitor=faculty_monitor,
+            profile_manager=profile_manager,
+        )
+
+        self.assertEqual("profile > preferred_name updated to Oracle.", result)
+        self.assertEqual(profile_manager.load(active_user.user_id).preferred_name, "Oracle")
+        self.assertEqual(engine.grounding_prefix, "You are speaking with Oracle.")
+
+    def test_my_profile_clear_rejects_protected_field(self) -> None:
+        (
+            session,
+            memory,
+            proposal,
+            state_report,
+            engine,
+            analyst,
+            classifier,
+            routing_log,
+            startup_context,
+            config,
+        ) = self.make_runtime()
+        root = session.session_path.parent.parent
+        user_manager, session_state, token_store, user_log, faculty_monitor = self.make_user_context(root)
+        profile_manager = ProfileManager(root / "profiles")
+
+        result = handle_command(
+            "my-profile clear onboarding_completed",
+            session,
+            memory,
+            proposal,
+            state_report,
+            engine,
+            analyst,
+            classifier,
+            routing_log,
+            startup_context,
+            config,
+            user_manager=user_manager,
+            session_state=session_state,  # type: ignore[arg-type]
+            token_store=token_store,
+            user_log=user_log,
+            faculty_monitor=faculty_monitor,
+            profile_manager=profile_manager,
+        )
+
+        self.assertEqual("profile > onboarding_completed cannot be cleared.", result)
+
+    def test_view_profile_returns_formatted_target_profile_for_guardian(self) -> None:
+        (
+            session,
+            memory,
+            proposal,
+            state_report,
+            engine,
+            analyst,
+            classifier,
+            routing_log,
+            startup_context,
+            config,
+        ) = self.make_runtime()
+        root = session.session_path.parent.parent
+        user_manager, session_state, token_store, user_log, faculty_monitor = self.make_user_context(root)
+        profile_manager = ProfileManager(root / "profiles")
+        guardian_user = session_state["active_user"]
+        assert guardian_user is not None
+        target = user_manager.create_user("Alice", "user", ["default"], guardian_user.user_id)
+        profile_manager.update_field(target.user_id, "preferred_name", "Alicia")
+
+        result = handle_command(
+            "view-profile Alice",
+            session,
+            memory,
+            proposal,
+            state_report,
+            engine,
+            analyst,
+            classifier,
+            routing_log,
+            startup_context,
+            config,
+            user_manager=user_manager,
+            session_state=session_state,  # type: ignore[arg-type]
+            token_store=token_store,
+            user_log=user_log,
+            faculty_monitor=faculty_monitor,
+            profile_manager=profile_manager,
+        )
+
+        self.assertIn(f"Profile for Alice ({target.user_id}):", result)
+        self.assertIn("Preferred    Alicia", result)
 
     def test_tool_registry_command_lists_registered_tools(self) -> None:
         (

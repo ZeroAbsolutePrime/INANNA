@@ -6,7 +6,14 @@ from pathlib import Path
 from tempfile import TemporaryDirectory
 
 from core.profile import ProfileManager, UserProfile
-from main import needs_onboarding
+from main import (
+    PROFILE_PROTECTED_CLEAR_FIELDS,
+    coerce_profile_field_value,
+    format_profile_output,
+    needs_onboarding,
+    parse_profile_clear_command,
+    parse_profile_edit_command,
+)
 
 
 class ProfileTests(unittest.TestCase):
@@ -193,6 +200,72 @@ class ProfileTests(unittest.TestCase):
 
     def test_needs_onboarding_returns_false_for_none(self) -> None:
         self.assertFalse(needs_onboarding(None))
+
+    def test_format_profile_output_formats_complete_profile(self) -> None:
+        profile = UserProfile(
+            user_id="user_123",
+            preferred_name="ZAERA",
+            pronouns="she/her",
+            languages=["es", "en", "pt"],
+            location_city="Barcelona",
+            location_region="Catalonia",
+            location_country="Spain",
+            communication_style="Direct",
+            formality="Warm",
+            observed_patterns=["Concise"],
+            domains=["Systems"],
+            recurring_topics=["Architecture"],
+            named_projects=["INANNA"],
+            session_trusted_tools=["web_search"],
+            persistent_trusted_tools=["resolve_host"],
+            onboarding_completed=True,
+            onboarding_completed_at="2026-04-19T22:15:00+00:00",
+        )
+
+        rendered = format_profile_output(profile, "Zohar")
+
+        self.assertIn("Your profile", rendered)
+        self.assertIn("Name         Zohar", rendered)
+        self.assertIn("Preferred    ZAERA", rendered)
+        self.assertIn("Languages    es, en, pt", rendered)
+        self.assertIn("Location     Barcelona, Catalonia, Spain", rendered)
+        self.assertIn("Onboarding   completed Apr 19 22:15", rendered)
+
+    def test_format_profile_output_shows_empty_marker_for_blank_fields(self) -> None:
+        rendered = format_profile_output(UserProfile(user_id="user_123"), "Alice")
+
+        self.assertIn("Preferred    —", rendered)
+        self.assertIn("Languages    —", rendered)
+        self.assertIn("Location     —", rendered)
+        self.assertIn("Departments  —", rendered)
+
+    def test_parse_profile_edit_command_extracts_field_and_value(self) -> None:
+        self.assertEqual(
+            parse_profile_edit_command("my-profile edit preferred_name Zohar"),
+            ("preferred_name", "Zohar"),
+        )
+
+    def test_parse_profile_edit_command_returns_none_for_missing_value(self) -> None:
+        self.assertIsNone(parse_profile_edit_command("my-profile edit preferred_name"))
+
+    def test_coerce_profile_field_value_splits_list_fields_on_commas(self) -> None:
+        self.assertEqual(
+            coerce_profile_field_value("languages", "en, es, pt"),
+            ["en", "es", "pt"],
+        )
+
+    def test_parse_profile_clear_command_extracts_field(self) -> None:
+        self.assertEqual(
+            parse_profile_clear_command("my-profile clear pronouns"),
+            "pronouns",
+        )
+
+    def test_protected_clear_fields_include_phase_critical_fields(self) -> None:
+        self.assertTrue(
+            {"user_id", "version", "created_at", "onboarding_completed"}.issubset(
+                PROFILE_PROTECTED_CLEAR_FIELDS
+            )
+        )
 
 
 if __name__ == "__main__":

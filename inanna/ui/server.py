@@ -45,6 +45,9 @@ from core.user_log import UserLog
 from identity import phase_banner
 from main import (
     FACULTIES_CONFIG_PATH,
+    PROFILE_GUARDIAN_ONLY_FIELDS,
+    PROFILE_PROTECTED_CLEAR_FIELDS,
+    PROFILE_READ_ONLY_FIELDS,
     STARTUP_COMMANDS,
     append_audit_event,
     append_user_log_entry,
@@ -83,17 +86,25 @@ from main import (
     create_memory_request_proposal,
     create_realm_context_proposal,
     create_tool_use_proposal,
+    coerce_profile_field_value,
     complete_orchestration_resolution as complete_orchestration_backend_resolution,
+    default_profile_field_value,
     finalize_auto_memory,
+    format_profile_output,
+    format_profile_value,
     format_user_log_report,
     has_admin_surface_access,
+    has_profile_field,
     initialize_realm_context,
     inspect_body_report,
     load_current_realm,
     needs_onboarding,
     parse_user_realm_command,
+    parse_profile_clear_command,
+    parse_profile_edit_command,
     record_completed_turn,
     reset_onboarding_state,
+    resolve_profile_subject,
     run_sentinel_response as run_sentinel_backend_response,
     sentinel_response_mode,
     ensure_guardian_profile_completed,
@@ -881,6 +892,222 @@ class InterfaceServer:
                     "type": "system",
                     "text": await asyncio.to_thread(
                         build_whoami_report, self.active_token, self.user_manager
+                    ),
+                }
+            )
+            await self.broadcast_state()
+        elif command_name == "my-profile":
+            allowed, reason = check_privilege(self.active_user, self.user_manager, "converse")
+            if not allowed or self.active_token is None or self.active_user is None:
+                text = (
+                    f"access > {reason}"
+                    if not allowed
+                    else 'my-profile > No active session. Type "login [name]" to identify.'
+                )
+                await self.broadcast({"type": "system", "text": text})
+                await self.broadcast_state()
+                return
+            if command_args.lower().startswith("edit "):
+                parsed = await asyncio.to_thread(parse_profile_edit_command, raw_cmd)
+                if parsed is None:
+                    await self.broadcast(
+                        {
+                            "type": "system",
+                            "text": "my-profile > usage: my-profile edit [field] [value]",
+                        }
+                    )
+                    await self.broadcast_state()
+                    return
+                field_name, raw_value = parsed
+                if not has_profile_field(field_name):
+                    await self.broadcast(
+                        {"type": "system", "text": f"profile > unknown field: {field_name}"}
+                    )
+                    await self.broadcast_state()
+                    return
+                if field_name in PROFILE_READ_ONLY_FIELDS:
+                    await self.broadcast(
+                        {"type": "system", "text": f"profile > {field_name} is read-only."}
+                    )
+                    await self.broadcast_state()
+                    return
+                if field_name in PROFILE_GUARDIAN_ONLY_FIELDS:
+                    allowed, reason = check_privilege(self.active_user, self.user_manager, "all")
+                    if not allowed:
+                        await self.broadcast({"type": "system", "text": f"access > {reason}"})
+                        await self.broadcast_state()
+                        return
+                user_id, _, profile = await asyncio.to_thread(
+                    resolve_profile_subject,
+                    self.profile_manager,
+                    self.active_user,
+                    self.active_token,
+                )
+                if profile is None:
+                    await self.broadcast(
+                        {
+                            "type": "system",
+                            "text": "my-profile > profile management is unavailable.",
+                        }
+                    )
+                    await self.broadcast_state()
+                    return
+                value = await asyncio.to_thread(coerce_profile_field_value, field_name, raw_value)
+                updated = await asyncio.to_thread(
+                    self.profile_manager.update_field,
+                    user_id,
+                    field_name,
+                    value,
+                )
+                if not updated:
+                    await self.broadcast(
+                        {"type": "system", "text": f"profile > unable to update {field_name}."}
+                    )
+                    await self.broadcast_state()
+                    return
+                sync_profile_grounding(
+                    self.engine,
+                    self.profile_manager,
+                    self.active_user,
+                    self.active_token,
+                )
+                await self.broadcast(
+                    {
+                        "type": "system",
+                        "text": (
+                            f"profile > {field_name} updated to "
+                            f"{format_profile_value(value)}."
+                        ),
+                    }
+                )
+                await self.broadcast_state()
+                return
+            if command_args.lower().startswith("clear "):
+                field_name = await asyncio.to_thread(parse_profile_clear_command, raw_cmd)
+                if field_name is None:
+                    await self.broadcast(
+                        {
+                            "type": "system",
+                            "text": "my-profile > usage: my-profile clear [field]",
+                        }
+                    )
+                    await self.broadcast_state()
+                    return
+                if not has_profile_field(field_name):
+                    await self.broadcast(
+                        {"type": "system", "text": f"profile > unknown field: {field_name}"}
+                    )
+                    await self.broadcast_state()
+                    return
+                if field_name in PROFILE_PROTECTED_CLEAR_FIELDS:
+                    await self.broadcast(
+                        {
+                            "type": "system",
+                            "text": f"profile > {field_name} cannot be cleared.",
+                        }
+                    )
+                    await self.broadcast_state()
+                    return
+                if field_name in PROFILE_GUARDIAN_ONLY_FIELDS:
+                    allowed, reason = check_privilege(self.active_user, self.user_manager, "all")
+                    if not allowed:
+                        await self.broadcast({"type": "system", "text": f"access > {reason}"})
+                        await self.broadcast_state()
+                        return
+                user_id, _, profile = await asyncio.to_thread(
+                    resolve_profile_subject,
+                    self.profile_manager,
+                    self.active_user,
+                    self.active_token,
+                )
+                if profile is None:
+                    await self.broadcast(
+                        {
+                            "type": "system",
+                            "text": "my-profile > profile management is unavailable.",
+                        }
+                    )
+                    await self.broadcast_state()
+                    return
+                cleared = await asyncio.to_thread(
+                    self.profile_manager.update_field,
+                    user_id,
+                    field_name,
+                    default_profile_field_value(field_name),
+                )
+                if not cleared:
+                    await self.broadcast(
+                        {"type": "system", "text": f"profile > unable to clear {field_name}."}
+                    )
+                    await self.broadcast_state()
+                    return
+                sync_profile_grounding(
+                    self.engine,
+                    self.profile_manager,
+                    self.active_user,
+                    self.active_token,
+                )
+                await self.broadcast(
+                    {"type": "system", "text": f"profile > {field_name} cleared."}
+                )
+                await self.broadcast_state()
+                return
+            _, display_name, profile = await asyncio.to_thread(
+                resolve_profile_subject,
+                self.profile_manager,
+                self.active_user,
+                self.active_token,
+            )
+            if profile is None:
+                await self.broadcast(
+                    {"type": "system", "text": "my-profile > profile management is unavailable."}
+                )
+                await self.broadcast_state()
+                return
+            await self.broadcast(
+                {
+                    "type": "profile",
+                    "text": await asyncio.to_thread(
+                        format_profile_output,
+                        profile,
+                        display_name or self.active_user.display_name,
+                    ),
+                }
+            )
+            await self.broadcast_state()
+        elif command_name == "view-profile":
+            allowed, reason = check_privilege(self.active_user, self.user_manager, "all")
+            if not allowed:
+                await self.broadcast({"type": "system", "text": f"access > {reason}"})
+                await self.broadcast_state()
+                return
+            display_name = command_args.strip()
+            if not display_name:
+                await self.broadcast(
+                    {
+                        "type": "system",
+                        "text": "view-profile > usage: view-profile [display_name]",
+                    }
+                )
+                await self.broadcast_state()
+                return
+            target = self.user_manager.get_user_by_display_name(display_name)
+            if target is None:
+                await self.broadcast(
+                    {"type": "system", "text": f"view-profile > No user found: {display_name}"}
+                )
+                await self.broadcast_state()
+                return
+            target_profile = self.profile_manager.ensure_profile_exists(target.user_id)
+            await self.broadcast(
+                {
+                    "type": "profile",
+                    "text": await asyncio.to_thread(
+                        format_profile_output,
+                        target_profile,
+                        target.display_name,
+                        f"Profile for {target.display_name} ({target.user_id}):",
+                        False,
                     ),
                 }
             )

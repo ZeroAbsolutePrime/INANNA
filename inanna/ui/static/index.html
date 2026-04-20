@@ -377,6 +377,7 @@ html,body{
 .msg-row.sentinel{justify-content:flex-start;}
 .msg-row.orchestration{justify-content:flex-start;}
 .msg-row.onboarding{justify-content:flex-start;}
+.msg-row.profile{justify-content:flex-start;}
 .msg-row.guardian{justify-content:flex-start;}
 .msg-row.access  {justify-content:flex-start;}
 
@@ -394,6 +395,7 @@ html,body{
 .msg-row.sentinel  .msg-label{color:var(--danger);}
 .msg-row.orchestration .msg-label{color:var(--vio3);}
 .msg-row.onboarding .msg-label{color:var(--vio3);font-family:var(--serif);}
+.msg-row.profile .msg-label{color:var(--gold2);}
 .msg-row.guardian  .msg-label{color:var(--lap3);}
 
 /* Bubble base */
@@ -517,6 +519,16 @@ html,body{
   font-size:14px;
   line-height:2;
   color:var(--rose5);
+}
+.msg-row.profile .msg-bubble{
+  background:rgba(200,150,42,.05);
+  border:1px solid var(--gold1);
+  border-left:2px solid var(--gold3);
+  font-family:var(--mono);
+  font-size:12px;
+  line-height:2;
+  color:var(--ivory);
+  white-space:pre-wrap;
 }
 .onboarding-skip{
   margin-top:12px;
@@ -1195,6 +1207,7 @@ function handleMsg(m){
   if(t==='sentinel')     {addMessage('sentinel',m.text);return;}
   if(t==='orchestration'){addMessage('orchestration',m.text,{steps:m.steps||[],chain:m.chain||''});return;}
   if(t==='onboarding')   {addMessage('onboarding',m.text,{showSkip:!!m.show_skip});return;}
+  if(t==='profile')      {addMessage('profile',m.text);return;}
   if(t==='nammu')        {addMessage('nammu',m.text);return;}
   if(t==='governance')   {addMessage('governance',m.text);return;}
   if(t==='operator')     {addMessage('operator',m.text);return;}
@@ -1316,6 +1329,9 @@ function addMessage(type,text,meta){
   }else if(type==='onboarding'){
     row.className='msg-row onboarding';
     row.innerHTML=`<div class="msg-label">inanna ∴</div><div class="msg-bubble">${esc(text)}${data.showSkip?`<div class="onboarding-skip"><button onclick="sendSkipOnboarding()">[ skip survey ]</button></div>`:''}</div>`;
+  }else if(type==='profile'){
+    row.className='msg-row profile';
+    row.innerHTML=`<div class="msg-label">profile</div><div class="msg-bubble">${esc(text)}</div>`;
   }else if(type==='guardian'){
     row.className='msg-row guardian';
     row.innerHTML=`<div class="msg-label">guardian</div><div class="msg-bubble">${esc(text)}</div>`;

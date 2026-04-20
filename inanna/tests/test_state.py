@@ -50,6 +50,7 @@ class StateTests(unittest.TestCase):
                     "Rejected proposals: 1",
                     (
                         "Capabilities: respond, users, create-user, login, logout, whoami, "
+                        "my-profile, view-profile, "
                         "reflect, analyse, audit, guardian, faculties, realms, create-realm, "
                         "realm-context, "
                         "switch-user, assign-realm, unassign-realm, my-log, user-log, invite, "

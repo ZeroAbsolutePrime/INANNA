@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import os
 import time
+from dataclasses import MISSING
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -62,6 +63,8 @@ STARTUP_COMMANDS = (
     "login",
     "logout",
     "whoami",
+    "my-profile",
+    "view-profile",
     "reflect",
     "analyse",
     "audit",
@@ -140,6 +143,21 @@ ONBOARDING_STEPS: tuple[dict[str, Any], ...] = (
         "skip_phrases": {"skip", "nothing", "no"},
     },
 )
+PROFILE_EMPTY_VALUE = "\u2014"
+PROFILE_GUARDIAN_ONLY_FIELDS = {"inanna_notes"}
+PROFILE_PROTECTED_CLEAR_FIELDS = {
+    "user_id",
+    "version",
+    "created_at",
+    "last_updated",
+    "onboarding_completed",
+}
+PROFILE_READ_ONLY_FIELDS = {
+    "user_id",
+    "version",
+    "created_at",
+    "last_updated",
+}
 
 
 def get_active_realm_name() -> str:
@@ -557,6 +575,151 @@ def build_profile_status_payload(
         "departments": list(profile.departments),
         "pronouns": profile.pronouns,
     }
+
+
+def has_profile_field(field_name: str) -> bool:
+    return field_name in UserProfile.__dataclass_fields__
+
+
+def default_profile_field_value(field_name: str) -> Any:
+    field = UserProfile.__dataclass_fields__.get(field_name)
+    if field is None:
+        raise KeyError(field_name)
+    if field.default_factory is not MISSING:
+        return field.default_factory()
+    if field.default is not MISSING:
+        return field.default
+    return ""
+
+
+def is_profile_list_field(field_name: str) -> bool:
+    if not has_profile_field(field_name):
+        return False
+    return isinstance(default_profile_field_value(field_name), list)
+
+
+def format_profile_value(value: Any) -> str:
+    if isinstance(value, list):
+        items = [str(item).strip() for item in value if str(item).strip()]
+        return ", ".join(items) if items else PROFILE_EMPTY_VALUE
+    text = str(value).strip() if value is not None else ""
+    return text or PROFILE_EMPTY_VALUE
+
+
+def format_profile_timestamp(value: str) -> str:
+    text = value.strip()
+    if not text:
+        return ""
+    try:
+        return datetime.fromisoformat(text).strftime("%b %d %H:%M")
+    except ValueError:
+        return text
+
+
+def format_profile_location(profile: UserProfile) -> str:
+    parts = [
+        profile.location_city.strip(),
+        profile.location_region.strip(),
+        profile.location_country.strip(),
+    ]
+    joined = ", ".join(part for part in parts if part)
+    return joined or PROFILE_EMPTY_VALUE
+
+
+def format_profile_onboarding(profile: UserProfile) -> str:
+    if not profile.onboarding_completed:
+        return "not completed"
+    completed_at = format_profile_timestamp(profile.onboarding_completed_at)
+    if completed_at:
+        return f"completed {completed_at}"
+    return "completed"
+
+
+def format_profile_output(
+    profile: UserProfile,
+    display_name: str,
+    heading: str = "Your profile",
+    include_actions: bool = True,
+) -> str:
+    lines = [
+        heading,
+        "",
+        f"  {'Name':<12} {format_profile_value(display_name)}",
+        f"  {'Preferred':<12} {format_profile_value(profile.preferred_name)}",
+        f"  {'Pronouns':<12} {format_profile_value(profile.pronouns)}",
+        f"  {'Languages':<12} {format_profile_value(profile.languages)}",
+        f"  {'Location':<12} {format_profile_location(profile)}",
+        "",
+        "  Organization",
+        f"  {'Departments':<12} {format_profile_value(profile.departments)}",
+        f"  {'Groups':<12} {format_profile_value(profile.groups)}",
+        "",
+        "  Communication",
+        f"  {'Style':<12} {format_profile_value(profile.communication_style)}",
+        f"  {'Formality':<12} {format_profile_value(profile.formality)}",
+        f"  {'Patterns':<12} {format_profile_value(profile.observed_patterns)}",
+        "",
+        "  Interests",
+        f"  {'Domains':<12} {format_profile_value(profile.domains)}",
+        f"  {'Topics':<12} {format_profile_value(profile.recurring_topics)}",
+        f"  {'Projects':<12} {format_profile_value(profile.named_projects)}",
+        "",
+        "  Trust",
+        f"  {'Session':<12} {format_profile_value(profile.session_trusted_tools)}",
+        f"  {'Persistent':<12} {format_profile_value(profile.persistent_trusted_tools)}",
+        "",
+        f"  {'Onboarding':<12} {format_profile_onboarding(profile)}",
+    ]
+    if include_actions:
+        lines.extend(
+            [
+                "",
+                'Type "my-profile edit [field] [value]" to update any field.',
+                'Type "my-profile clear [field]" to remove a field.',
+            ]
+        )
+    return "\n".join(lines)
+
+
+def parse_profile_edit_command(command: str) -> tuple[str, str] | None:
+    parts = command.strip().split(maxsplit=3)
+    if len(parts) != 4:
+        return None
+    if parts[0].lower() != "my-profile" or parts[1].lower() != "edit":
+        return None
+    field_name = parts[2].strip()
+    value = parts[3].strip()
+    if not field_name or not value:
+        return None
+    return field_name, value
+
+
+def parse_profile_clear_command(command: str) -> str | None:
+    parts = command.strip().split(maxsplit=2)
+    if len(parts) != 3:
+        return None
+    if parts[0].lower() != "my-profile" or parts[1].lower() != "clear":
+        return None
+    field_name = parts[2].strip()
+    return field_name or None
+
+
+def coerce_profile_field_value(field_name: str, value: str) -> Any:
+    if is_profile_list_field(field_name):
+        return [item.strip() for item in value.split(",") if item.strip()]
+    return value.strip()
+
+
+def resolve_profile_subject(
+    profile_manager: ProfileManager | None,
+    active_user: UserRecord | None,
+    active_token: SessionToken | None,
+) -> tuple[str, str, UserProfile | None]:
+    user_id, display_name = profile_subject(active_user, active_token)
+    if not user_id or profile_manager is None:
+        return user_id, display_name, None
+    profile = profile_manager.ensure_profile_exists(user_id)
+    return user_id, display_name, profile
 
 
 def needs_onboarding(profile: UserProfile | None) -> bool:
@@ -2466,6 +2629,109 @@ def handle_command(
 
     if lowered == "whoami":
         return build_whoami_report(active_token, user_manager)
+
+    if lowered == "my-profile":
+        if user_manager is None or active_token is None or current_user is None:
+            return 'my-profile > No active session. Type "login [name]" to identify.'
+        allowed, reason = check_privilege(current_user, user_manager, "converse")
+        if not allowed:
+            return f"access > {reason}"
+        _, display_name, profile = resolve_profile_subject(
+            profile_manager,
+            current_user,
+            active_token,
+        )
+        if profile is None:
+            return "my-profile > profile management is unavailable."
+        return format_profile_output(profile, display_name or current_user.display_name)
+
+    if lowered.startswith("my-profile edit"):
+        if user_manager is None or active_token is None or current_user is None:
+            return 'my-profile > No active session. Type "login [name]" to identify.'
+        allowed, reason = check_privilege(current_user, user_manager, "converse")
+        if not allowed:
+            return f"access > {reason}"
+        parsed = parse_profile_edit_command(normalized)
+        if parsed is None:
+            return "my-profile > usage: my-profile edit [field] [value]"
+        field_name, raw_value = parsed
+        if not has_profile_field(field_name):
+            return f"profile > unknown field: {field_name}"
+        if field_name in PROFILE_READ_ONLY_FIELDS:
+            return f"profile > {field_name} is read-only."
+        if field_name in PROFILE_GUARDIAN_ONLY_FIELDS:
+            allowed, reason = check_privilege(current_user, user_manager, "all")
+            if not allowed:
+                return f"access > {reason}"
+        user_id, _, profile = resolve_profile_subject(
+            profile_manager,
+            current_user,
+            active_token,
+        )
+        if profile is None or profile_manager is None:
+            return "my-profile > profile management is unavailable."
+        value = coerce_profile_field_value(field_name, raw_value)
+        if not profile_manager.update_field(user_id, field_name, value):
+            return f"profile > unable to update {field_name}."
+        sync_profile_grounding(engine, profile_manager, current_user, active_token)
+        return f"profile > {field_name} updated to {format_profile_value(value)}."
+
+    if lowered.startswith("my-profile clear"):
+        if user_manager is None or active_token is None or current_user is None:
+            return 'my-profile > No active session. Type "login [name]" to identify.'
+        allowed, reason = check_privilege(current_user, user_manager, "converse")
+        if not allowed:
+            return f"access > {reason}"
+        field_name = parse_profile_clear_command(normalized)
+        if field_name is None:
+            return "my-profile > usage: my-profile clear [field]"
+        if not has_profile_field(field_name):
+            return f"profile > unknown field: {field_name}"
+        if field_name in PROFILE_PROTECTED_CLEAR_FIELDS:
+            return f"profile > {field_name} cannot be cleared."
+        if field_name in PROFILE_GUARDIAN_ONLY_FIELDS:
+            allowed, reason = check_privilege(current_user, user_manager, "all")
+            if not allowed:
+                return f"access > {reason}"
+        user_id, _, profile = resolve_profile_subject(
+            profile_manager,
+            current_user,
+            active_token,
+        )
+        if profile is None or profile_manager is None:
+            return "my-profile > profile management is unavailable."
+        if not profile_manager.update_field(
+            user_id,
+            field_name,
+            default_profile_field_value(field_name),
+        ):
+            return f"profile > unable to clear {field_name}."
+        sync_profile_grounding(engine, profile_manager, current_user, active_token)
+        return f"profile > {field_name} cleared."
+
+    if lowered.startswith("view-profile"):
+        if user_manager is None:
+            return "view-profile > user management is unavailable."
+        allowed, reason = check_privilege(current_user, user_manager, "all")
+        if not allowed:
+            return f"access > {reason}"
+        display_name = normalized[len("view-profile") :].strip()
+        if not display_name:
+            return "view-profile > usage: view-profile [display_name]"
+        target = user_manager.get_user_by_display_name(display_name)
+        if target is None:
+            return f"view-profile > No user found: {display_name}"
+        target_profile = (
+            profile_manager.ensure_profile_exists(target.user_id)
+            if profile_manager is not None
+            else UserProfile(user_id=target.user_id)
+        )
+        return format_profile_output(
+            target_profile,
+            target.display_name,
+            heading=f"Profile for {target.display_name} ({target.user_id}):",
+            include_actions=False,
+        )
 
     if lowered == "faculties":
         if faculty_monitor is None:
