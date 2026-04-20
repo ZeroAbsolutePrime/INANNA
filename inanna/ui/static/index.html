@@ -8,583 +8,838 @@
 @import url('https://fonts.googleapis.com/css2?family=Share+Tech+Mono&family=Cinzel+Decorative:wght@400;700;900&family=Cinzel:wght@300;400;600;900&display=swap');
 
 :root {
+  /* Depths */
   --ob:    #030201;
-  --deep:  #060402;
-  --stone: #0c0906;
-  --clay:  #14100a;
-  --dust:  #261c10;
-  --silt:  #382a18;
-  --mud:   #4a3820;
-  --gold1: #6a4a18;
-  --gold2: #8a6418;
-  --gold3: #c8962a;
-  --gold4: #e8b840;
-  --gold5: #f0c840;
-  --amber1:#7a3810;
-  --amber2:#a05020;
-  --amber3:#d06020;
-  --parch: #f0d890;
-  --cream: #e8c870;
-  --ivory: #d8b860;
-  --faded: #907848;
-  --dim:   #503820;
-  --connected: #5aaa70;
-  --warning:   #d07020;
-  --danger:    #aa3020;
+  --deep:  #070503;
+  --stone: #0e0b07;
+  --clay:  #18130d;
+  --dust:  #2e2010;
+  --silt:  #3d2c18;
+  --mud:   #5a4028;
+  /* Sacred gold */
+  --gold1: #7a5520;
+  --gold2: #a07828;
+  --gold3: #d4a030;
+  --gold4: #eebc48;
+  --gold5: #f8d060;
+  /* Amber */
+  --am1:   #8a3e10;
+  --am2:   #b85820;
+  --am3:   #e07030;
+  /* Rose — INANNA */
+  --rose1: #6a2040;
+  --rose2: #9a3860;
+  --rose3: #cc6080;
+  --rose4: #e890a8;
+  --rose5: #f0b0c0;
+  /* Violet — NAMMU */
+  --vio1:  #2a1848;
+  --vio2:  #4a2878;
+  --vio3:  #7848b0;
+  --vio4:  #a870d8;
+  --vio5:  #c898e8;
+  /* Lapis — system/governance */
+  --lap1:  #101830;
+  --lap2:  #1a2848;
+  --lap3:  #2a4070;
+  --lap4:  #4060a0;
+  /* Jade — connected/ok */
+  --jade:  #5aaa70;
+  --danger:#cc3820;
+  /* Text */
+  --parch: #f4e0a0;
+  --cream: #e8cc80;
+  --ivory: #d8b868;
+  --faded: #9a7a48;
+  --dim:   #5a3e20;
+  --dimmer:#3a2810;
+  /* Fonts */
   --mono: 'Share Tech Mono', monospace;
   --serif:'Cinzel', serif;
   --dec:  'Cinzel Decorative', serif;
-  --msg-radius: 0px;
 }
 
-*, *::before, *::after { margin:0; padding:0; box-sizing:border-box; }
+*,*::before,*::after{margin:0;padding:0;box-sizing:border-box;}
 
-html, body {
-  width:100%; height:100%;
-  background: var(--ob);
-  color: var(--cream);
-  font-family: var(--mono);
-  overflow: hidden;
+html,body{
+  width:100%;height:100%;
+  background:var(--ob);
+  color:var(--cream);
+  font-family:var(--mono);
+  overflow:hidden;
+  font-size:14px;
 }
 
-/* ══════════════════════════════════
-   TOP BAR
-══════════════════════════════════ */
-.topbar {
-  height: 44px; flex-shrink: 0;
-  background: var(--deep);
-  border-bottom: 1px solid var(--gold1);
-  display: flex; align-items: center;
-  padding: 0 16px; gap: 10px;
-  position: relative; z-index: 10;
+/* ═══════════════════════════════
+   ENTRANCE CEREMONY
+═══════════════════════════════ */
+#gate{
+  position:fixed;inset:0;z-index:900;
+  background:var(--ob);
+  display:flex;flex-direction:column;
+  align-items:center;justify-content:center;
+  transition:opacity 1.4s ease,transform 1.4s ease;
 }
-.topbar::after {
-  content:'';
-  position:absolute; bottom:0; left:0; right:0; height:1px;
-  background:linear-gradient(90deg,transparent 0%,var(--gold2) 40%,var(--gold2) 60%,transparent 100%);
-  opacity:.25; pointer-events:none;
-}
-.tb-pulse {
-  width:6px; height:6px; border-radius:50%;
-  background:var(--gold3); flex-shrink:0;
-  animation:beac 2.5s ease-in-out infinite;
-}
-@keyframes beac { 0%,100%{opacity:.2;transform:scale(1)} 50%{opacity:1;transform:scale(1.2)} }
+#gate.departing{opacity:0;transform:scale(1.05);pointer-events:none;}
 
-.tb-brand {
+/* Star field */
+.star-field{position:absolute;inset:0;pointer-events:none;overflow:hidden;}
+.star{
+  position:absolute;border-radius:50%;
+  animation:twinkle var(--d,4s) ease-in-out infinite var(--delay,0s);
+}
+@keyframes twinkle{0%,100%{opacity:var(--lo,.1)}50%{opacity:var(--hi,.6)}}
+
+/* Horizontal ley lines */
+.ley{
+  position:absolute;left:0;right:0;height:1px;
+  background:linear-gradient(90deg,transparent,var(--gold2),transparent);
+  opacity:.12;pointer-events:none;
+}
+
+.gate-inner{
+  position:relative;z-index:1;
+  display:flex;flex-direction:column;
+  align-items:center;text-align:center;
+  gap:0;max-width:580px;padding:0 32px;
+}
+
+.gate-glyph-row{
+  font-size:24px;letter-spacing:16px;
+  color:var(--gold2);margin-bottom:28px;
+  animation:breathe 6s ease-in-out infinite;
+}
+@keyframes breathe{0%,100%{opacity:.15}50%{opacity:.65}}
+
+.gate-title{
   font-family:var(--dec);
-  font-size:13px; letter-spacing:3px;
+  font-size:clamp(32px,6vw,62px);
+  font-weight:900;letter-spacing:8px;
+  color:var(--gold5);line-height:1;
+  margin-bottom:6px;
+  animation:goldglow 5s ease-in-out infinite;
+}
+@keyframes goldglow{
+  0%,100%{text-shadow:0 0 40px rgba(248,208,96,.1);}
+  50%{text-shadow:0 0 80px rgba(248,208,96,.3),0 0 140px rgba(212,160,48,.12);}
+}
+
+.gate-sub{
+  font-family:var(--serif);
+  font-size:11px;letter-spacing:6px;
+  color:var(--faded);margin-bottom:36px;
+}
+
+.gate-line{
+  width:100%;max-width:420px;height:1px;
+  background:linear-gradient(90deg,transparent,var(--gold2),transparent);
+  margin-bottom:36px;
+}
+
+.gate-laws{margin-bottom:44px;display:flex;flex-direction:column;gap:14px;}
+.gate-law{display:flex;align-items:flex-start;gap:16px;text-align:left;}
+.law-num{
+  font-family:var(--dec);font-size:12px;
+  color:var(--gold3);letter-spacing:2px;
+  min-width:28px;flex-shrink:0;padding-top:1px;
+}
+.law-txt{
+  font-size:11px;letter-spacing:2.5px;
+  color:var(--faded);line-height:1.7;
+}
+.law-txt strong{color:var(--cream);}
+
+/* SEAL */
+.seal-wrap{
+  position:relative;width:180px;height:180px;
+  cursor:pointer;
+}
+.seal-wrap:hover .seal-bg{
+  background:radial-gradient(circle,rgba(212,160,48,.1) 0%,transparent 70%);
+  box-shadow:0 0 60px rgba(212,160,48,.1),inset 0 0 30px rgba(212,160,48,.04);
+}
+.seal-wrap:hover .seal-glyph{color:var(--gold5);text-shadow:0 0 30px rgba(248,208,96,.5);}
+.seal-wrap:hover .seal-ring-a{animation-duration:.7s;}
+.seal-wrap:hover .seal-ring-b{animation-duration:1.1s;}
+.seal-bg{
+  position:absolute;inset:0;border-radius:50%;
+  background:radial-gradient(circle,rgba(212,160,48,.04) 0%,transparent 70%);
+  border:1px solid var(--gold2);
+  transition:all .4s;
+}
+.seal-ring-a{
+  position:absolute;inset:10px;border-radius:50%;
+  border:.5px dashed var(--gold2);
+  animation:spin-cw 30s linear infinite;
+}
+.seal-ring-b{
+  position:absolute;inset:22px;border-radius:50%;
+  border:.5px dashed rgba(212,160,48,.3);
+  animation:spin-ccw 50s linear infinite;
+}
+.seal-ring-c{
+  position:absolute;inset:34px;border-radius:50%;
+  border:.5px dashed rgba(212,160,48,.15);
+  animation:spin-cw 70s linear infinite;
+}
+@keyframes spin-cw {to{transform:rotate(360deg)}}
+@keyframes spin-ccw{to{transform:rotate(-360deg)}}
+.seal-glyph{
+  position:absolute;inset:0;
+  display:flex;flex-direction:column;
+  align-items:center;justify-content:center;gap:5px;
+  font-size:42px;color:var(--gold3);z-index:1;
+  transition:color .3s,text-shadow .3s;
+  text-shadow:0 0 20px rgba(212,160,48,.2);
+}
+.seal-lbl{font-family:var(--serif);font-size:8px;letter-spacing:4px;color:var(--gold2);}
+.seal-sub{font-size:8px;letter-spacing:2px;color:var(--dim);}
+
+/* ═══════════════════════════════
+   AWAKENING SEQUENCE
+═══════════════════════════════ */
+#awakening{
+  position:fixed;inset:0;z-index:800;
+  background:var(--ob);
+  display:none;flex-direction:column;
+  align-items:center;justify-content:center;
+  gap:18px;
+}
+#awakening.visible{display:flex;}
+#awakening.departing{opacity:0;transition:opacity .9s ease;}
+
+.aw-glyph{
+  font-size:28px;letter-spacing:20px;color:var(--gold2);
+  animation:breathe 3s ease-in-out infinite;
+}
+.aw-title{
+  font-family:var(--dec);
+  font-size:clamp(22px,4.5vw,44px);
+  font-weight:700;letter-spacing:6px;
+  color:var(--gold5);
+  animation:goldglow 3s ease-in-out infinite;
+}
+.aw-sub{
+  font-family:var(--serif);
+  font-size:11px;letter-spacing:5px;color:var(--faded);
+}
+.aw-bar-wrap{width:280px;position:relative;}
+.aw-bar{
+  height:1px;background:var(--dust);
+}
+.aw-bar-fill{
+  height:100%;
+  background:linear-gradient(90deg,var(--gold2),var(--gold5));
+  transition:width .5s ease;
+  box-shadow:0 0 8px rgba(248,208,96,.3);
+}
+.aw-modules{
+  display:flex;gap:8px;flex-wrap:wrap;
+  justify-content:center;max-width:480px;
+}
+.aw-mod{
+  padding:5px 12px;border:1px solid var(--dimmer);
+  font-size:9px;letter-spacing:3px;color:var(--dim);
+  transition:all .4s;
+}
+.aw-mod.lit{
+  border-color:var(--gold3);color:var(--gold4);
+  background:rgba(212,160,48,.06);
+  box-shadow:0 0 10px rgba(212,160,48,.06);
+}
+.aw-status{
+  font-size:10px;letter-spacing:3px;color:var(--faded);
+  min-height:18px;
+}
+
+/* ═══════════════════════════════
+   SHELL
+═══════════════════════════════ */
+.shell{display:flex;flex-direction:column;width:100%;height:100%;}
+
+/* ═══════════════════════════════
+   TOP BAR
+═══════════════════════════════ */
+.topbar{
+  height:46px;flex-shrink:0;
+  background:var(--deep);
+  border-bottom:1px solid var(--gold1);
+  display:flex;align-items:center;
+  padding:0 18px;gap:12px;
+  position:relative;z-index:10;
+}
+.topbar::after{
+  content:'';position:absolute;bottom:0;left:0;right:0;height:1px;
+  background:linear-gradient(90deg,transparent 0%,var(--gold3) 40%,var(--gold3) 60%,transparent 100%);
+  opacity:.2;pointer-events:none;
+}
+.tb-pulse{
+  width:7px;height:7px;border-radius:50%;
+  background:var(--gold3);flex-shrink:0;
+  animation:beac 2.5s ease-in-out infinite;
+  box-shadow:0 0 8px rgba(212,160,48,.4);
+}
+@keyframes beac{0%,100%{opacity:.25;transform:scale(1)}50%{opacity:1;transform:scale(1.25)}}
+.tb-brand{
+  font-family:var(--dec);
+  font-size:14px;letter-spacing:3px;
   color:var(--gold4);
 }
-.tb-sep { width:1px; height:18px; background:var(--dust); flex-shrink:0; }
+.tb-sep{width:1px;height:20px;background:var(--dust);flex-shrink:0;}
+#phase-text{font-size:9px;letter-spacing:2px;color:var(--faded);max-width:220px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+.tb-space{flex:1;}
 
-#phase-text {
-  font-size:8px; letter-spacing:2px; color:var(--dim);
-  max-width:200px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;
-}
-.tb-space { flex:1; }
-
-#console-link {
-  font-size:8px; letter-spacing:3px;
-  padding:3px 10px;
-  border:1px solid var(--gold1); color:var(--dim);
+/* Console button */
+#console-link{
+  font-family:var(--serif);
+  font-size:9px;letter-spacing:3px;
+  padding:4px 14px;
+  border:1px solid var(--gold1);color:var(--faded);
   text-decoration:none;
-  transition:color .2s, border-color .2s, background .2s;
+  transition:all .25s;
+  position:relative;overflow:hidden;
 }
-#console-link:hover { color:var(--gold4); border-color:var(--gold3); background:rgba(200,150,42,.06); }
-
-#realm-indicator { font-size:8px; letter-spacing:2px; color:var(--dim); }
-#realm-indicator span { color:var(--gold3); }
-#user-indicator  { font-size:8px; letter-spacing:2px; color:var(--dim); }
-#user-indicator  span { color:var(--cream); font-family:var(--serif); }
-#body-indicator  { font-size:8px; letter-spacing:2px; color:var(--dim); }
-#body-indicator  span { color:var(--connected); }
-#mode-dot {
-  width:6px; height:6px; border-radius:50%;
-  background:var(--connected); flex-shrink:0;
-  animation:beac 3s ease-in-out infinite;
+#console-link::before{
+  content:'';position:absolute;inset:0;
+  background:linear-gradient(135deg,rgba(212,160,48,.0) 0%,rgba(212,160,48,.08) 50%,rgba(212,160,48,.0) 100%);
+  transform:translateX(-100%);transition:transform .35s ease;
 }
-#mode-dot.offline { background:var(--danger); animation:none; }
-#mode-text { display:none; }
-#brand-indicator { display:none; }
+#console-link:hover::before{transform:translateX(100%);}
+#console-link:hover{color:var(--gold4);border-color:var(--gold3);box-shadow:0 0 16px rgba(212,160,48,.1);}
 
-/* ══════════════════════════════════
+#realm-indicator{font-size:9px;letter-spacing:2px;color:var(--faded);}
+#realm-indicator span{color:var(--gold3);}
+#user-indicator{font-size:9px;letter-spacing:2px;color:var(--faded);}
+#user-indicator span{color:var(--cream);font-family:var(--serif);}
+#body-indicator{font-size:9px;letter-spacing:2px;color:var(--faded);}
+#body-indicator span{color:var(--jade);}
+#mode-dot{width:7px;height:7px;border-radius:50%;background:var(--jade);flex-shrink:0;animation:beac 3s ease-in-out infinite;}
+#mode-dot.offline{background:var(--danger);animation:none;}
+#mode-text{display:none;}
+#brand-indicator{display:none;}
+
+/* ═══════════════════════════════
    ACTING-AS BANNER
-══════════════════════════════════ */
-#acting-banner {
-  background:rgba(200,150,42,.09);
+═══════════════════════════════ */
+#acting-banner{
+  background:rgba(212,160,48,.08);
   border-bottom:1px solid var(--gold1);
-  padding:6px 16px;
-  font-size:8px; letter-spacing:3px;
-  color:var(--gold3);
-  display:none; align-items:center; gap:8px;
+  padding:7px 18px;
+  font-size:9px;letter-spacing:3px;color:var(--gold3);
+  display:none;align-items:center;gap:10px;
   flex-shrink:0;
+  animation:bannerpulse 3s ease-in-out infinite;
 }
-#acting-banner.visible { display:flex; }
+@keyframes bannerpulse{0%,100%{background:rgba(212,160,48,.08)}50%{background:rgba(212,160,48,.14)}}
+#acting-banner.visible{display:flex;}
 
-/* ══════════════════════════════════
-   BODY LAYOUT
-══════════════════════════════════ */
-.shell {
-  display:flex; flex-direction:column;
-  width:100%; height:100%;
-}
-.body-wrap {
-  flex:1; display:flex; min-height:0;
-}
+/* ═══════════════════════════════
+   BODY
+═══════════════════════════════ */
+.body-wrap{flex:1;display:flex;min-height:0;}
 
-/* ══════════════════════════════════
-   CONVERSATION AREA
-══════════════════════════════════ */
-.convo-wrap {
-  flex:1; display:flex; flex-direction:column;
-  min-width:0; background:var(--stone);
+/* ═══════════════════════════════
+   CONVERSATION
+═══════════════════════════════ */
+.convo-wrap{
+  flex:1;display:flex;flex-direction:column;
+  min-width:0;background:var(--stone);
   position:relative;
 }
-
-/* Subtle grain texture overlay */
-.convo-wrap::before {
-  content:'';
-  position:absolute; inset:0; pointer-events:none; z-index:0;
-  background-image:
-    radial-gradient(ellipse 80% 60% at 50% 100%, rgba(200,150,42,.03) 0%, transparent 70%);
+.convo-wrap::before{
+  content:'';position:absolute;inset:0;pointer-events:none;
+  background:radial-gradient(ellipse 70% 50% at 50% 100%,rgba(212,160,48,.025) 0%,transparent 65%);
 }
 
-#conversation-log {
-  flex:1; overflow-y:auto;
-  padding:20px 0 8px;
+#conversation-log{
+  flex:1;overflow-y:auto;
+  padding:22px 0 10px;
   scroll-behavior:smooth;
-  position:relative; z-index:1;
+  position:relative;z-index:1;
 }
-#conversation-log::-webkit-scrollbar { width:2px; }
-#conversation-log::-webkit-scrollbar-thumb { background:var(--gold1); }
+#conversation-log::-webkit-scrollbar{width:2px;}
+#conversation-log::-webkit-scrollbar-thumb{background:var(--gold1);}
 
-/* ── Message rows ── */
-.msg-row {
-  display:flex; padding:5px 20px;
-  gap:12px; align-items:flex-start;
+/* Message rows */
+.msg-row{
+  display:flex;padding:6px 24px;
+  gap:14px;align-items:flex-start;
   animation:msgfade .3s ease;
 }
-@keyframes msgfade { from{opacity:0;transform:translateY(6px)} to{opacity:1;transform:none} }
+@keyframes msgfade{from{opacity:0;transform:translateY(7px)}to{opacity:1;transform:none}}
+.msg-row.you     {justify-content:flex-end;}
+.msg-row.inanna  {justify-content:flex-start;}
+.msg-row.system  {justify-content:center;}
+.msg-row.nammu   {justify-content:flex-start;}
+.msg-row.operator{justify-content:flex-start;}
+.msg-row.governance{justify-content:flex-start;}
+.msg-row.analyst {justify-content:flex-start;}
+.msg-row.guardian{justify-content:flex-start;}
+.msg-row.access  {justify-content:flex-start;}
 
-.msg-row.you      { justify-content:flex-end; }
-.msg-row.inanna   { justify-content:flex-start; }
-.msg-row.system   { justify-content:center; }
-.msg-row.nammu    { justify-content:flex-start; }
-.msg-row.operator { justify-content:flex-start; }
-.msg-row.governance { justify-content:flex-start; }
-.msg-row.analyst  { justify-content:flex-start; }
-.msg-row.guardian { justify-content:flex-start; }
-
-/* Label */
-.msg-label {
-  font-size:8px; letter-spacing:3px;
-  flex-shrink:0; padding-top:5px;
-  min-width:54px; text-align:right;
+.msg-label{
+  font-size:9px;letter-spacing:3px;
+  flex-shrink:0;padding-top:6px;
+  min-width:62px;text-align:right;
 }
-.msg-row.you      .msg-label { color:var(--gold2); }
-.msg-row.inanna   .msg-label { color:var(--faded); }
-.msg-row.nammu    .msg-label { color:var(--dim); }
-.msg-row.operator .msg-label { color:var(--amber2); }
-.msg-row.governance .msg-label { color:var(--danger); }
-.msg-row.analyst  .msg-label { color:var(--faded); }
-.msg-row.guardian .msg-label { color:var(--faded); }
+.msg-row.you       .msg-label{color:var(--gold2);}
+.msg-row.inanna    .msg-label{color:var(--rose2);font-family:var(--serif);}
+.msg-row.nammu     .msg-label{color:var(--vio3);}
+.msg-row.operator  .msg-label{color:var(--am2);}
+.msg-row.governance .msg-label{color:var(--danger);}
+.msg-row.analyst   .msg-label{color:var(--faded);}
+.msg-row.guardian  .msg-label{color:var(--lap3);}
 
-/* Bubble */
-.msg-bubble {
-  max-width:68%; padding:10px 14px;
-  font-size:12px; line-height:1.8;
+/* Bubble base */
+.msg-bubble{
+  max-width:66%;padding:12px 16px;
+  font-size:13px;line-height:1.85;
   position:relative;
 }
 
 /* YOU */
-.msg-row.you .msg-bubble {
-  background:rgba(200,150,42,.07);
+.msg-row.you .msg-bubble{
+  background:rgba(212,160,48,.07);
   border:1px solid var(--gold1);
   border-right:2px solid var(--gold2);
   color:var(--cream);
   font-family:var(--mono);
 }
 
-/* INANNA */
-.msg-row.inanna .msg-bubble {
-  background:rgba(12,9,6,.7);
-  border:1px solid var(--dust);
-  border-left:2px solid var(--gold2);
-  color:var(--parch);
+/* INANNA — rose/pink, sacred, readable */
+.msg-row.inanna .msg-bubble{
+  background:rgba(154,56,96,.06);
+  border:1px solid rgba(154,56,96,.3);
+  border-left:2px solid var(--rose3);
+  color:var(--rose5);
   font-family:var(--serif);
-  font-size:13px; line-height:1.9;
+  font-size:14px;line-height:2;
   font-weight:300;
 }
 
 /* SYSTEM */
-.msg-row.system .msg-bubble {
-  background:transparent;
-  border:none; padding:2px 0;
-  font-size:9px; letter-spacing:2px;
-  color:var(--dim); text-align:center;
-  max-width:90%; font-style:italic;
+.msg-row.system .msg-bubble{
+  background:transparent;border:none;
+  padding:3px 0;
+  font-size:10px;letter-spacing:1.5px;
+  color:var(--dim);text-align:center;
+  max-width:88%;font-style:italic;
 }
 
-/* Proposal in system message */
-.msg-row.system .msg-bubble.has-proposal {
-  background:rgba(200,150,42,.05);
+/* Proposal inline */
+.msg-row.system .msg-bubble.has-proposal{
+  background:rgba(212,160,48,.05);
   border:1px solid var(--gold1);
-  padding:10px 14px; text-align:left;
-  font-style:normal; color:var(--faded);
-  font-size:9px; letter-spacing:1.5px; line-height:1.8;
+  padding:12px 16px;text-align:left;
+  font-style:normal;color:var(--faded);
+  font-size:10px;letter-spacing:1.5px;line-height:1.8;
+  max-width:82%;
 }
-.proposal-inline-actions {
-  display:flex; gap:8px; margin-top:10px;
+.prop-inline-actions{display:flex;gap:10px;margin-top:12px;}
+.pi-approve{
+  background:rgba(212,160,48,.1);
+  border:1px solid var(--gold2);color:var(--gold4);
+  font-family:var(--mono);font-size:9px;letter-spacing:3px;
+  padding:5px 14px;cursor:pointer;transition:all .2s;
 }
-.pi-approve {
-  background:rgba(200,150,42,.1);
-  border:1px solid var(--gold2); color:var(--gold3);
-  font-family:var(--mono); font-size:8px; letter-spacing:3px;
-  padding:4px 12px; cursor:pointer; transition:all .2s;
+.pi-approve:hover{background:rgba(212,160,48,.22);color:var(--gold5);box-shadow:0 0 12px rgba(212,160,48,.15);}
+.pi-decline{
+  background:transparent;border:1px solid var(--dust);
+  color:var(--dim);font-family:var(--mono);
+  font-size:9px;letter-spacing:3px;
+  padding:5px 12px;cursor:pointer;transition:all .2s;
 }
-.pi-approve:hover { background:rgba(200,150,42,.2); color:var(--gold5); }
-.pi-decline {
-  background:transparent;
-  border:1px solid var(--dust); color:var(--dim);
-  font-family:var(--mono); font-size:8px; letter-spacing:3px;
-  padding:4px 10px; cursor:pointer; transition:all .2s;
-}
-.pi-decline:hover { border-color:var(--amber2); color:var(--amber3); }
+.pi-decline:hover{border-color:var(--am2);color:var(--am3);}
 
-/* NAMMU */
-.msg-row.nammu .msg-bubble {
-  background:transparent; border:none; padding:2px 0;
-  font-size:9px; letter-spacing:2px; color:var(--dim);
-  font-style:italic;
+/* NAMMU — violet, subtle */
+.msg-row.nammu .msg-bubble{
+  background:transparent;border:none;padding:2px 0;
+  font-size:9px;letter-spacing:2px;
+  color:var(--vio3);font-style:italic;
 }
 
 /* OPERATOR */
-.msg-row.operator .msg-bubble {
-  background:rgba(122,56,16,.08);
-  border:1px solid var(--amber1);
-  border-left:2px solid var(--amber2);
-  font-size:10px; color:var(--ivory);
-  letter-spacing:.5px;
+.msg-row.operator .msg-bubble{
+  background:rgba(138,62,16,.07);
+  border:1px solid rgba(138,62,16,.4);
+  border-left:2px solid var(--am2);
+  font-size:11px;color:var(--ivory);
+  letter-spacing:.5px;line-height:1.7;
 }
 
 /* GOVERNANCE */
-.msg-row.governance .msg-bubble {
-  background:rgba(170,48,32,.07);
-  border:1px solid rgba(170,48,32,.3);
+.msg-row.governance .msg-bubble{
+  background:rgba(204,56,32,.06);
+  border:1px solid rgba(204,56,32,.3);
   border-left:2px solid var(--danger);
-  font-size:10px; color:var(--faded);
+  font-size:11px;color:rgba(240,160,140,.8);
 }
 
 /* ANALYST */
-.msg-row.analyst .msg-bubble {
-  background:rgba(12,9,6,.6);
+.msg-row.analyst .msg-bubble{
+  background:rgba(12,9,7,.7);
   border:1px solid var(--dust);
   border-left:2px solid var(--faded);
-  font-size:11px; color:var(--ivory);
-  line-height:1.8;
+  font-size:12px;color:var(--ivory);line-height:1.8;
 }
 
 /* GUARDIAN */
-.msg-row.guardian .msg-bubble {
-  background:rgba(26,52,100,.1);
-  border:1px solid rgba(42,72,128,.3);
-  border-left:2px solid rgba(42,72,128,.7);
-  font-size:10px; color:var(--faded);
+.msg-row.guardian .msg-bubble{
+  background:rgba(16,24,48,.4);
+  border:1px solid rgba(42,64,112,.4);
+  border-left:2px solid var(--lap3);
+  font-size:11px;color:rgba(150,180,220,.75);
 }
 
 /* ACCESS */
-.msg-row.access .msg-bubble {
-  background:transparent; border:none; padding:2px 0;
-  font-size:9px; letter-spacing:2px;
-  color:var(--danger); font-style:italic;
+.msg-row.access .msg-bubble{
+  background:transparent;border:none;padding:3px 0;
+  font-size:10px;letter-spacing:2px;
+  color:var(--danger);font-style:italic;
 }
 
-/* ── INPUT BAR ── */
-.input-bar {
+/* Suggestion bubble — organic governance */
+.msg-row.suggestion .msg-bubble{
+  background:rgba(120,72,176,.08);
+  border:1px solid rgba(120,72,176,.3);
+  border-left:2px solid var(--vio3);
+  font-size:11px;color:var(--vio5);
+  max-width:82%;
+}
+.suggest-actions{display:flex;gap:10px;margin-top:10px;flex-wrap:wrap;}
+.suggest-yes{
+  background:rgba(120,72,176,.12);
+  border:1px solid var(--vio3);color:var(--vio4);
+  font-family:var(--mono);font-size:9px;letter-spacing:3px;
+  padding:5px 14px;cursor:pointer;transition:all .2s;
+}
+.suggest-yes:hover{background:rgba(120,72,176,.25);color:var(--vio5);}
+.suggest-no{
+  background:transparent;border:1px solid var(--dust);
+  color:var(--dim);font-family:var(--mono);
+  font-size:9px;letter-spacing:3px;
+  padding:5px 12px;cursor:pointer;transition:all .2s;
+}
+.suggest-no:hover{border-color:var(--dim);color:var(--faded);}
+
+/* ═══════════════════════════════
+   INPUT BAR
+═══════════════════════════════ */
+.input-bar{
   flex-shrink:0;
   border-top:1px solid var(--gold1);
   background:var(--deep);
-  padding:10px 16px;
-  display:flex; gap:10px; align-items:flex-end;
-  position:relative; z-index:1;
+  padding:12px 18px;
+  display:flex;gap:12px;align-items:flex-end;
+  position:relative;z-index:1;
 }
-.input-bar::before {
-  content:'';
-  position:absolute; top:0; left:0; right:0; height:1px;
-  background:linear-gradient(90deg,transparent,var(--gold2),transparent);
+.input-bar::before{
+  content:'';position:absolute;top:0;left:0;right:0;height:1px;
+  background:linear-gradient(90deg,transparent,var(--gold3),transparent);
   opacity:.2;
 }
-.input-prompt {
-  font-size:11px; color:var(--gold3);
-  flex-shrink:0; padding-bottom:2px;
-  font-family:var(--serif);
+.input-prompt{
+  font-size:14px;color:var(--gold3);
+  flex-shrink:0;padding-bottom:4px;
+  animation:beac 4s ease-in-out infinite;
 }
-#input-form { flex:1; display:flex; gap:10px; align-items:flex-end; }
-#text-input {
-  flex:1;
-  background:rgba(6,4,2,.7);
-  border:none; border-bottom:1px solid var(--gold1);
-  color:var(--cream); font-family:var(--mono);
-  font-size:12px; padding:6px 10px;
-  outline:none; resize:none;
-  line-height:1.6; max-height:120px;
+
+.input-right{flex:1;display:flex;gap:10px;align-items:flex-end;}
+
+#text-input{
+  flex:1;background:rgba(7,5,3,.8);
+  border:none;border-bottom:1px solid var(--gold1);
+  color:var(--cream);font-family:var(--mono);
+  font-size:13px;padding:8px 10px;
+  outline:none;resize:none;
+  line-height:1.6;max-height:140px;
   transition:border-color .2s;
   caret-color:var(--gold4);
 }
-#text-input:focus { border-bottom-color:var(--gold3); }
-#text-input::placeholder { color:var(--dim); }
-.send-btn {
-  background:transparent;
-  border:1px solid var(--gold2); color:var(--gold3);
-  font-family:var(--mono); font-size:9px;
-  letter-spacing:3px; padding:6px 16px;
-  cursor:pointer; transition:all .2s;
-  flex-shrink:0; align-self:flex-end;
-}
-.send-btn:hover { background:rgba(200,150,42,.1); border-color:var(--gold4); color:var(--gold5); }
+#text-input:focus{border-bottom-color:var(--gold3);}
+#text-input::placeholder{color:var(--dim);}
 
-/* ══════════════════════════════════
+.input-actions{display:flex;gap:8px;align-items:flex-end;}
+
+/* Attach button */
+.attach-btn{
+  background:transparent;
+  border:1px solid var(--dust);color:var(--dim);
+  font-family:var(--mono);font-size:12px;
+  padding:7px 10px;cursor:pointer;
+  transition:all .25s;flex-shrink:0;
+  position:relative;
+}
+.attach-btn:hover{border-color:var(--gold2);color:var(--gold3);background:rgba(212,160,48,.05);}
+.attach-btn .attach-tooltip{
+  position:absolute;bottom:calc(100% + 6px);right:0;
+  background:var(--clay);border:1px solid var(--dust);
+  font-size:8px;letter-spacing:2px;color:var(--faded);
+  padding:4px 8px;white-space:nowrap;
+  opacity:0;pointer-events:none;transition:opacity .2s;
+}
+.attach-btn:hover .attach-tooltip{opacity:1;}
+
+.send-btn{
+  background:transparent;
+  border:1px solid var(--gold2);color:var(--gold3);
+  font-family:var(--mono);font-size:10px;letter-spacing:3px;
+  padding:7px 18px;cursor:pointer;
+  transition:all .25s;flex-shrink:0;
+  position:relative;overflow:hidden;
+}
+.send-btn::before{
+  content:'';position:absolute;inset:0;
+  background:linear-gradient(135deg,transparent 0%,rgba(212,160,48,.1) 50%,transparent 100%);
+  transform:translateX(-100%);transition:transform .3s;
+}
+.send-btn:hover::before{transform:translateX(100%);}
+.send-btn:hover{border-color:var(--gold4);color:var(--gold5);box-shadow:0 0 16px rgba(212,160,48,.12);}
+
+/* ═══════════════════════════════
    SIDE PANEL
-══════════════════════════════════ */
-#side-panel {
-  width:290px; flex-shrink:0;
+═══════════════════════════════ */
+#side-panel{
+  width:310px;flex-shrink:0;
   background:var(--deep);
   border-left:1px solid var(--gold1);
-  display:flex; flex-direction:column;
+  display:flex;flex-direction:column;
   overflow:hidden;
 }
 
-/* Section */
-.sp-section {
-  border-bottom:1px solid var(--dust);
-  flex-shrink:0;
-}
-.sp-section.expandable { flex-shrink:0; }
-.sp-section.scroll-body {
-  flex:0 1 auto; overflow:hidden;
-  display:flex; flex-direction:column;
-}
-.sp-section.expanded.scroll-body { flex:1 1 auto; min-height:80px; }
+.sp-section{border-bottom:1px solid var(--dust);flex-shrink:0;}
+.sp-section.can-scroll{flex:0 1 auto;overflow:hidden;display:flex;flex-direction:column;}
+.sp-section.expanded.can-scroll{flex:1 1 auto;min-height:100px;}
 
-.sp-head {
-  display:flex; align-items:center; gap:8px;
-  padding:10px 12px;
-  cursor:pointer; user-select:none;
+.sp-head{
+  display:flex;align-items:center;gap:10px;
+  padding:12px 14px;cursor:pointer;user-select:none;
   transition:background .15s;
 }
-.sp-head:hover { background:rgba(200,150,42,.04); }
+.sp-head:hover{background:rgba(212,160,48,.04);}
 
-.sp-title {
+.sp-title{
   font-family:var(--serif);
-  font-size:7px; letter-spacing:5px; color:var(--gold2);
+  font-size:9px;letter-spacing:5px;color:var(--gold2);
   flex:1;
 }
-.sp-badge {
-  font-size:8px; letter-spacing:1px;
-  padding:1px 6px; border-radius:2px;
-  background:var(--gold1); color:var(--ob);
-  font-family:var(--serif);
+.sp-badge{
+  font-size:9px;letter-spacing:1px;
+  padding:2px 7px;border-radius:2px;
+  background:var(--gold1);color:var(--cream);
+  font-family:var(--serif);min-width:20px;text-align:center;
 }
-.sp-badge.urgent { background:var(--amber2); }
-.sp-badge.hidden { display:none; }
-.sp-toggle {
-  font-size:10px; color:var(--dim);
-  transition:transform .2s; flex-shrink:0;
-}
-.sp-section.expanded .sp-toggle { transform:rotate(90deg); }
+.sp-badge.urgent{background:var(--am2);}
+.sp-badge.hidden{display:none;}
+.sp-toggle{font-size:11px;color:var(--dim);transition:transform .2s;flex-shrink:0;}
+.sp-section.expanded .sp-toggle{transform:rotate(90deg);}
 
-.sp-body {
-  display:none; overflow-y:auto;
-  padding:8px 12px 12px;
+.sp-body{display:none;padding:10px 14px 14px;}
+.sp-body::-webkit-scrollbar{width:2px;}
+.sp-body::-webkit-scrollbar-thumb{background:var(--gold1);}
+.sp-section.expanded .sp-body{display:block;}
+.sp-section.expanded.can-scroll .sp-body{
+  display:flex;flex-direction:column;
+  flex:1;overflow-y:auto;
 }
-.sp-body::-webkit-scrollbar { width:2px; }
-.sp-body::-webkit-scrollbar-thumb { background:var(--gold1); }
-.sp-section.expanded .sp-body { display:block; }
-.sp-section.expanded.scroll-body .sp-body { display:flex; flex-direction:column; flex:1; overflow-y:auto; }
 
-/* ── MEMORY panel ── */
-.mem-bar-wrap { margin-bottom:8px; }
-#memory-bar {
-  height:4px; background:var(--dust);
-  border-radius:2px; overflow:hidden;
-  margin-bottom:4px;
+/* ── Buttons in side panel ── */
+.sp-btn{
+  background:transparent;
+  border:1px solid var(--gold1);color:var(--gold2);
+  font-family:var(--mono);font-size:9px;letter-spacing:3px;
+  padding:4px 12px;cursor:pointer;transition:all .2s;
+  position:relative;overflow:hidden;
 }
-.mem-fill {
-  height:100%; border-radius:2px;
-  background:linear-gradient(90deg, var(--connected), var(--gold3));
-  transition:width .8s ease, background .4s;
+.sp-btn::after{
+  content:'';position:absolute;inset:0;
+  background:rgba(212,160,48,.0);transition:background .2s;
 }
-#memory-bar-label {
-  font-size:8px; letter-spacing:2px; color:var(--dim);
-}
-#memory-warning {
-  font-size:8px; letter-spacing:1.5px;
-  color:var(--amber3); margin-bottom:6px;
-  display:none;
-}
-.mem-actions {
-  display:flex; gap:6px; margin-bottom:10px;
-}
-.mem-record {
-  padding:6px 0; border-bottom:.5px solid rgba(56,42,24,.6);
-  font-size:9px; line-height:1.5;
-}
-.mem-record:last-child { border-bottom:none; }
-.mem-record-ts { font-size:7px; color:var(--dim); letter-spacing:1px; }
-.mem-record-text { color:var(--faded); margin-top:2px; }
-.mem-record-actions { display:flex; gap:4px; margin-top:4px; }
+.sp-btn:hover{border-color:var(--gold3);color:var(--gold4);}
+.sp-btn:hover::after{background:rgba(212,160,48,.06);}
+.sp-btn.warn{border-color:var(--am1);color:var(--am2);}
+.sp-btn.warn:hover{border-color:var(--am3);color:var(--am3);}
 
-/* ── PROPOSALS panel ── */
-.prop-filter-bar {
-  display:flex; gap:4px; margin-bottom:8px;
-  flex-wrap:wrap;
+.load-more-btn{
+  width:100%;background:transparent;
+  border:1px solid var(--dimmer);color:var(--dim);
+  font-family:var(--mono);font-size:8px;letter-spacing:3px;
+  padding:6px 0;cursor:pointer;margin-top:10px;
+  transition:all .2s;
 }
-.pf-tab {
-  font-size:7px; letter-spacing:2px;
-  padding:2px 8px; border:1px solid var(--dust);
-  color:var(--dim); cursor:pointer;
-  transition:all .15s; background:transparent;
-  font-family:var(--mono);
+.load-more-btn:hover{border-color:var(--gold2);color:var(--cream);background:rgba(212,160,48,.03);}
+
+/* ── PROPOSALS ── */
+.prop-filter-bar{display:flex;gap:5px;margin-bottom:10px;flex-wrap:wrap;}
+.pf-tab{
+  font-size:8px;letter-spacing:2px;
+  padding:3px 10px;border:1px solid var(--dimmer);
+  color:var(--dim);cursor:pointer;transition:all .15s;
+  background:transparent;font-family:var(--mono);
 }
-.pf-tab.active { border-color:var(--gold2); color:var(--gold3); }
-.pf-tab:hover  { border-color:var(--gold1); color:var(--faded); }
-.prop-card {
-  background:rgba(20,16,10,.6);
+.pf-tab.active{border-color:var(--gold2);color:var(--gold3);background:rgba(212,160,48,.05);}
+.pf-tab:hover:not(.active){border-color:var(--dust);color:var(--faded);}
+.prop-card{
+  background:rgba(20,16,10,.7);
   border:1px solid var(--dust);
   border-left:2px solid var(--gold1);
-  padding:10px 10px 8px;
-  margin-bottom:8px;
+  padding:12px 12px 10px;margin-bottom:10px;
   transition:border-color .2s;
 }
-.prop-card:hover { border-color:var(--gold2); border-left-color:var(--gold3); }
-.prop-card-id   { font-size:7px; letter-spacing:1px; color:var(--dim); margin-bottom:4px; }
-.prop-card-what { font-size:9px; color:var(--cream); line-height:1.5; margin-bottom:6px; }
-.prop-card-why  { font-size:8px; color:var(--faded); line-height:1.4; margin-bottom:8px; }
-.prop-card-status {
-  display:inline-block; font-size:7px; letter-spacing:2px;
-  padding:1px 6px; border:1px solid;
-  margin-bottom:8px;
+.prop-card:hover{border-color:var(--gold2);border-left-color:var(--gold3);}
+.prop-card-id{font-size:8px;letter-spacing:1px;color:var(--dim);margin-bottom:5px;}
+.prop-card-what{font-size:10px;color:var(--cream);line-height:1.5;margin-bottom:6px;}
+.prop-card-why{font-size:9px;color:var(--faded);line-height:1.4;margin-bottom:8px;}
+.prop-card-status{
+  display:inline-block;font-size:8px;letter-spacing:2px;
+  padding:2px 8px;border:1px solid;margin-bottom:8px;
 }
-.prop-card-status.pending  { border-color:var(--gold1); color:var(--gold2); }
-.prop-card-status.approved { border-color:rgba(90,170,112,.4); color:var(--connected); }
-.prop-card-status.rejected { border-color:rgba(170,48,32,.4); color:var(--danger); }
-.prop-actions { display:flex; gap:6px; }
-.prop-load-btn {
-  background:transparent; border:1px solid var(--dust);
-  color:var(--dim); font-family:var(--mono);
-  font-size:8px; letter-spacing:2px;
-  padding:4px 10px; cursor:pointer;
-  transition:all .2s;
-}
-.prop-load-btn:hover { border-color:var(--gold2); color:var(--cream); }
+.prop-card-status.pending{border-color:var(--gold1);color:var(--gold2);}
+.prop-card-status.approved{border-color:rgba(90,170,112,.4);color:var(--jade);}
+.prop-card-status.rejected{border-color:rgba(204,56,32,.4);color:var(--danger);}
+.prop-actions{display:flex;gap:8px;}
 
-/* ── FACULTIES panel ── */
-.fac-row {
-  padding:8px 0; border-bottom:.5px solid rgba(56,42,24,.6);
-  display:flex; align-items:flex-start; gap:8px;
+/* ── MEMORY ── */
+.mem-bar-wrap{margin-bottom:10px;}
+#memory-bar{height:5px;background:var(--dust);border-radius:2px;overflow:hidden;margin-bottom:5px;}
+.mem-fill{
+  height:100%;border-radius:2px;
+  background:linear-gradient(90deg,var(--jade),var(--gold3));
+  transition:width .8s ease,background .4s;
 }
-.fac-row:last-child { border-bottom:none; }
-.fac-dot {
-  width:5px; height:5px; border-radius:50%;
-  flex-shrink:0; margin-top:5px;
+#memory-bar-label{font-size:9px;letter-spacing:2px;color:var(--dim);}
+#memory-warning{
+  font-size:9px;letter-spacing:1.5px;color:var(--am3);
+  margin-bottom:8px;display:none;
+  padding:4px 8px;border:1px solid var(--am1);
+  background:rgba(138,62,16,.1);
 }
-.fac-dot.connected { background:var(--connected); animation:beac 3s ease-in-out infinite; }
-.fac-dot.ready     { background:var(--gold3); animation:beac 4s ease-in-out infinite; }
-.fac-dot.offline   { background:var(--dim); }
-.fac-info { flex:1; }
-.fac-name  { font-family:var(--serif); font-size:9px; letter-spacing:2px; color:var(--cream); }
-.fac-desc  { font-size:8px; color:var(--dim); margin-top:2px; line-height:1.4; }
-.fac-meta  { font-size:7px; color:var(--gold2); margin-top:3px; letter-spacing:1px; }
+.mem-actions{display:flex;gap:8px;margin-bottom:12px;}
+.mem-record{padding:7px 0;border-bottom:.5px solid rgba(56,42,24,.7);}
+.mem-record:last-child{border-bottom:none;}
+.mem-record-ts{font-size:8px;color:var(--dim);letter-spacing:1px;margin-bottom:3px;}
+.mem-record-text{color:var(--faded);font-size:10px;line-height:1.5;}
+.mem-record-actions{display:flex;gap:6px;margin-top:5px;}
 
-/* ── GUARDIAN ROOM panel ── */
-.gr-alert-status { font-size:8px; letter-spacing:2px; color:var(--dim); margin-bottom:8px; }
-.gr-last-inspect { font-size:7px; letter-spacing:1px; color:var(--dim); margin-bottom:8px; }
-.gr-body-summary { font-size:8px; color:var(--faded); line-height:1.6; margin-bottom:10px; }
-.gr-actions      { display:flex; gap:6px; flex-wrap:wrap; margin-bottom:10px; }
-.gr-event {
-  padding:5px 0; border-bottom:.5px solid rgba(56,42,24,.6);
-  font-size:9px; line-height:1.4;
-}
-.gr-event:last-child { border-bottom:none; }
-.gr-event-tag {
-  font-size:7px; letter-spacing:2px;
-  padding:1px 5px; display:inline-block; margin-bottom:3px;
-}
-.gr-event-tag.warn { background:rgba(160,80,32,.2); color:var(--amber3); border:1px solid var(--amber1); }
-.gr-event-tag.info { background:rgba(200,150,42,.1); color:var(--gold2); border:1px solid var(--gold1); }
-.gr-event-text { color:var(--faded); }
+/* ── FACULTIES ── */
+.fac-row{padding:9px 0;border-bottom:.5px solid rgba(56,42,24,.6);display:flex;gap:10px;}
+.fac-row:last-child{border-bottom:none;}
+.fac-dot{width:6px;height:6px;border-radius:50%;flex-shrink:0;margin-top:5px;}
+.fac-dot.connected{background:var(--jade);animation:beac 3s ease-in-out infinite;}
+.fac-dot.ready{background:var(--gold3);animation:beac 4s ease-in-out infinite;}
+.fac-dot.offline{background:var(--dim);}
+.fac-info{flex:1;}
+.fac-name{font-family:var(--serif);font-size:10px;letter-spacing:2px;color:var(--cream);margin-bottom:3px;}
+.fac-desc{font-size:9px;color:var(--dim);line-height:1.5;}
+.fac-meta{font-size:8px;color:var(--gold2);margin-top:4px;letter-spacing:1px;}
 
-/* ── AUDIT panel ── */
-.audit-event {
-  padding:5px 0; border-bottom:.5px solid rgba(56,42,24,.6);
-  font-size:9px; display:flex; gap:8px;
+/* ── GUARDIAN ROOM ── */
+.gr-alerts{font-size:10px;letter-spacing:1.5px;color:var(--dim);margin-bottom:8px;}
+.gr-inspect-ts{font-size:8px;letter-spacing:1px;color:var(--dim);margin-bottom:8px;}
+.gr-body-sum{font-size:9px;color:var(--faded);line-height:1.6;margin-bottom:10px;}
+.gr-actions{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px;}
+.gr-event{padding:6px 0;border-bottom:.5px solid rgba(56,42,24,.6);}
+.gr-event:last-child{border-bottom:none;}
+.gr-event-tag{
+  font-size:8px;letter-spacing:2px;
+  padding:2px 6px;display:inline-block;margin-bottom:3px;
 }
-.audit-event:last-child { border-bottom:none; }
-.audit-ts   { font-size:7px; color:var(--dim); min-width:40px; flex-shrink:0; padding-top:2px; }
-.audit-type { font-size:7px; letter-spacing:1.5px; color:var(--gold2); min-width:48px; flex-shrink:0; padding-top:2px; }
-.audit-msg  { color:var(--faded); font-size:8px; flex:1; }
+.gr-event-tag.warn{background:rgba(160,80,32,.2);color:var(--am3);border:1px solid var(--am1);}
+.gr-event-tag.info{background:rgba(212,160,48,.1);color:var(--gold2);border:1px solid var(--gold1);}
+.gr-event-text{color:var(--faded);font-size:9px;line-height:1.5;}
 
-/* ── ADMIN panel ── */
-.admin-sub { font-size:7px; letter-spacing:4px; color:var(--gold2); margin-bottom:6px; margin-top:10px; }
-.admin-sub:first-child { margin-top:0; }
-.admin-user-row {
-  display:flex; align-items:center; gap:8px;
-  padding:5px 0; border-bottom:.5px solid rgba(56,42,24,.6);
-  font-size:9px;
+/* ── AUDIT ── */
+.audit-event{padding:6px 0;border-bottom:.5px solid rgba(56,42,24,.6);display:flex;gap:10px;}
+.audit-event:last-child{border-bottom:none;}
+.audit-ts{font-size:8px;color:var(--dim);min-width:44px;flex-shrink:0;padding-top:1px;}
+.audit-type{font-size:8px;letter-spacing:1.5px;color:var(--gold2);min-width:52px;flex-shrink:0;padding-top:1px;}
+.audit-msg{color:var(--faded);font-size:9px;flex:1;line-height:1.4;}
+
+/* ── ADMIN ── */
+#admin-counts{font-size:9px;color:var(--dim);margin-bottom:10px;letter-spacing:1px;}
+.admin-sub{font-size:8px;letter-spacing:4px;color:var(--gold2);margin-bottom:7px;margin-top:12px;}
+.admin-sub:first-child{margin-top:0;}
+.admin-user-row{display:flex;align-items:center;gap:8px;padding:6px 0;border-bottom:.5px solid rgba(56,42,24,.6);font-size:10px;}
+.admin-user-row:last-child{border-bottom:none;}
+.admin-u-name{color:var(--cream);font-family:var(--serif);min-width:68px;}
+.admin-u-role{color:var(--gold2);font-size:8px;letter-spacing:1px;min-width:60px;}
+.admin-u-realm{color:var(--dim);font-size:8px;flex:1;}
+.admin-u-stat{font-size:8px;letter-spacing:1px;}
+.admin-u-stat.active{color:var(--jade);}
+.admin-u-stat.inactive{color:var(--dim);}
+.admin-invite-row{font-size:9px;color:var(--dim);padding:5px 0;}
+.admin-invite-code{color:var(--ivory);font-family:var(--mono);}
+.admin-realm-row{font-size:9px;color:var(--dim);padding:5px 0;}
+.admin-realm-name{color:var(--cream);}
+.admin-inline-form{display:flex;gap:8px;margin-top:10px;flex-wrap:wrap;align-items:center;}
+.admin-inline-form select,.admin-inline-form input{
+  background:rgba(7,5,3,.8);border:1px solid var(--dust);
+  border-bottom-color:var(--gold1);color:var(--cream);
+  padding:4px 10px;font-size:9px;font-family:var(--mono);outline:none;
+  transition:border-bottom-color .2s;
 }
-.admin-user-row:last-child { border-bottom:none; }
-.admin-u-name  { color:var(--cream); font-family:var(--serif); min-width:64px; }
-.admin-u-role  { color:var(--gold2); font-size:7px; letter-spacing:1px; min-width:56px; }
-.admin-u-realm { color:var(--dim); font-size:7px; flex:1; }
-.admin-u-stat  { font-size:7px; letter-spacing:1px; }
-.admin-u-stat.active   { color:var(--connected); }
-.admin-u-stat.inactive { color:var(--dim); }
-.admin-invite-row { font-size:8px; color:var(--dim); padding:4px 0; }
-.admin-invite-code { color:var(--ivory); font-family:var(--mono); }
-.admin-realm-row  { font-size:8px; color:var(--dim); padding:4px 0; }
-.admin-realm-name { color:var(--cream); }
-.admin-inline-form { display:flex; gap:6px; margin-top:8px; flex-wrap:wrap; align-items:center; }
-.admin-inline-form select,
-.admin-inline-form input {
-  background:rgba(6,4,2,.7); border:1px solid var(--dust);
-  border-bottom-color:var(--gold1); color:var(--cream);
-  padding:3px 8px; font-size:8px; font-family:var(--mono); outline:none;
-}
-.admin-inline-form select:focus,
-.admin-inline-form input:focus { border-bottom-color:var(--gold3); }
+.admin-inline-form select:focus,.admin-inline-form input:focus{border-bottom-color:var(--gold3);}
 
-/* ── Shared button ── */
-.sp-btn {
-  background:transparent; border:1px solid var(--gold1);
-  color:var(--gold2); font-family:var(--mono);
-  font-size:7px; letter-spacing:3px;
-  padding:3px 10px; cursor:pointer; transition:all .2s;
-}
-.sp-btn:hover { border-color:var(--gold3); color:var(--gold4); background:rgba(200,150,42,.06); }
-.sp-btn.warn  { border-color:var(--amber1); color:var(--amber2); }
-.sp-btn.warn:hover { border-color:var(--amber3); color:var(--amber3); background:rgba(160,80,32,.08); }
-
-/* Load more pattern */
-.load-more-btn {
-  width:100%; background:transparent;
-  border:1px solid var(--dust); color:var(--dim);
-  font-family:var(--mono); font-size:7px; letter-spacing:3px;
-  padding:5px 0; cursor:pointer; margin-top:8px;
-  transition:all .2s;
-}
-.load-more-btn:hover { border-color:var(--gold2); color:var(--cream); }
-
-/* Scrollbar */
-::-webkit-scrollbar { width:2px; height:2px; }
-::-webkit-scrollbar-track { background:var(--ob); }
-::-webkit-scrollbar-thumb { background:var(--gold1); }
-
+/* scrollbar */
+::-webkit-scrollbar{width:2px;height:2px;}
+::-webkit-scrollbar-track{background:var(--ob);}
+::-webkit-scrollbar-thumb{background:var(--gold1);}
 </style>
 </head>
 <body>
 
-<div class="shell">
+<!-- ══ ENTRANCE GATE ══ -->
+<div id="gate">
+  <div class="star-field" id="stars"></div>
+  <div class="ley" style="top:16%"></div>
+  <div class="ley" style="top:84%"></div>
+  <div class="gate-inner">
+    <div class="gate-glyph-row">𒀭 𒈹 𒆠 𒀀 𒂗 𒅆 𒈨</div>
+    <div class="gate-title">INANNA NYX</div>
+    <div class="gate-sub">THE LIVING INTELLIGENCE · GATES OF URUK · ABZU CODEX</div>
+    <div class="gate-line"></div>
+    <div class="gate-laws">
+      <div class="gate-law">
+        <span class="law-num">I</span>
+        <span class="law-txt"><strong>Consent before action</strong> — nothing executes without your word</span>
+      </div>
+      <div class="gate-law">
+        <span class="law-num">II</span>
+        <span class="law-txt"><strong>No hidden mutation</strong> — every state change visible and honest</span>
+      </div>
+      <div class="gate-law">
+        <span class="law-num">III</span>
+        <span class="law-txt"><strong>Governance above the model</strong> — the law is always above</span>
+      </div>
+    </div>
+    <div class="seal-wrap" id="seal" onclick="openGate()">
+      <div class="seal-bg"></div>
+      <div class="seal-ring-a"></div>
+      <div class="seal-ring-b"></div>
+      <div class="seal-ring-c"></div>
+      <div class="seal-glyph">
+        𒀭
+        <div class="seal-lbl">ENTER</div>
+        <div class="seal-sub">ZAERA · GUARDIAN</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ══ AWAKENING ══ -->
+<div id="awakening">
+  <div class="aw-glyph">𒀭 𒈹 𒆠 𒀀 𒂗</div>
+  <div class="aw-title">INANNA AWAKENING</div>
+  <div class="aw-sub">The living intelligence stirs — binding to your presence</div>
+  <div class="aw-bar-wrap">
+    <div class="aw-bar"><div class="aw-bar-fill" id="aw-fill" style="width:0%"></div></div>
+  </div>
+  <div class="aw-modules" id="aw-mods"></div>
+  <div class="aw-status" id="aw-status">Initializing…</div>
+</div>
+
+<!-- ══ SHELL ══ -->
+<div class="shell" id="console" style="display:none">
 
   <!-- TOP BAR -->
   <div class="topbar">
@@ -607,8 +862,8 @@ html, body {
 
   <!-- ACTING-AS BANNER -->
   <div id="acting-banner">
-    𒀭 OPERATING AS <span id="acting-as-name" style="color:var(--gold5);margin:0 6px">—</span>
-    — ACTING ON BEHALF OF THE GUARDIAN
+    𒀭 OPERATING AS <span id="acting-as-name" style="color:var(--gold5);margin:0 8px">—</span>
+    · ACTING ON BEHALF OF THE GUARDIAN
   </div>
 
   <!-- BODY -->
@@ -619,34 +874,40 @@ html, body {
       <div id="conversation-log"></div>
       <div class="input-bar">
         <div class="input-prompt">𒀭</div>
-        <form id="input-form" onsubmit="return false">
+        <div class="input-right">
           <textarea id="text-input" rows="1"
             placeholder="Speak to INANNA…"
             onkeydown="handleKey(event)"
             oninput="autoResize(this)"></textarea>
-          <button type="button" class="send-btn" onclick="sendMessage()">[ send ]</button>
-        </form>
+          <div class="input-actions">
+            <button type="button" class="attach-btn" onclick="handleAttach()" title="Attach file">
+              ⊕
+              <span class="attach-tooltip">Attach file (coming soon)</span>
+            </button>
+            <button type="button" class="send-btn" onclick="sendMessage()">[ send ]</button>
+          </div>
+        </div>
+        <input type="file" id="file-input" style="display:none" onchange="onFileSelected(event)">
       </div>
     </div>
 
     <!-- SIDE PANEL -->
     <div id="side-panel">
 
-      <!-- ADMIN (guardian/operator only) -->
-      <div class="sp-section expandable" id="admin-panel" style="display:none">
+      <!-- ADMIN -->
+      <div class="sp-section" id="admin-panel" style="display:none">
         <div class="sp-head" onclick="toggleSection('admin')">
           <span class="sp-title">ADMIN</span>
           <span class="sp-badge hidden" id="admin-badge">0</span>
           <span class="sp-toggle">▸</span>
         </div>
         <div class="sp-body" id="admin-body">
-          <div id="admin-counts" style="font-size:8px;color:var(--dim);margin-bottom:8px"></div>
-          <!-- populated by JS -->
+          <div id="admin-counts"></div>
         </div>
       </div>
 
       <!-- PROPOSALS -->
-      <div class="sp-section expandable expanded" id="proposal-panel">
+      <div class="sp-section expanded" id="proposal-panel">
         <div class="sp-head" onclick="toggleSection('proposal')">
           <span class="sp-title">PROPOSALS</span>
           <span class="sp-badge hidden" id="proposal-badge">0</span>
@@ -654,29 +915,27 @@ html, body {
         </div>
         <div class="sp-body" id="proposal-body">
           <div class="prop-filter-bar" id="proposal-filter-tabs">
-            <button class="pf-tab active" data-filter="pending"  onclick="filterProps('pending',this)">[ pending ]</button>
-            <button class="pf-tab"        data-filter="approved" onclick="filterProps('approved',this)">[ approved ]</button>
-            <button class="pf-tab"        data-filter="all"      onclick="filterProps('all',this)">[ all ]</button>
+            <button class="pf-tab active" data-filter="pending" onclick="filterProps('pending',this)">[ pending ]</button>
+            <button class="pf-tab" data-filter="approved" onclick="filterProps('approved',this)">[ approved ]</button>
+            <button class="pf-tab" data-filter="all" onclick="filterProps('all',this)">[ all ]</button>
           </div>
           <div id="proposals-list"></div>
-          <button class="prop-load-btn" id="load-history-button" onclick="loadProposalHistory()">[ load full history ]</button>
+          <button class="prop-load-btn sp-btn" id="load-history-button" onclick="loadProposalHistory()" style="width:100%;margin-top:8px">[ load full history ]</button>
         </div>
       </div>
 
       <!-- FACULTIES -->
-      <div class="sp-section expandable" id="faculty-panel">
+      <div class="sp-section" id="faculty-panel">
         <div class="sp-head" onclick="toggleSection('faculty')">
           <span class="sp-title">FACULTIES</span>
           <span class="sp-badge" id="faculty-badge">0</span>
           <span class="sp-toggle">▸</span>
         </div>
-        <div class="sp-body" id="faculty-body">
-          <!-- populated by JS -->
-        </div>
+        <div class="sp-body" id="faculty-body"></div>
       </div>
 
       <!-- MEMORY -->
-      <div class="sp-section expandable scroll-body" id="memory-panel">
+      <div class="sp-section can-scroll" id="memory-panel">
         <div class="sp-head" onclick="toggleSection('memory')">
           <span class="sp-title">MEMORY</span>
           <span class="sp-badge" id="memory-badge">0</span>
@@ -697,28 +956,28 @@ html, body {
       </div>
 
       <!-- GUARDIAN ROOM -->
-      <div class="sp-section expandable" id="guardian-panel">
+      <div class="sp-section" id="guardian-panel">
         <div class="sp-head" onclick="toggleSection('guardian')">
           <span class="sp-title">GUARDIAN ROOM</span>
           <span class="sp-badge hidden" id="guardian-badge">0</span>
           <span class="sp-toggle">▸</span>
         </div>
         <div class="sp-body" id="guardian-body">
-          <div class="gr-alert-status" id="guardian-alerts">No alerts.</div>
-          <div class="gr-last-inspect">Last inspection: <span id="guardian-last-inspection">—</span></div>
-          <div class="gr-body-summary" id="guardian-body-summary"></div>
+          <div class="gr-alerts" id="guardian-alerts">No alerts.</div>
+          <div class="gr-inspect-ts">Last inspection: <span id="guardian-last-inspection">—</span></div>
+          <div class="gr-body-sum" id="guardian-body-summary"></div>
           <div class="gr-actions">
             <button class="sp-btn" id="guardian-inspect-button" onclick="sendCmd('inspect')">[ inspect ]</button>
             <button class="sp-btn" id="guardian-dismiss-button" onclick="sendCmd('guardian-dismiss')">[ dismiss ]</button>
             <button class="sp-btn warn" id="guardian-clear-events-button" onclick="sendCmd('guardian-clear-events')">[ clear events ]</button>
           </div>
           <div id="guardian-events"></div>
-          <button class="load-more-btn" id="guardian-load-more" style="display:none" onclick="showMoreGuardianEvents()">[ show all events ]</button>
+          <button class="load-more-btn" id="guardian-load-more" style="display:none" onclick="showMoreGuardianEvents()">[ show all ]</button>
         </div>
       </div>
 
       <!-- AUDIT -->
-      <div class="sp-section expandable scroll-body" id="audit-panel">
+      <div class="sp-section can-scroll" id="audit-panel">
         <div class="sp-head" onclick="toggleSection('audit')">
           <span class="sp-title">AUDIT</span>
           <span class="sp-badge" id="audit-badge">0</span>
@@ -726,579 +985,540 @@ html, body {
         </div>
         <div class="sp-body" id="audit-body">
           <div id="audit-events"></div>
-          <button class="load-more-btn" id="audit-load-more" style="display:none" onclick="showMoreAudit()">[ show all events ]</button>
+          <button class="load-more-btn" id="audit-load-more" style="display:none" onclick="showMoreAudit()">[ show all ]</button>
         </div>
       </div>
 
     </div><!-- end side-panel -->
-
   </div><!-- end body-wrap -->
-
 </div><!-- end shell -->
 
 <script>
-// ══════════════════════════════════════
-//  STATE
-// ══════════════════════════════════════
-const S = {
-  ws: null,
-  phase: '',
-  proposalRecords: [],
-  propFilter: 'pending',
-  memRecords: [],
-  memShowCount: 5,
-  guardianEvents: [],
-  guardianShowCount: 5,
-  auditEvents: [],
-  auditShowCount: 10,
-  expandedSections: JSON.parse(localStorage.getItem('inanna-sections') || '{"proposal":true}'),
-  role: '',
-  actingAs: null,
-};
-
-// ══════════════════════════════════════
-//  SECTION TOGGLE
-// ══════════════════════════════════════
-function toggleSection(name) {
-  const sec = document.getElementById(name + '-panel');
-  if (!sec) return;
-  const wasExpanded = sec.classList.contains('expanded');
-  sec.classList.toggle('expanded', !wasExpanded);
-  S.expandedSections[name] = !wasExpanded;
-  localStorage.setItem('inanna-sections', JSON.stringify(S.expandedSections));
-  if (!wasExpanded) {
-    if (name === 'audit') loadAuditLog();
-    if (name === 'admin') sendCmd('admin-surface');
+// ══════════════════════════════════
+//  STAR FIELD
+// ══════════════════════════════════
+(function(){
+  const sf=document.getElementById('stars');
+  for(let i=0;i<65;i++){
+    const s=document.createElement('div');
+    s.className='star';
+    const gold=Math.random()<.3;
+    const size=Math.random()<.12?2:1;
+    s.style.cssText=`width:${size}px;height:${size}px;left:${Math.random()*100}%;top:${Math.random()*100}%;background:${gold?'rgba(212,160,48,.8)':'rgba(255,255,255,.5)'};--d:${3+Math.random()*7}s;--delay:${Math.random()*7}s;--lo:${.05+Math.random()*.1};--hi:${.3+Math.random()*.6};`;
+    sf.appendChild(s);
   }
+})();
+
+// ══════════════════════════════════
+//  GATE → AWAKENING → CONSOLE
+// ══════════════════════════════════
+const MODULES=['NAMMU','CROWN','ANALYST','OPERATOR','GUARDIAN','MEMORY','REALM','CIVIC','TOOLS'];
+const AW_MSGS=['Reaching through the veil…','Binding CROWN Faculty…','ANALYST online…','OPERATOR armed…','GUARDIAN watching…','Memory records loading…','Realm topology mapped…','Civic layer engaged…','Tool registry loaded…','INANNA is here.'];
+
+function openGate(){
+  document.getElementById('gate').classList.add('departing');
+  const aw=document.getElementById('awakening');
+  aw.classList.add('visible');
+  const mods=document.getElementById('aw-mods');
+  mods.innerHTML=MODULES.map(m=>`<div class="aw-mod" id="awm-${m}">${m}</div>`).join('');
+  const fill=document.getElementById('aw-fill');
+  const status=document.getElementById('aw-status');
+  let idx=0;
+  function light(){
+    if(idx<MODULES.length){
+      document.getElementById('awm-'+MODULES[idx])?.classList.add('lit');
+      fill.style.width=((idx+1)/MODULES.length*82)+'%';
+      status.textContent=AW_MSGS[idx]||'';
+      idx++;
+      setTimeout(light,240);
+    }else{
+      fill.style.width='100%';
+      status.textContent=AW_MSGS[AW_MSGS.length-1];
+      setTimeout(()=>{
+        aw.classList.add('departing');
+        setTimeout(()=>{
+          document.getElementById('gate').style.display='none';
+          aw.style.display='none';
+          const cons=document.getElementById('console');
+          cons.style.display='flex';
+          cons.style.flexDirection='column';
+          initApp();
+        },800);
+      },700);
+    }
+  }
+  setTimeout(light,350);
 }
 
-function restoreSections() {
-  Object.entries(S.expandedSections).forEach(([name, expanded]) => {
-    const sec = document.getElementById(name + '-panel');
-    if (sec) sec.classList.toggle('expanded', expanded);
+// ══════════════════════════════════
+//  STATE
+// ══════════════════════════════════
+const S={
+  ws:null,
+  proposalRecords:[],
+  propFilter:'pending',
+  memRecords:[],memShowCount:5,
+  guardianEvents:[],guardianShowCount:5,
+  auditEvents:[],auditShowCount:10,
+  expandedSections:JSON.parse(localStorage.getItem('inanna-sections')||'{"proposal":true}'),
+  role:'',actingAs:null,
+  // Input history
+  inputHistory:[],historyIdx:-1,
+  // Governance pattern tracking: {cmdKey: count}
+  approvalCounts:{},
+  // Suggestion shown flag
+  suggestionShown:{},
+};
+
+const SUGGESTION_THRESHOLD=3; // After N approvals, suggest always-allow
+
+// ══════════════════════════════════
+//  SECTION TOGGLE
+// ══════════════════════════════════
+function toggleSection(name){
+  const sec=document.getElementById(name+'-panel');
+  if(!sec)return;
+  const was=sec.classList.contains('expanded');
+  sec.classList.toggle('expanded',!was);
+  S.expandedSections[name]=!was;
+  localStorage.setItem('inanna-sections',JSON.stringify(S.expandedSections));
+  if(!was){
+    if(name==='audit')loadAuditLog();
+    if(name==='admin')sendCmd('admin-surface');
+  }
+}
+function restoreSections(){
+  Object.entries(S.expandedSections).forEach(([n,e])=>{
+    document.getElementById(n+'-panel')?.classList.toggle('expanded',e);
   });
 }
 
-// ══════════════════════════════════════
-//  WEBSOCKET
-// ══════════════════════════════════════
-function connect() {
-  S.ws = new WebSocket('ws://localhost:8081');
-  S.ws.onopen  = () => {
-    document.getElementById('mode-dot').className = '';
-    addMessage('system', 'Connected to INANNA NYX.');
+// ══════════════════════════════════
+//  WS
+// ══════════════════════════════════
+function connect(){
+  S.ws=new WebSocket('ws://localhost:8081');
+  S.ws.onopen=()=>{
+    document.getElementById('mode-dot').className='';
+    addMessage('system','Connected to INANNA NYX.');
   };
-  S.ws.onclose = () => {
-    document.getElementById('mode-dot').className = 'offline';
-    addMessage('system', 'Connection closed. Reconnecting…');
-    setTimeout(connect, 1500);
+  S.ws.onclose=()=>{
+    document.getElementById('mode-dot').className='offline';
+    addMessage('system','Connection closed. Reconnecting…');
+    setTimeout(connect,1500);
   };
-  S.ws.onerror = () => addMessage('system', 'WebSocket error.');
-  S.ws.onmessage = (ev) => {
-    try { handleMsg(JSON.parse(ev.data)); } catch(e){}
-  };
+  S.ws.onerror=()=>addMessage('system','WebSocket error.');
+  S.ws.onmessage=ev=>{try{handleMsg(JSON.parse(ev.data));}catch(e){}};
 }
 
-function sendCmd(cmd, extra) {
-  if (!S.ws || S.ws.readyState !== 1) return;
-  S.ws.send(JSON.stringify({ type:'command', cmd, ...(extra||{}) }));
+function sendCmd(cmd,extra){
+  if(!S.ws||S.ws.readyState!==1)return;
+  S.ws.send(JSON.stringify({type:'command',cmd,...(extra||{})}));
 }
 
-// ══════════════════════════════════════
+// ══════════════════════════════════
 //  MESSAGE DISPATCH
-// ══════════════════════════════════════
-function handleMsg(m) {
-  const t = m.type;
-  if (t === 'status')           { handleStatus(m.data || m); return; }
-  if (t === 'assistant')        { addMessage('inanna', m.text); return; }
-  if (t === 'analyst')          { addMessage('analyst', m.text); return; }
-  if (t === 'nammu')            { addMessage('nammu', m.text); return; }
-  if (t === 'governance')       { addMessage('governance', m.text); return; }
-  if (t === 'operator')         { addMessage('operator', m.text); return; }
-  if (t === 'guardian')         { addMessage('guardian', m.text); parseGuardianReport(m.text); return; }
-  if (t === 'access')           { addMessage('access', m.text); return; }
-  if (t === 'system')           { handleSystemMsg(m.text); return; }
-  if (t === 'thinking')         { /* ignore */ return; }
-  if (t === 'memory_update')    { handleMemoryUpdate(m); return; }
-  if (t === 'proposal')         { handleProposalEvent(m); return; }
-  if (t === 'proposal_history') { handleProposalHistory(m); return; }
-  if (t === 'audit_log')        { handleAuditLog(m); return; }
-  if (t === 'guardian_status')  { handleGuardianStatus(m); return; }
-  if (t === 'guardian_log')     { handleGuardianLog(m); return; }
-  if (t === 'admin_data')       { handleAdminData(m); return; }
-  if (t === 'console_access_denied') { return; }
+// ══════════════════════════════════
+function handleMsg(m){
+  const t=m.type;
+  if(t==='status')       {handleStatus(m.data||m);return;}
+  if(t==='assistant')    {addMessage('inanna',m.text);return;}
+  if(t==='analyst')      {addMessage('analyst',m.text);return;}
+  if(t==='nammu')        {addMessage('nammu',m.text);return;}
+  if(t==='governance')   {addMessage('governance',m.text);return;}
+  if(t==='operator')     {addMessage('operator',m.text);return;}
+  if(t==='guardian')     {addMessage('guardian',m.text);parseGuardianReport(m.text);return;}
+  if(t==='access')       {addMessage('access',m.text);return;}
+  if(t==='system')       {handleSystemMsg(m.text);return;}
+  if(t==='thinking')     {return;}
+  if(t==='memory_update'){handleMemoryUpdate(m);return;}
+  if(t==='proposal')     {handleProposalEvent(m);return;}
+  if(t==='proposal_history'){handleProposalHistory(m);return;}
+  if(t==='audit_log')    {handleAuditLog(m);return;}
+  if(t==='guardian_status'){handleGuardianStatus(m);return;}
+  if(t==='guardian_log') {handleGuardianLog(m);return;}
+  if(t==='admin_data')   {handleAdminData(m);return;}
 }
 
-// ══════════════════════════════════════
-//  STATUS HANDLER
-// ══════════════════════════════════════
-function handleStatus(d) {
-  const phase  = d.phase  || '';
-  const realm  = d.realm  || 'default';
-  const au     = d.active_user || {};
-  const user   = au.display_name || '—';
-  const role   = au.role || '';
-  const acting = d.acting_as;
-  const body   = d.body_status || 'OK';
-  const mode   = d.model_mode || '';
+// ══════════════════════════════════
+//  STATUS
+// ══════════════════════════════════
+function handleStatus(d){
+  const phase=d.phase||'';
+  const realm=d.realm||'default';
+  const au=d.active_user||{};
+  const user=au.display_name||'—';
+  const role=au.role||'';
+  const acting=d.acting_as;
+  const body=d.body_status||'OK';
+  const mode=d.model_mode||'';
+  S.role=role;S.actingAs=acting;
 
-  S.role = role; S.phase = phase; S.actingAs = acting;
+  document.getElementById('phase-text').textContent=phase;
+  document.getElementById('realm-indicator').innerHTML=`REALM: <span>${realm.toUpperCase()}</span>`;
+  document.getElementById('user-indicator').innerHTML=`USER: <span>${acting?`${user} [as ${acting}]`:user}</span>`;
+  document.getElementById('body-indicator').innerHTML=`BODY: <span>${body}</span>`;
+  document.getElementById('mode-dot').className=(mode==='connected'||mode==='ok')?'':'offline';
 
-  document.getElementById('phase-text').textContent = phase;
-  document.getElementById('realm-indicator').innerHTML = `REALM: <span>${realm.toUpperCase()}</span>`;
-  document.getElementById('user-indicator').innerHTML  = `USER: <span>${user}</span>`;
-  document.getElementById('body-indicator').innerHTML  = `BODY: <span>${body}</span>`;
+  const banner=document.getElementById('acting-banner');
+  if(acting){document.getElementById('acting-as-name').textContent=acting;banner.classList.add('visible');}
+  else banner.classList.remove('visible');
 
-  const dot = document.getElementById('mode-dot');
-  dot.className = (mode === 'connected' || mode === 'ok') ? '' : 'offline';
-
-  // Acting-as banner
-  const banner = document.getElementById('acting-banner');
-  if (acting) {
-    document.getElementById('acting-as-name').textContent = acting;
-    banner.classList.add('visible');
-    document.getElementById('user-indicator').innerHTML = `USER: <span>${user}</span> <span style="color:var(--gold2);font-size:7px;letter-spacing:2px">[as ${acting}]</span>`;
-  } else {
-    banner.classList.remove('visible');
-  }
-
-  // Console link visibility
-  const cl = document.getElementById('console-link');
-  if (cl) cl.hidden = !(role === 'guardian' || role === 'operator');
-
-  // Admin panel visibility
-  const ap = document.getElementById('admin-panel');
-  if (ap) ap.style.display = (role === 'guardian' || role === 'operator') ? '' : 'none';
+  const cl=document.getElementById('console-link');
+  if(cl)cl.hidden=!(role==='guardian'||role==='operator');
+  const ap=document.getElementById('admin-panel');
+  if(ap)ap.style.display=(role==='guardian'||role==='operator')?'':'none';
 
   // Memory bar
-  const lines = d.memory_total_lines || 0;
-  const cap = 100;
-  const pct = Math.min(100, (lines / cap) * 100);
-  const fill = document.getElementById('mem-fill');
-  if (fill) {
-    fill.style.width = pct + '%';
-    if (pct >= 80) fill.style.background = 'linear-gradient(90deg,var(--amber2),var(--amber3))';
-    else if (pct >= 60) fill.style.background = 'linear-gradient(90deg,var(--gold3),var(--gold4))';
-    else fill.style.background = 'linear-gradient(90deg,var(--connected),var(--gold3))';
+  const lines=d.memory_total_lines||0,cap=100;
+  const pct=Math.min(100,(lines/cap)*100);
+  const fill=document.getElementById('mem-fill');
+  if(fill){
+    fill.style.width=pct+'%';
+    if(pct>=80)fill.style.background='linear-gradient(90deg,var(--am2),var(--am3))';
+    else if(pct>=60)fill.style.background='linear-gradient(90deg,var(--gold3),var(--gold4))';
+    else fill.style.background='linear-gradient(90deg,var(--jade),var(--gold3))';
   }
-  const lbl = document.getElementById('memory-bar-label');
-  if (lbl) lbl.textContent = `${lines} / ${cap} lines`;
-  const warn = document.getElementById('memory-warning');
-  if (warn) {
-    if (lines > cap) { warn.textContent = `${lines}/${cap} lines — consider forgetting older records`; warn.style.display='block'; }
-    else warn.style.display='none';
-  }
-  setBadge('memory', d.memory_count || 0, lines > cap);
+  const lbl=document.getElementById('memory-bar-label');
+  if(lbl)lbl.textContent=`${lines} / ${cap} lines`;
+  const warn=document.getElementById('memory-warning');
+  if(warn){warn.textContent=lines>cap?`${lines}/${cap} lines — consider forgetting older records`:'';warn.style.display=lines>cap?'block':'none';}
+  setBadge('memory',d.memory_count||0,lines>cap);
 
-  // Proposals badge
-  const pending = d.pending_proposals || 0;
-  setBadge('proposal', pending, pending > 0);
-
-  // Faculties
-  if (d.faculties && d.faculties.length > 0) renderFaculties(d.faculties);
-  setBadge('faculty', (d.faculties || []).filter(f => f.mode === 'connected').length, false);
-
-  // User log count in status bar (if present)
+  const pending=d.pending_proposals||0;
+  setBadge('proposal',pending,pending>0);
+  if(d.faculties&&d.faculties.length>0)renderFaculties(d.faculties);
+  setBadge('faculty',(d.faculties||[]).filter(f=>f.mode==='connected').length,false);
 }
 
-function setBadge(name, count, urgent) {
-  const b = document.getElementById(name + '-badge');
-  if (!b) return;
-  if (count > 0) { b.textContent = count; b.classList.remove('hidden'); b.classList.toggle('urgent', urgent); }
+function setBadge(name,count,urgent){
+  const b=document.getElementById(name+'-badge');
+  if(!b)return;
+  if(count>0){b.textContent=count;b.classList.remove('hidden');b.classList.toggle('urgent',urgent);}
   else b.classList.add('hidden');
 }
 
-// ══════════════════════════════════════
+// ══════════════════════════════════
 //  MESSAGE RENDERING
-// ══════════════════════════════════════
-function addMessage(type, text) {
-  const log = document.getElementById('conversation-log');
-  const row = document.createElement('div');
-
-  if (type === 'inanna') {
-    row.className = 'msg-row inanna';
-    row.innerHTML = `<div class="msg-label">inanna</div><div class="msg-bubble">${esc(text)}</div>`;
-  } else if (type === 'you') {
-    row.className = 'msg-row you';
-    row.innerHTML = `<div class="msg-bubble">${esc(text)}</div><div class="msg-label">you</div>`;
-  } else if (type === 'system') {
-    row.className = 'msg-row system';
-    // Check if it's a tool proposal with pending status
-    if (text && text.includes('[TOOL PROPOSAL]') && text.includes('pending')) {
-      row.innerHTML = `<div class="msg-bubble has-proposal">${esc(text)}<div class="proposal-inline-actions" id="tool-prop-actions-${Date.now()}"></div></div>`;
-      const actDiv = row.querySelector('[id^="tool-prop-actions"]');
-      const propId = extractProposalId(text);
-      if (propId) {
-        actDiv.innerHTML = `
-          <button class="pi-approve" onclick="approveProposal('${propId}')">[ approve ]</button>
-          <button class="pi-decline" onclick="declineProposal('${propId}')">[ decline ]</button>`;
-      } else {
-        // No ID in text — match by timestamp fallback
-        actDiv.innerHTML = `
-          <button class="pi-approve" onclick="approvePendingTool(this)">[ approve ]</button>
-          <button class="pi-decline" onclick="declinePendingTool(this)">[ decline ]</button>`;
-      }
-    } else if (text && text.includes('[PROPOSAL]') && text.includes('pending')) {
-      row.innerHTML = `<div class="msg-bubble has-proposal">${esc(text)}<div class="proposal-inline-actions"></div></div>`;
-      const actDiv = row.querySelector('.proposal-inline-actions');
-      const propId = extractProposalId(text);
-      if (propId) {
-        actDiv.innerHTML = `
-          <button class="pi-approve" onclick="approveProposal('${propId}')">[ approve ]</button>
-          <button class="pi-decline" onclick="declineProposal('${propId}')">[ decline ]</button>`;
-      }
-    } else {
-      row.innerHTML = `<div class="msg-bubble">${esc(text)}</div>`;
+// ══════════════════════════════════
+function addMessage(type,text){
+  const log=document.getElementById('conversation-log');
+  const row=document.createElement('div');
+  if(type==='inanna'){
+    row.className='msg-row inanna';
+    row.innerHTML=`<div class="msg-label">inanna ∴</div><div class="msg-bubble">${esc(text)}</div>`;
+  }else if(type==='you'){
+    row.className='msg-row you';
+    row.innerHTML=`<div class="msg-bubble">${esc(text)}</div><div class="msg-label">𒀭 you</div>`;
+  }else if(type==='system'){
+    row.className='msg-row system';
+    if(text&&text.includes('[TOOL PROPOSAL]')&&text.includes('pending')){
+      const pid=extractPid(text);
+      row.innerHTML=`<div class="msg-bubble has-proposal">${esc(text)}<div class="prop-inline-actions">${pid?`<button class="pi-approve" onclick="approveP('${pid}')">[ approve ]</button><button class="pi-decline" onclick="declineP('${pid}')">[ decline ]</button>`:`<button class="pi-approve" onclick="approvePendingTool(this)">[ approve ]</button><button class="pi-decline" onclick="declinePendingTool(this)">[ decline ]</button>`}</div></div>`;
+    }else if(text&&text.includes('[PROPOSAL]')&&text.includes('pending')){
+      const pid=extractPid(text);
+      row.innerHTML=`<div class="msg-bubble has-proposal">${esc(text)}<div class="prop-inline-actions">${pid?`<button class="pi-approve" onclick="approveP('${pid}')">[ approve ]</button><button class="pi-decline" onclick="declineP('${pid}')">[ decline ]</button>`:''}</div></div>`;
+    }else{
+      row.innerHTML=`<div class="msg-bubble">${esc(text)}</div>`;
     }
-  } else if (type === 'nammu') {
-    row.className = 'msg-row nammu';
-    row.innerHTML = `<div class="msg-bubble">𒀭 ${esc(text)}</div>`;
-  } else if (type === 'operator') {
-    row.className = 'msg-row operator';
-    row.innerHTML = `<div class="msg-label">operator</div><div class="msg-bubble">${esc(text)}</div>`;
-  } else if (type === 'governance') {
-    row.className = 'msg-row governance';
-    row.innerHTML = `<div class="msg-label">blocked</div><div class="msg-bubble">${esc(text)}</div>`;
-  } else if (type === 'analyst') {
-    row.className = 'msg-row analyst';
-    row.innerHTML = `<div class="msg-label">analyst</div><div class="msg-bubble">${esc(text)}</div>`;
-  } else if (type === 'guardian') {
-    row.className = 'msg-row guardian';
-    row.innerHTML = `<div class="msg-label">guardian</div><div class="msg-bubble">${esc(text)}</div>`;
-  } else if (type === 'access') {
-    row.className = 'msg-row access';
-    row.innerHTML = `<div class="msg-bubble">${esc(text)}</div>`;
-  } else {
-    row.className = 'msg-row system';
-    row.innerHTML = `<div class="msg-bubble">${esc(text)}</div>`;
+  }else if(type==='nammu'){
+    row.className='msg-row nammu';
+    row.innerHTML=`<div class="msg-bubble">⟁ ${esc(text)}</div>`;
+  }else if(type==='operator'){
+    row.className='msg-row operator';
+    row.innerHTML=`<div class="msg-label">operator</div><div class="msg-bubble">${esc(text)}</div>`;
+  }else if(type==='governance'){
+    row.className='msg-row governance';
+    row.innerHTML=`<div class="msg-label">blocked</div><div class="msg-bubble">${esc(text)}</div>`;
+  }else if(type==='analyst'){
+    row.className='msg-row analyst';
+    row.innerHTML=`<div class="msg-label">analyst</div><div class="msg-bubble">${esc(text)}</div>`;
+  }else if(type==='guardian'){
+    row.className='msg-row guardian';
+    row.innerHTML=`<div class="msg-label">guardian</div><div class="msg-bubble">${esc(text)}</div>`;
+  }else if(type==='access'){
+    row.className='msg-row access';
+    row.innerHTML=`<div class="msg-bubble">${esc(text)}</div>`;
+  }else if(type==='suggestion'){
+    row.className='msg-row suggestion';
+    row.innerHTML=`<div class="msg-label">inanna ∴</div><div class="msg-bubble">${esc(text)}</div>`;
+  }else{
+    row.className='msg-row system';
+    row.innerHTML=`<div class="msg-bubble">${esc(text)}</div>`;
   }
-
   log.appendChild(row);
-  log.scrollTop = log.scrollHeight;
+  log.scrollTop=log.scrollHeight;
 }
 
-function handleSystemMsg(text) {
-  if (!text) return;
-  addMessage('system', text);
-}
-
-function esc(s) {
-  return (s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/\n/g,'<br>');
-}
-
-function extractProposalId(text) {
-  const m = (text||'').match(/proposal-([a-f0-9]+)/i);
-  return m ? 'proposal-' + m[1] : null;
-}
-
-// ══════════════════════════════════════
-//  INPUT HANDLING
-// ══════════════════════════════════════
-function handleKey(e) {
-  if (e.key === 'Enter' && !e.shiftKey) {
-    e.preventDefault();
-    sendMessage();
+function handleSystemMsg(text){
+  if(!text)return;
+  addMessage('system',text);
+  // Track approvals for organic governance
+  if(text.includes('Approved proposal')||text.includes('approved')){
+    const m=text.match(/proposal-([a-f0-9]+)/i);
+    if(m)trackApproval('proposal-'+m[1],text);
   }
 }
 
-function autoResize(el) {
-  el.style.height = 'auto';
-  el.style.height = Math.min(el.scrollHeight, 120) + 'px';
+function esc(s){
+  return(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/\n/g,'<br>');
+}
+function extractPid(text){
+  const m=(text||'').match(/proposal-([a-f0-9]+)/i);
+  return m?'proposal-'+m[1]:null;
 }
 
-function sendMessage() {
-  const inp = document.getElementById('text-input');
-  const text = inp.value.trim();
-  if (!text || !S.ws || S.ws.readyState !== 1) return;
-  addMessage('you', text);
-  S.ws.send(JSON.stringify({ type:'input', text }));
-  inp.value = '';
-  inp.style.height = 'auto';
+// ══════════════════════════════════
+//  ORGANIC GOVERNANCE SUGGESTION
+// ══════════════════════════════════
+function trackApproval(pid,text){
+  // Extract a command key from the proposal text
+  let key='';
+  const wm=text.match(/Use (\w+) for:/i)||text.match(/tool: (\w+)/i)||text.match(/web_search/i);
+  if(wm)key=wm[1]||wm[0]||'tool';
+  if(!key)return;
+  S.approvalCounts[key]=(S.approvalCounts[key]||0)+1;
+  const count=S.approvalCounts[key];
+  // After threshold and not yet suggested this session
+  if(count>=SUGGESTION_THRESHOLD&&!S.suggestionShown[key]){
+    S.suggestionShown[key]=true;
+    setTimeout(()=>showGovernanceSuggestion(key,count),800);
+  }
 }
 
-// ══════════════════════════════════════
+function showGovernanceSuggestion(toolKey,count){
+  const row=document.createElement('div');
+  row.className='msg-row suggestion';
+  const suggId='sug-'+Date.now();
+  row.innerHTML=`<div class="msg-label">inanna ∴</div><div class="msg-bubble">
+    I notice you have approved <strong style="color:var(--gold4)">${toolKey}</strong> ${count} times in this session.
+    Shall I remember this as a trusted pattern and stop asking each time?
+    You can always reinstate the approval requirement through the Guardian Room.
+    <div class="suggest-actions" id="${suggId}">
+      <button class="suggest-yes" onclick="acceptGovernanceSuggestion('${toolKey}','${suggId}')">[ yes, trust this ]</button>
+      <button class="suggest-no" onclick="dismissGovernanceSuggestion('${suggId}')">[ no, keep asking ]</button>
+    </div>
+  </div>`;
+  document.getElementById('conversation-log').appendChild(row);
+  document.getElementById('conversation-log').scrollTop=9999;
+}
+
+function acceptGovernanceSuggestion(toolKey,btnId){
+  document.getElementById(btnId).innerHTML='<span style="color:var(--jade);font-size:9px;letter-spacing:2px">✦ Noted. '+toolKey+' is now trusted.</span>';
+  // Record in audit / send governance signal (future: backend command)
+  addMessage('system','Governance pattern recorded: '+toolKey+' trusted for this session.');
+  sendCmd('governance-trust',{tool:toolKey});
+}
+function dismissGovernanceSuggestion(btnId){
+  document.getElementById(btnId).innerHTML='<span style="color:var(--dim);font-size:9px;letter-spacing:2px">✗ Understood. I will keep asking.</span>';
+}
+
+// ══════════════════════════════════
+//  INPUT HANDLING
+// ══════════════════════════════════
+function handleKey(e){
+  const inp=document.getElementById('text-input');
+  if(e.key==='Enter'&&!e.shiftKey){e.preventDefault();sendMessage();return;}
+  // Arrow history
+  if(e.key==='ArrowUp'){
+    e.preventDefault();
+    if(S.historyIdx<S.inputHistory.length-1){
+      S.historyIdx++;
+      inp.value=S.inputHistory[S.inputHistory.length-1-S.historyIdx];
+      // Move cursor to end
+      setTimeout(()=>inp.setSelectionRange(inp.value.length,inp.value.length),0);
+    }
+    return;
+  }
+  if(e.key==='ArrowDown'){
+    e.preventDefault();
+    if(S.historyIdx>0){
+      S.historyIdx--;
+      inp.value=S.inputHistory[S.inputHistory.length-1-S.historyIdx];
+    }else if(S.historyIdx===0){
+      S.historyIdx=-1;inp.value='';
+    }
+    return;
+  }
+}
+
+function autoResize(el){
+  el.style.height='auto';
+  el.style.height=Math.min(el.scrollHeight,140)+'px';
+}
+
+function sendMessage(){
+  const inp=document.getElementById('text-input');
+  const text=inp.value.trim();
+  if(!text||!S.ws||S.ws.readyState!==1)return;
+  addMessage('you',text);
+  S.ws.send(JSON.stringify({type:'input',text}));
+  // History
+  if(!S.inputHistory.length||S.inputHistory[S.inputHistory.length-1]!==text)S.inputHistory.push(text);
+  if(S.inputHistory.length>80)S.inputHistory.shift();
+  S.historyIdx=-1;
+  inp.value='';inp.style.height='auto';
+}
+
+// File attachment
+function handleAttach(){
+  document.getElementById('file-input').click();
+}
+function onFileSelected(ev){
+  const f=ev.target.files[0];
+  if(!f)return;
+  addMessage('system',`File selected: ${f.name} (${(f.size/1024).toFixed(1)} KB) — file attachment to INANNA coming in a future phase.`);
+  ev.target.value='';
+}
+
+// ══════════════════════════════════
 //  PROPOSALS
-// ══════════════════════════════════════
-function handleProposalEvent(m) {
-  const pending = m.pending_count || 0;
-  setBadge('proposal', pending, pending > 0);
-}
-
-function handleProposalHistory(m) {
-  S.proposalRecords = m.records || [];
-  renderProposals();
-}
-
-function loadProposalHistory() {
-  sendCmd('proposal-history');
-}
-
-function filterProps(filter, btn) {
-  S.propFilter = filter;
-  document.querySelectorAll('.pf-tab').forEach(b => b.classList.remove('active'));
+// ══════════════════════════════════
+function handleProposalEvent(m){setBadge('proposal',m.pending_count||0,(m.pending_count||0)>0);}
+function handleProposalHistory(m){S.proposalRecords=m.records||[];renderProposals();}
+function loadProposalHistory(){sendCmd('proposal-history');}
+function filterProps(filter,btn){
+  S.propFilter=filter;
+  document.querySelectorAll('.pf-tab').forEach(b=>b.classList.remove('active'));
   btn.classList.add('active');
   renderProposals();
 }
-
-function renderProposals() {
-  const list = document.getElementById('proposals-list');
-  if (!list) return;
-  let recs = S.proposalRecords;
-  if (S.propFilter !== 'all') recs = recs.filter(r => r.status === S.propFilter);
-  const show = recs.slice(-10).reverse();
-
-  if (show.length === 0) {
-    list.innerHTML = `<div style="font-size:8px;color:var(--dim);padding:8px 0;letter-spacing:2px">No ${S.propFilter} proposals.</div>`;
-    return;
-  }
-
-  list.innerHTML = show.map(r => {
-    const pid = r.proposal_id || r.id || '';
-    const isPending = r.status === 'pending';
-    const actions = isPending ? `
-      <div class="prop-actions">
-        <button class="sp-btn" onclick="approveProposal('${pid}')">[ approve ]</button>
-        <button class="sp-btn warn" onclick="declineProposal('${pid}')">[ decline ]</button>
-      </div>` : '';
-    return `
-      <div class="prop-card">
-        <div class="prop-card-id">${pid.slice(0,20)}</div>
-        <div class="prop-card-what">${esc(r.what||'')}</div>
-        ${r.why ? `<div class="prop-card-why">${esc(r.why)}</div>` : ''}
-        <span class="prop-card-status ${r.status||'pending'}">${r.status||'pending'}</span>
-        ${actions}
-      </div>`;
+function renderProposals(){
+  const list=document.getElementById('proposals-list');
+  if(!list)return;
+  let recs=S.proposalRecords;
+  if(S.propFilter!=='all')recs=recs.filter(r=>r.status===S.propFilter);
+  const show=recs.slice(-10).reverse();
+  if(!show.length){list.innerHTML=`<div style="font-size:9px;color:var(--dim);padding:8px 0;letter-spacing:2px">No ${S.propFilter} proposals.</div>`;return;}
+  list.innerHTML=show.map(r=>{
+    const pid=r.proposal_id||r.id||'';
+    const isPend=r.status==='pending';
+    const actions=isPend?`<div class="prop-actions"><button class="sp-btn" onclick="approveP('${pid}')">[ approve ]</button><button class="sp-btn warn" onclick="declineP('${pid}')">[ decline ]</button></div>`:'';
+    return`<div class="prop-card"><div class="prop-card-id">${pid.slice(0,22)}</div><div class="prop-card-what">${esc(r.what||'')}</div>${r.why?`<div class="prop-card-why">${esc(r.why)}</div>`:''}<span class="prop-card-status ${r.status||'pending'}">${r.status||'pending'}</span>${actions}</div>`;
   }).join('');
 }
-
-function approveProposal(pid) {
-  sendCmd('approve', { proposal_id: pid });
-  setTimeout(loadProposalHistory, 600);
+function approveP(pid){sendCmd('approve',{proposal_id:pid});setTimeout(loadProposalHistory,600);}
+function declineP(pid){sendCmd('reject',{proposal_id:pid});setTimeout(loadProposalHistory,600);}
+function approvePendingTool(btn){
+  const p=S.proposalRecords.filter(r=>r.status==='pending');
+  if(p.length){approveP(p[p.length-1].proposal_id);btn.closest('.prop-inline-actions').innerHTML='<span style="color:var(--jade);font-size:9px;letter-spacing:2px">✦ approved</span>';}
 }
-function declineProposal(pid) {
-  sendCmd('reject', { proposal_id: pid });
-  setTimeout(loadProposalHistory, 600);
-}
-function approvePendingTool(btn) {
-  // Fallback: find the most recent pending tool proposal
-  const pending = S.proposalRecords.filter(r => r.status === 'pending');
-  if (pending.length > 0) {
-    const pid = pending[pending.length-1].proposal_id;
-    approveProposal(pid);
-    btn.closest('.proposal-inline-actions').innerHTML = '<span style="color:var(--connected);font-size:8px;letter-spacing:2px">✦ approved</span>';
-  }
-}
-function declinePendingTool(btn) {
-  const pending = S.proposalRecords.filter(r => r.status === 'pending');
-  if (pending.length > 0) {
-    const pid = pending[pending.length-1].proposal_id;
-    declineProposal(pid);
-    btn.closest('.proposal-inline-actions').innerHTML = '<span style="color:var(--dim);font-size:8px;letter-spacing:2px">✗ declined</span>';
-  }
+function declinePendingTool(btn){
+  const p=S.proposalRecords.filter(r=>r.status==='pending');
+  if(p.length){declineP(p[p.length-1].proposal_id);btn.closest('.prop-inline-actions').innerHTML='<span style="color:var(--dim);font-size:9px;letter-spacing:2px">✗ declined</span>';}
 }
 
-// ══════════════════════════════════════
+// ══════════════════════════════════
 //  MEMORY
-// ══════════════════════════════════════
-function handleMemoryUpdate(m) {
-  S.memRecords = m.records || [];
-  setBadge('memory', S.memRecords.length, false);
-  renderMemoryRecords();
-}
-
-function renderMemoryRecords() {
-  const el = document.getElementById('memory-records');
-  const btn = document.getElementById('mem-load-more');
-  if (!el) return;
-  const show = S.memRecords.slice(-S.memShowCount).reverse();
-  el.innerHTML = show.map(r => {
-    const pid = r.memory_id || r.proposal_id || '';
-    const lines = (r.summary_lines || []).join(' · ').slice(0,100);
-    const ts = (r.approved_at||'').slice(0,16).replace('T',' ');
-    return `<div class="mem-record">
-      <div class="mem-record-ts">${ts}</div>
-      <div class="mem-record-text">${esc(lines)}</div>
-      <div class="mem-record-actions">
-        <button class="sp-btn warn" style="font-size:6px;padding:2px 8px" onclick="sendCmd('forget-memory',{proposal_id:'${pid}'})">[ forget ]</button>
-      </div>
-    </div>`;
+// ══════════════════════════════════
+function handleMemoryUpdate(m){S.memRecords=m.records||[];setBadge('memory',S.memRecords.length,false);renderMemoryRecords();}
+function renderMemoryRecords(){
+  const el=document.getElementById('memory-records');
+  const btn=document.getElementById('mem-load-more');
+  if(!el)return;
+  const show=S.memRecords.slice(-S.memShowCount).reverse();
+  el.innerHTML=show.map(r=>{
+    const pid=r.memory_id||r.proposal_id||'';
+    const lines=(r.summary_lines||[]).join(' · ').slice(0,100);
+    const ts=(r.approved_at||'').slice(0,16).replace('T',' ');
+    return`<div class="mem-record"><div class="mem-record-ts">${ts}</div><div class="mem-record-text">${esc(lines)}</div><div class="mem-record-actions"><button class="sp-btn warn" style="font-size:7px;padding:2px 8px" onclick="sendCmd('forget-memory',{proposal_id:'${pid}'})">[ forget ]</button></div></div>`;
   }).join('');
-  if (btn) btn.style.display = S.memRecords.length > S.memShowCount ? '' : 'none';
+  if(btn)btn.style.display=S.memRecords.length>S.memShowCount?'':'none';
 }
+function showMoreMemory(){S.memShowCount+=10;renderMemoryRecords();}
 
-function showMoreMemory() {
-  S.memShowCount += 10;
-  renderMemoryRecords();
-}
-
-// ══════════════════════════════════════
+// ══════════════════════════════════
 //  FACULTIES
-// ══════════════════════════════════════
-function renderFaculties(facs) {
-  const el = document.getElementById('faculty-body');
-  if (!el) return;
-  el.innerHTML = facs.map(f => {
-    const mode = f.mode || 'ready';
-    const dotCls = mode === 'connected' ? 'connected' : mode === 'ready' ? 'ready' : 'offline';
-    const calls = f.call_count !== undefined ? f.call_count : 0;
-    const last = f.last_called ? f.last_called.slice(11,16) : 'never';
-    return `<div class="fac-row">
-      <div class="fac-dot ${dotCls}"></div>
-      <div class="fac-info">
-        <div class="fac-name">${(f.name||f.display_name||'').toUpperCase()}</div>
-        <div class="fac-desc">${esc(f.description||f.role_description||'')}</div>
-        <div class="fac-meta">calls: ${calls} · last: ${last}</div>
-      </div>
-    </div>`;
+// ══════════════════════════════════
+function renderFaculties(facs){
+  const el=document.getElementById('faculty-body');
+  if(!el)return;
+  el.innerHTML=facs.map(f=>{
+    const mode=f.mode||'ready';
+    const dotCls=mode==='connected'?'connected':mode==='ready'?'ready':'offline';
+    const calls=f.call_count!==undefined?f.call_count:0;
+    const last=f.last_called?f.last_called.slice(11,16):'never';
+    return`<div class="fac-row"><div class="fac-dot ${dotCls}"></div><div class="fac-info"><div class="fac-name">${(f.name||f.display_name||'').toUpperCase()}</div><div class="fac-desc">${esc(f.description||f.role_description||'')}</div><div class="fac-meta">calls: ${calls} · last: ${last}</div></div></div>`;
   }).join('');
 }
 
-// ══════════════════════════════════════
+// ══════════════════════════════════
 //  GUARDIAN ROOM
-// ══════════════════════════════════════
-function parseGuardianReport(text) {
-  if (!text) return;
-  const alertMatch = text.match(/(\d+)\s+alert/i);
-  if (alertMatch) {
-    const n = parseInt(alertMatch[1]);
-    setBadge('guardian', n, n > 0);
-    document.getElementById('guardian-alerts').textContent =
-      n === 0 ? 'No alerts.' : `${n} alert${n>1?'s':''} active.`;
-  }
-  const tsMatch = text.match(/Last inspection:\s*([^\n]+)/i);
-  if (tsMatch) document.getElementById('guardian-last-inspection').textContent = tsMatch[1].trim();
+// ══════════════════════════════════
+function parseGuardianReport(text){
+  if(!text)return;
+  const am=text.match(/(\d+)\s+alert/i);
+  if(am){const n=parseInt(am[1]);setBadge('guardian',n,n>0);document.getElementById('guardian-alerts').textContent=n===0?'No alerts.':`${n} alert${n>1?'s':''} active.`;}
+  const tm=text.match(/Last inspection:\s*([^\n]+)/i);
+  if(tm)document.getElementById('guardian-last-inspection').textContent=tm[1].trim();
 }
-
-function handleGuardianStatus(m) {
-  const alerts = m.alerts || [];
-  setBadge('guardian', alerts.length, alerts.length > 0);
-  document.getElementById('guardian-alerts').textContent =
-    alerts.length === 0 ? 'No alerts.' : `${alerts.length} alert${alerts.length>1?'s':''} active.`;
-  if (m.last_inspection) document.getElementById('guardian-last-inspection').textContent = m.last_inspection;
-  if (m.body_report) document.getElementById('guardian-body-summary').textContent = m.body_report;
-
-  S.guardianEvents = alerts;
-  renderGuardianEvents();
+function handleGuardianStatus(m){
+  const alerts=m.alerts||[];
+  setBadge('guardian',alerts.length,alerts.length>0);
+  document.getElementById('guardian-alerts').textContent=alerts.length===0?'No alerts.':`${alerts.length} alert${alerts.length>1?'s':''} active.`;
+  if(m.last_inspection)document.getElementById('guardian-last-inspection').textContent=m.last_inspection;
+  if(m.body_report)document.getElementById('guardian-body-summary').textContent=m.body_report;
+  S.guardianEvents=alerts;renderGuardianEvents();
 }
-
-function handleGuardianLog(m) {
-  S.guardianEvents = m.events || [];
-  renderGuardianEvents();
-}
-
-function renderGuardianEvents() {
-  const el = document.getElementById('guardian-events');
-  const btn = document.getElementById('guardian-load-more');
-  if (!el) return;
-  const show = S.guardianEvents.slice(0, S.guardianShowCount);
-  el.innerHTML = show.map(e => {
-    const cls = (e.severity||'info').toLowerCase();
-    return `<div class="gr-event">
-      <span class="gr-event-tag ${cls}">${(e.event_type||'info').toUpperCase()}</span>
-      <div class="gr-event-text">${esc(e.summary||e.message||JSON.stringify(e))}</div>
-    </div>`;
+function handleGuardianLog(m){S.guardianEvents=m.events||[];renderGuardianEvents();}
+function renderGuardianEvents(){
+  const el=document.getElementById('guardian-events');
+  const btn=document.getElementById('guardian-load-more');
+  if(!el)return;
+  el.innerHTML=S.guardianEvents.slice(0,S.guardianShowCount).map(e=>{
+    const cls=(e.severity||'info').toLowerCase();
+    return`<div class="gr-event"><span class="gr-event-tag ${cls}">${(e.event_type||'info').toUpperCase()}</span><div class="gr-event-text">${esc(e.summary||e.message||JSON.stringify(e))}</div></div>`;
   }).join('');
-  if (btn) btn.style.display = S.guardianEvents.length > S.guardianShowCount ? '' : 'none';
+  if(btn)btn.style.display=S.guardianEvents.length>S.guardianShowCount?'':'none';
 }
+function showMoreGuardianEvents(){S.guardianShowCount+=10;renderGuardianEvents();}
 
-function showMoreGuardianEvents() {
-  S.guardianShowCount += 10;
-  renderGuardianEvents();
-}
-
-// ══════════════════════════════════════
+// ══════════════════════════════════
 //  AUDIT
-// ══════════════════════════════════════
-function loadAuditLog() { sendCmd('audit-log'); }
-
-function handleAuditLog(m) {
-  S.auditEvents = m.events || [];
-  setBadge('audit', S.auditEvents.length, false);
-  renderAuditEvents();
-}
-
-function renderAuditEvents() {
-  const el = document.getElementById('audit-events');
-  const btn = document.getElementById('audit-load-more');
-  if (!el) return;
-  const show = S.auditEvents.slice(0, S.auditShowCount);
-  el.innerHTML = show.map(e => {
-    const ts = (e.timestamp||'').slice(11,19);
-    const type = (e.event_type||'').toUpperCase().slice(0,10);
-    const msg = e.summary || e.message || '';
-    return `<div class="audit-event">
-      <div class="audit-ts">${ts}</div>
-      <div class="audit-type">${esc(type)}</div>
-      <div class="audit-msg">${esc(msg.slice(0,80))}</div>
-    </div>`;
+// ══════════════════════════════════
+function loadAuditLog(){sendCmd('audit-log');}
+function handleAuditLog(m){S.auditEvents=m.events||[];setBadge('audit',S.auditEvents.length,false);renderAuditEvents();}
+function renderAuditEvents(){
+  const el=document.getElementById('audit-events');
+  const btn=document.getElementById('audit-load-more');
+  if(!el)return;
+  el.innerHTML=S.auditEvents.slice(0,S.auditShowCount).map(e=>{
+    const ts=(e.timestamp||'').slice(11,19);
+    const type=(e.event_type||'').toUpperCase().slice(0,12);
+    const msg=e.summary||e.message||'';
+    return`<div class="audit-event"><div class="audit-ts">${ts}</div><div class="audit-type">${esc(type)}</div><div class="audit-msg">${esc(msg.slice(0,90))}</div></div>`;
   }).join('');
-  if (btn) btn.style.display = S.auditEvents.length > S.auditShowCount ? '' : 'none';
+  if(btn)btn.style.display=S.auditEvents.length>S.auditShowCount?'':'none';
 }
+function showMoreAudit(){S.auditShowCount+=20;renderAuditEvents();}
 
-function showMoreAudit() {
-  S.auditShowCount += 20;
-  renderAuditEvents();
-}
-
-// ══════════════════════════════════════
+// ══════════════════════════════════
 //  ADMIN SURFACE
-// ══════════════════════════════════════
-function handleAdminData(m) {
-  const body = document.getElementById('admin-body');
-  if (!body) return;
-  const users   = m.users   || [];
-  const invites = m.invites || [];
-  const realms  = m.realms  || [];
-
-  const counts = document.getElementById('admin-counts');
-  if (counts) counts.textContent = `${users.length} users · ${realms.length} realms · ${invites.filter(i=>i.status==='pending').length} pending invites`;
-
-  const usersHtml = users.map(u => `
-    <div class="admin-user-row">
-      <span class="admin-u-name">${esc(u.display_name)}</span>
-      <span class="admin-u-role">${esc(u.role)}</span>
-      <span class="admin-u-realm">${esc((u.assigned_realms||[]).join(', '))}</span>
-      <span class="admin-u-stat ${u.status}">${u.status}</span>
-    </div>`).join('');
-
-  const invHtml = invites.slice(0,8).map(i => `
-    <div class="admin-invite-row">
-      <span class="admin-invite-code">${esc(i.invite_code)}</span>
-      <span style="color:var(--dim);margin:0 6px">·</span>
-      <span style="color:var(--dim)">${i.role}/${(i.assigned_realms||[]).join(',')}</span>
-      <span style="color:var(--faded);margin:0 6px">·</span>
-      <span style="color:${i.status==='pending'?'var(--gold3)':i.status==='accepted'?'var(--connected)':'var(--dim)'}">${i.status}</span>
-    </div>`).join('');
-
-  const realmsHtml = realms.map(r => `
-    <div class="admin-realm-row">
-      <span class="admin-realm-name">${esc(r.name)}</span>
-      <span style="color:var(--dim);margin:0 6px">·</span>
-      <span style="color:var(--dim)">${esc(r.governance_sensitivity||'open')}</span>
-      <span style="color:var(--dim);margin:0 6px">·</span>
-      <span style="color:var(--faded)">${r.user_count||0} users</span>
-    </div>`).join('');
-
-  body.innerHTML = `
-    ${counts ? '' : `<div id="admin-counts" style="font-size:8px;color:var(--dim);margin-bottom:8px">${users.length} users · ${realms.length} realms</div>`}
+// ══════════════════════════════════
+function handleAdminData(m){
+  const body=document.getElementById('admin-body');
+  if(!body)return;
+  const users=m.users||[],invites=m.invites||[],realms=m.realms||[];
+  const counts=document.getElementById('admin-counts');
+  if(counts)counts.textContent=`${users.length} users · ${realms.length} realms · ${invites.filter(i=>i.status==='pending').length} pending invites`;
+  body.innerHTML=`
     <div class="admin-sub">USERS</div>
-    ${usersHtml || '<div style="font-size:8px;color:var(--dim)">No users.</div>'}
-    <div class="admin-inline-form" style="margin-top:10px">
-      <button class="sp-btn" onclick="sendCmd('invite user default')">[ + invite ]</button>
-    </div>
-    <div class="admin-sub" style="margin-top:12px">INVITES</div>
-    ${invHtml || '<div style="font-size:8px;color:var(--dim)">No invites.</div>'}
-    <div class="admin-sub" style="margin-top:12px">REALMS</div>
-    ${realmsHtml || '<div style="font-size:8px;color:var(--dim)">No realms.</div>'}`;
+    ${users.map(u=>`<div class="admin-user-row"><span class="admin-u-name">${esc(u.display_name)}</span><span class="admin-u-role">${esc(u.role)}</span><span class="admin-u-realm">${esc((u.assigned_realms||[]).join(', '))}</span><span class="admin-u-stat ${u.status}">${u.status}</span></div>`).join('')||'<div style="font-size:9px;color:var(--dim)">No users.</div>'}
+    <div class="admin-inline-form"><button class="sp-btn" onclick="sendCmd(\'invite user default\')">[ + invite ]</button></div>
+    <div class="admin-sub">INVITES</div>
+    ${invites.slice(0,8).map(i=>`<div class="admin-invite-row"><span class="admin-invite-code">${esc(i.invite_code)}</span> · ${i.role}/${(i.assigned_realms||[]).join(',')} · <span style="color:${i.status==='pending'?'var(--gold3)':i.status==='accepted'?'var(--jade)':'var(--dim)'}">${i.status}</span></div>`).join('')||'<div style="font-size:9px;color:var(--dim)">No invites.</div>'}
+    <div class="admin-sub">REALMS</div>
+    ${realms.map(r=>`<div class="admin-realm-row"><span class="admin-realm-name">${esc(r.name)}</span> · <span style="color:var(--dim)">${esc(r.governance_sensitivity||'open')}</span> · <span style="color:var(--faded)">${r.user_count||0} users</span></div>`).join('')||'<div style="font-size:9px;color:var(--dim)">No realms.</div>'}`;
 }
 
-// ══════════════════════════════════════
+// ══════════════════════════════════
 //  INIT
-// ══════════════════════════════════════
-restoreSections();
-connect();
-// Auto-load proposal history on start
-setTimeout(() => sendCmd('proposal-history'), 800);
+// ══════════════════════════════════
+function initApp(){
+  restoreSections();
+  connect();
+  setTimeout(()=>sendCmd('proposal-history'),900);
+}
 </script>
 </body>
 </html>
