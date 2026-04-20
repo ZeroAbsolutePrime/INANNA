@@ -1,270 +1,316 @@
-# CURRENT PHASE: Cycle 5 - Phase 5.9 - The Operator Proof
+# CURRENT PHASE: Cycle 6 - Phase 6.1 - The User Profile
 **Status: ACTIVE**
 **Authorized by: ZAERA (Guardian) + Claude (Command Center)**
 **Date opened: 2026-04-20**
-**Cycle: 5 - The Operator Console**
-**Replaces: Cycle 5 Phase 5.8 - The Orchestration Layer (COMPLETE)**
+**Cycle: 6 - The Relational Memory**
+**Master plan: docs/cycle6_master_plan.md**
+**Prerequisite: Cycle 5 complete — verify_cycle5.py passed 90 checks**
 
 ---
 
 ## What This Phase Is
 
-Eight phases built the Operator Console:
-5.1 Console Surface, 5.2 Tool Registry, 5.3 Network Eye,
-5.4 Process Monitor (+ auto-memory fix), 5.5 Faculty Registry,
-5.6 Faculty Router, 5.7 Domain Faculty (SENTINEL),
-5.8 Orchestration Layer.
+Cycle 5 proved that INANNA knows what she can do.
+Cycle 6 teaches her to know who she serves.
 
-Phase 5.9 is the completion phase.
+Phase 6.1 is the foundation: the UserProfile.
 
-Its purpose: verify everything works as a coherent whole,
-write verify_cycle5.py with 40+ integration checks,
-write the Cycle 5 Completion Record,
-update the Code Doctrine with Lessons from Cycle 5,
-and declare Cycle 5 complete.
+Every person who interacts with INANNA gains a profile —
+a living document that begins empty and deepens with every session.
+It holds their preferred name, their pronouns, their organizational
+context, their communication style, their interests, their trust patterns.
 
-Build almost nothing. Verify everything. Document honestly.
+The profile is theirs. They can read it. They can edit it. They can
+delete it. INANNA uses it silently to serve them better.
+Law IV governs: readable system truth.
 
 ---
 
 ## What You Are Building
 
-### Task 1 - inanna/verify_cycle5.py
+### Task 1 - inanna/core/profile.py
 
-Create a standalone verification script.
-Run with: py -3 verify_cycle5.py
-No live model or browser required.
+Create: inanna/core/profile.py
 
-The script verifies:
-
-1. TOOLS CONFIG
-   - config/tools.json exists with 4 tools registered
-   - web_search, ping, resolve_host, scan_ports all enabled
-   - All tools have requires_approval: true
-   - OperatorFaculty reads PERMITTED_TOOLS from tools.json (not hardcoded)
-   - ping executes and returns ToolResult
-   - resolve_host("localhost") returns ip: "127.0.0.1"
-   - scan_ports caps at 100 ports per scan
-
-2. FACULTIES CONFIG
-   - config/faculties.json exists with 5 Faculty definitions
-   - crown, analyst, operator, guardian all active: true
-   - sentinel active: true
-   - sentinel model_name: "qwen2.5-14b-instruct"
-   - sentinel has 3 governance_rules
-   - All active Faculties have domain, description, charter_preview
-
-3. FACULTY MONITOR
-   - FacultyMonitor loads from faculties.json
-   - all_records() returns 5 records (all Faculties now active)
-   - Each record has display_name, domain, charter_preview
-   - format_report() contains CROWN, ANALYST, OPERATOR, GUARDIAN, SENTINEL
-
-4. NAMMU ROUTING
-   - IntentClassifier loads from faculties.json
-   - SENTINEL in active faculties (active: true)
-   - Classification prompt includes sentinel
-   - Classification prompt includes all 5 Faculty names
-   - Fallback on missing config returns crown/analyst defaults
-   - Unknown Faculty name falls back to crown
-
-5. ORCHESTRATION
-   - OrchestrationEngine instantiates from faculties.json
-   - detect_orchestration() finds plan for security+explain input
-   - detect_orchestration() returns None for unrelated input
-   - Plan has 2 steps: sentinel → crown
-   - format_synthesis_prompt() includes previous Faculty output
-   - OrchestrationStep has correct faculty, purpose, input_from, output_to
-
-6. NETWORK TOOLS
-   - resolve_host exists in PERMITTED_TOOLS
-   - scan_ports exists in PERMITTED_TOOLS
-   - governance_signals.json has domain_hints section
-   - domain_hints.security has at least 5 entries
-   - domain_hints.reasoning has at least 5 entries
-
-7. PROCESS MONITOR
-   - ProcessMonitor instantiates
-   - inanna_record() returns status "running"
-   - format_uptime(3700) returns "1h 1m"
-   - all_records() returns at least 2 records
-
-8. AUTO-MEMORY
-   - AUTO_MEMORY_TURN_THRESHOLD constant exists in main.py
-   - Value is 20
-   - No create_memory_request_proposal call after conversation turns
-     in the standard crown/analyst routing path
-
-9. CONSOLE SURFACE
-   - ui/static/console.html exists
-   - console.html has panel sections: tools, network, faculties, processes
-   - console.html has faculty-registry command
-   - console.html has process-status command
-   - console.html has tool-registry command
-   - console.html has orchestration rendering
-
-10. MAIN UI
-    - ui/static/index.html has entrance gate (openGate function)
-    - ui/static/index.html has sentinel message type handler
-    - ui/static/index.html has orchestration message type handler
-    - ui/static/index.html has arrow key history (ArrowUp)
-    - ui/static/index.html has attach button
-    - ui/static/index.html has governance suggestion logic
-
-11. LLM CONFIGURATION DOCUMENTATION
-    - docs/llm_configuration.md exists
-    - Contains qwen2.5-7b-instruct-1m entry
-    - Contains qwen2.5-14b-instruct entry
-    - Contains Faculty mapping table
-    - identity.py has LLM configuration comment block
-
-12. CYCLE 4 REGRESSION
-    - py -3 verify_cycle4.py still passes all 68 checks
-
-Format: same as verify_cycle4.py
-[PASS] / [FAIL] per check, exit 0 if all pass.
-Target: 40+ checks.
-
-### Task 2 - Fix any integration gaps found
-
-If verify_cycle5.py finds any failing check, fix it
-before writing the completion record.
-Document every gap found and fixed in the phase report.
-
-### Task 3 - docs/cycle5_completion.md
-
-Create the Cycle 5 Completion Record containing:
-
-- What Cycle 5 set out to build (from cycle5_master_plan.md)
-- What was actually built — one paragraph per phase
-- The Codex repo confusion incident: honest account of Codex
-  repeatedly running in the wrong repo root, reporting stale work,
-  and the recovery pattern (Command Center committed directly
-  when needed)
-- What verify_cycle5.py confirmed
-- What Cycle 5 did not build:
-  - No persistent host database in Network Eye
-  - No topology graph visualization
-  - No multi-step orchestration beyond 2-Faculty chain
-  - No Faculty activation UI (activate button is placeholder)
-  - Orchestration plans are built-in, not config-driven
-- The bridge to Cycle 6 (Relational Memory, User Profiles,
-  Onboarding Survey, Departments, Notification Routing)
-
-### Task 4 - docs/code_doctrine.md update
-
-Add section: "Lessons from Cycle 5"
-
-Must include:
-
-1. CONFIG-DRIVEN EVERYTHING. Tools live in tools.json.
-   Faculties live in faculties.json. Domain hints live in
-   governance_signals.json. The Python code reads config.
-   When a new tool or Faculty is needed, update the JSON.
-   Never add it to Python code directly.
-
-2. MODEL DIFFERENTIATION VIA CONFIG. SENTINEL uses a different
-   model than CROWN because faculties.json says so. No Python
-   change required. This is the Faculty architecture working
-   as intended. Future domain Faculties follow the same pattern.
-
-3. THE ORCHESTRATION PRINCIPLE. Complex tasks may require
-   multiple Faculties. The pattern is always:
-   detect → propose → approve → execute chain → audit.
-   Never execute orchestration without a proposal.
-   The user must see what is about to happen.
-
-4. PUSH IMMEDIATELY. Codex's repo confusion in Cycle 5
-   (running in a wrong directory, reporting stale work)
-   reinforces the lesson from Cycle 4: every completion commit
-   must be pushed to origin/main the moment it is done.
-   The Command Center must verify git log after every phase.
-
-5. AUTO-MEMORY IS THE RIGHT DEFAULT. Removing the memory
-   proposal from conversation turns was the correct decision.
-   The flow of conversation is sacred. Governance applies to
-   structural operations (clear, forget, export), not to the
-   act of being heard and remembered.
-
-### Task 5 - Update identity.py
-
-CURRENT_PHASE = "Cycle 5 - Phase 5.9 - The Operator Proof"
-
-Add CYCLE5_SUMMARY:
 ```python
-CYCLE5_SUMMARY = (
-    "Cycle 5 built the Operator Console: a second browser panel "
-    "at /console for Guardians and Operators, a config-driven Tool "
-    "Registry with four governed tools, the Network Eye with ping/"
-    "resolve/scan, the Process Monitor, the Faculty Registry backed "
-    "by faculties.json, dynamic NAMMU routing across all active "
-    "Faculties, SENTINEL as the first domain Faculty running on "
-    "qwen2.5-14b-instruct, and the Orchestration Layer enabling "
-    "SENTINEL→CROWN two-Faculty chains. Auto-memory removed "
-    "conversation-turn proposals. The Gates of Uruk UI redesign "
-    "unified both interfaces. The LLM configuration is documented "
-    "in code and in docs/llm_configuration.md."
-)
+from dataclasses import dataclass, field
+from pathlib import Path
+from datetime import datetime, timezone
+import json
+
+def utc_now() -> str:
+    return datetime.now(timezone.utc).isoformat()
+
+@dataclass
+class UserProfile:
+    user_id: str
+    version: str = "1.0"
+    created_at: str = field(default_factory=utc_now)
+    last_updated: str = field(default_factory=utc_now)
+
+    # Identity
+    preferred_name: str = ""
+    pronouns: str = ""
+    gender: str = ""
+    sex: str = ""
+    languages: list[str] = field(default_factory=list)
+    timezone: str = ""
+    location_city: str = ""
+    location_region: str = ""
+    location_country: str = ""
+
+    # Organizational
+    departments: list[str] = field(default_factory=list)
+    groups: list[str] = field(default_factory=list)
+    notification_scope: str = "realm"  # "all" | "realm" | "none"
+
+    # Communication (observed by INANNA)
+    communication_style: str = ""
+    preferred_length: str = ""
+    formality: str = ""
+    observed_patterns: list[str] = field(default_factory=list)
+
+    # Interests (observed by INANNA)
+    domains: list[str] = field(default_factory=list)
+    recurring_topics: list[str] = field(default_factory=list)
+    named_projects: list[str] = field(default_factory=list)
+
+    # Trust patterns
+    session_trusted_tools: list[str] = field(default_factory=list)
+    persistent_trusted_tools: list[str] = field(default_factory=list)
+
+    # Onboarding
+    onboarding_completed: bool = False
+    onboarding_completed_at: str = ""
+    survey_responses: dict = field(default_factory=dict)
+
+    # INANNA's observations (proposal-governed)
+    inanna_notes: list[str] = field(default_factory=list)
+
+
+class ProfileManager:
+    def __init__(self, profiles_dir: Path):
+        self.profiles_dir = profiles_dir
+        profiles_dir.mkdir(parents=True, exist_ok=True)
+
+    def _profile_path(self, user_id: str) -> Path:
+        return self.profiles_dir / f"{user_id}.json"
+
+    def ensure_profile_exists(self, user_id: str) -> UserProfile:
+        if self._profile_path(user_id).exists():
+            return self.load(user_id)
+        profile = UserProfile(user_id=user_id)
+        self.save(profile)
+        return profile
+
+    def load(self, user_id: str) -> UserProfile | None:
+        path = self._profile_path(user_id)
+        if not path.exists():
+            return None
+        try:
+            data = json.loads(path.read_text(encoding="utf-8"))
+            # Remove unknown keys for forward compatibility
+            known = {f.name for f in UserProfile.__dataclass_fields__.values()}
+            filtered = {k: v for k, v in data.items() if k in known}
+            return UserProfile(**filtered)
+        except Exception:
+            return UserProfile(user_id=user_id)
+
+    def save(self, profile: UserProfile) -> None:
+        profile.last_updated = utc_now()
+        data = {
+            k: getattr(profile, k)
+            for k in profile.__dataclass_fields__
+        }
+        self._profile_path(profile.user_id).write_text(
+            json.dumps(data, indent=2, ensure_ascii=False),
+            encoding="utf-8",
+        )
+
+    def update_field(self, user_id: str, field_name: str, value) -> bool:
+        profile = self.load(user_id)
+        if profile is None:
+            profile = UserProfile(user_id=user_id)
+        if not hasattr(profile, field_name):
+            return False
+        setattr(profile, field_name, value)
+        self.save(profile)
+        return True
+
+    def delete(self, user_id: str) -> bool:
+        path = self._profile_path(user_id)
+        if path.exists():
+            path.unlink()
+            return True
+        return False
+
+    def list_profiles(self) -> list[UserProfile]:
+        profiles = []
+        for path in self.profiles_dir.glob("*.json"):
+            p = self.load(path.stem)
+            if p:
+                profiles.append(p)
+        return profiles
+
+    def display_name_for(self, user_id: str, fallback: str = "") -> str:
+        profile = self.load(user_id)
+        if profile and profile.preferred_name:
+            return profile.preferred_name
+        return fallback
+
+    def pronouns_for(self, user_id: str) -> str:
+        profile = self.load(user_id)
+        if profile:
+            return profile.pronouns
+        return ""
 ```
 
-### Task 6 - Final verification runs
+### Task 2 - Instantiate ProfileManager in server.py and main.py
 
-Run: py -3 -m unittest discover -s tests
-Run: py -3 verify_cycle4.py
-Run: py -3 verify_cycle5.py
-All must pass. Report all counts in the phase report.
+Add to server.py __init__ and main.py startup:
+
+```python
+from core.profile import ProfileManager
+
+PROFILES_DIR = DATA_ROOT / "profiles"
+self.profile_manager = ProfileManager(PROFILES_DIR)
+```
+
+When a user logs in or a session starts, call:
+```python
+self.profile_manager.ensure_profile_exists(active_token.user_id)
+```
+
+This creates an empty profile silently on first login.
+No output. No proposal. Just the foundation being laid.
+
+### Task 3 - Use preferred_name in grounding
+
+In the grounding text sent to CROWN and SENTINEL,
+if the active user has a preferred_name set, use it:
+
+```python
+preferred = profile_manager.display_name_for(
+    active_token.user_id,
+    fallback=active_token.display_name
+)
+grounding_prefix = f"You are speaking with {preferred}."
+```
+
+This is the first moment INANNA uses the profile to personalize.
+It is subtle and silent — CROWN simply knows the person's name.
+
+### Task 4 - "profile-status" in status payload
+
+Add to the status payload:
+```json
+"profile": {
+    "exists": true,
+    "preferred_name": "ZAERA",
+    "onboarding_completed": false,
+    "departments": [],
+    "pronouns": ""
+}
+```
+
+This lets the UI know whether to show the onboarding prompt
+in a future phase.
+
+### Task 5 - Update identity.py and state.py
+
+CURRENT_PHASE = "Cycle 6 - Phase 6.1 - The User Profile"
+
+Add "profile-status" awareness (no new command yet —
+it is part of the status payload, not a standalone command).
+
+### Task 6 - Tests
+
+Create inanna/tests/test_profile.py:
+  - UserProfile can be instantiated with user_id only
+  - All fields have correct defaults
+  - ProfileManager.ensure_profile_exists() creates profile file
+  - ProfileManager.load() returns UserProfile for existing profile
+  - ProfileManager.load() returns None for missing profile
+  - ProfileManager.save() writes JSON to disk
+  - ProfileManager.update_field() updates a string field
+  - ProfileManager.update_field() updates a list field
+  - ProfileManager.update_field() returns False for unknown field
+  - ProfileManager.delete() removes profile file
+  - ProfileManager.list_profiles() returns all profiles
+  - ProfileManager.display_name_for() returns preferred_name if set
+  - ProfileManager.display_name_for() returns fallback if not set
+  - ProfileManager.pronouns_for() returns pronouns if set
+  - ProfileManager.pronouns_for() returns empty string if not set
+  - Profile JSON is valid after save/load round-trip
+
+Update test_identity.py: update CURRENT_PHASE assertion.
 
 ---
 
 ## Permitted file changes
 
-inanna/identity.py              <- MODIFY: CURRENT_PHASE, CYCLE5_SUMMARY
-inanna/verify_cycle5.py         <- NEW
-docs/cycle5_completion.md       <- NEW
-docs/code_doctrine.md           <- MODIFY: add Lessons from Cycle 5
-tests/test_identity.py          <- MODIFY: update phase assertion
-Core/UI files only if fixing gaps found by verify_cycle5.py.
+inanna/identity.py              <- MODIFY: update CURRENT_PHASE
+inanna/main.py                  <- MODIFY: instantiate ProfileManager,
+                                           ensure_profile on login,
+                                           preferred_name in grounding,
+                                           profile in status payload
+inanna/config/
+  (no config changes)
+inanna/core/
+  profile.py                    <- NEW
+  state.py                      <- MODIFY: update phase only
+inanna/ui/
+  server.py                     <- MODIFY: instantiate ProfileManager,
+                                           ensure_profile on login,
+                                           preferred_name in grounding,
+                                           profile in status payload
+inanna/tests/
+  test_profile.py               <- NEW
+  test_identity.py              <- MODIFY: update phase assertion
 
 ---
 
 ## What You Are NOT Building
 
-No new capabilities. No new commands. No new panels.
-Verify and document only.
-Do not begin Cycle 6 work.
+- No onboarding survey (Phase 6.2)
+- No profile commands (Phase 6.3)
+- No communication learning (Phase 6.4)
+- No departments/groups UI (Phase 6.5)
+- No pronoun use in INANNA's language (Phase 6.6)
+- No trust persistence (Phase 6.7)
+- No reflective memory (Phase 6.8)
+- No changes to console.html or index.html
 
 ---
 
 ## Definition of Done
 
-- [ ] verify_cycle5.py exists and all 40+ checks pass
-- [ ] py -3 verify_cycle4.py still passes (regression)
-- [ ] py -3 -m unittest discover -s tests passes
-- [ ] docs/cycle5_completion.md with honest account of Codex confusion
-- [ ] docs/code_doctrine.md has Lessons from Cycle 5
-- [ ] CURRENT_PHASE updated to Phase 5.9
-- [ ] CYCLE5_SUMMARY in identity.py
-- [ ] Any gaps found are fixed and documented
+- [ ] core/profile.py exists with UserProfile and ProfileManager
+- [ ] ProfileManager.ensure_profile_exists() creates profiles silently
+- [ ] ProfileManager wired into server.py and main.py
+- [ ] Empty profile created on user login
+- [ ] preferred_name used in grounding when set
+- [ ] profile section in status payload
+- [ ] CURRENT_PHASE updated
+- [ ] All tests pass: py -3 -m unittest discover -s tests
+- [ ] Pushed to origin/main immediately
 
 ---
 
-## Handoff to Command Center
+## Handoff
 
-When Definition of Done is met, Codex must:
-1. Commit with message: cycle5-phase9-complete
-2. PUSH TO ORIGIN/MAIN IMMEDIATELY.
-3. Write docs/implementation/CYCLE5_PHASE9_REPORT.md containing:
-   - verify_cycle5.py results (all checks)
-   - verify_cycle4.py result (regression)
-   - Final unittest count
-   - Any gaps found and fixed
-4. Stop. Cycle 5 is complete.
-   Do not begin Cycle 6 without authorization from Command Center.
+Commit: cycle6-phase1-complete
+Push immediately to origin/main.
+Report: docs/implementation/CYCLE6_PHASE1_REPORT.md
+Stop. Do not begin Phase 6.2 without new CURRENT_PHASE.md.
 
 ---
 
 *Written by: Claude (Command Center)*
 *Guardian approval: ZAERA*
 *Date: 2026-04-20*
-*Eight phases of building. One phase of truth.*
-*The Operator Console proves itself.*
+*The first profile is created.*
+*Empty. Waiting.*
+*INANNA meets someone for the first time.*
+*She does not yet know who they are.*
+*But she is ready to learn.*
