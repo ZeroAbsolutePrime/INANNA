@@ -110,6 +110,24 @@
       white-space: nowrap;
     }
 
+    .console-btn {
+      padding: 2px 10px;
+      font-size: 0.74rem;
+      letter-spacing: 0.1em;
+      border: 1px solid var(--border);
+      color: var(--dim);
+      cursor: pointer;
+      background: transparent;
+      text-decoration: none;
+      transition: color 0.15s, border-color 0.15s;
+      white-space: nowrap;
+    }
+
+    .console-btn:hover {
+      color: var(--voice);
+      border-color: var(--voice);
+    }
+
     .realm-indicator,
     .user-indicator,
     .body-indicator {
@@ -1140,6 +1158,7 @@
       </div>
       <div class="header-meta">
         <div class="header-phase" id="phase-text">loading phase</div>
+        <a class="console-btn" id="console-link" href="/console" target="_blank" rel="noopener noreferrer" hidden>[ console ]</a>
         <div class="realm-indicator" id="realm-indicator" title="">REALM: DEFAULT</div>
         <div class="user-indicator" id="user-indicator">USER: ZAERA</div>
         <div class="body-indicator" id="body-indicator">BODY: OK</div>
@@ -1411,6 +1430,7 @@
 
     const brandIndicator = document.getElementById("brand-indicator");
     const phaseText = document.getElementById("phase-text");
+    const consoleLink = document.getElementById("console-link");
     const realmIndicator = document.getElementById("realm-indicator");
     const userIndicator = document.getElementById("user-indicator");
     const bodyIndicator = document.getElementById("body-indicator");
@@ -1637,6 +1657,11 @@
       return Number(state.adminData.total_invites || 0);
     }
 
+    function hasConsoleAccess(activeUser) {
+      const role = String(activeUser && activeUser.role || "").toLowerCase();
+      return role === "guardian" || role === "operator";
+    }
+
     function resetAdminForms() {
       state.adminForms.inviteOpen = false;
       state.adminForms.inviteRole = "user";
@@ -1647,8 +1672,7 @@
     }
 
     function updateAdminVisibility(activeUser) {
-      const role = String(activeUser && activeUser.role || "").toLowerCase();
-      state.adminVisible = role === "guardian" || role === "operator";
+      state.adminVisible = hasConsoleAccess(activeUser);
       sectionRefs.admin.root.hidden = !state.adminVisible;
       if (!state.adminVisible) {
         state.adminData = {
@@ -1982,6 +2006,8 @@
         userIndicator.classList.add("dim");
         userIndicator.title = "";
       }
+
+      consoleLink.hidden = !hasConsoleAccess(activeUser);
 
       const isFallback = (body.model_mode || state.status.mode) === "fallback";
       const isWarn =

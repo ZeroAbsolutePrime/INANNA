@@ -1,0 +1,500 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>INANNA NYX Console</title>
+  <style>
+    :root {
+      --bg: #0a0a0f;
+      --voice: #c8a96e;
+      --border: #4a3a1e;
+      --text: #b9b2a5;
+      --dim: #726a5d;
+      --panel: #111118;
+      --connected: #6f9a63;
+      --fallback: #c8a96e;
+      --critical: #c86e6e;
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    html,
+    body {
+      height: 100%;
+      margin: 0;
+      background:
+        linear-gradient(to bottom, rgba(200, 169, 110, 0.04), transparent 12%),
+        linear-gradient(to right, rgba(74, 58, 30, 0.12) 1px, transparent 1px),
+        linear-gradient(to bottom, rgba(74, 58, 30, 0.09) 1px, transparent 1px),
+        var(--bg);
+      background-size: auto, 32px 32px, 32px 32px, auto;
+      color: var(--text);
+      font-family: "Courier New", "Lucida Console", monospace;
+    }
+
+    body {
+      padding: 18px;
+      overflow: hidden;
+    }
+
+    button {
+      font: inherit;
+    }
+
+    .shell {
+      height: calc(100vh - 36px);
+      border: 1px solid var(--border);
+      display: grid;
+      grid-template-rows: auto auto 1fr;
+      background: rgba(10, 10, 15, 0.92);
+      box-shadow: inset 0 0 0 1px rgba(74, 58, 30, 0.12);
+    }
+
+    .header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 20px;
+      padding: 16px 18px;
+      border-bottom: 1px solid var(--border);
+    }
+
+    .brand {
+      display: flex;
+      align-items: baseline;
+      gap: 14px;
+      min-width: 0;
+    }
+
+    .brand-indicator {
+      color: var(--voice);
+      font-size: 1.08rem;
+      letter-spacing: 0.24em;
+      text-transform: uppercase;
+      white-space: nowrap;
+    }
+
+    .console-subtitle {
+      color: var(--dim);
+      font-size: 0.78rem;
+      letter-spacing: 0.18em;
+      text-transform: uppercase;
+      white-space: nowrap;
+    }
+
+    .header-meta {
+      display: flex;
+      align-items: center;
+      justify-content: flex-end;
+      gap: 18px;
+      min-width: 0;
+      color: var(--dim);
+      font-size: 0.8rem;
+      letter-spacing: 0.14em;
+      text-transform: uppercase;
+      flex-wrap: wrap;
+    }
+
+    .header-phase {
+      max-width: 40ch;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .realm-indicator,
+    .user-indicator,
+    .body-indicator,
+    .connection-indicator {
+      white-space: nowrap;
+    }
+
+    .realm-indicator {
+      color: #7a6a5a;
+    }
+
+    .user-indicator {
+      color: var(--voice);
+    }
+
+    .user-indicator.dim {
+      color: var(--dim);
+    }
+
+    .body-indicator {
+      color: var(--connected);
+    }
+
+    .body-indicator.warn,
+    .connection-indicator.warn {
+      color: var(--fallback);
+    }
+
+    .connection-indicator.danger {
+      color: var(--critical);
+    }
+
+    .console-nav {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 14px 18px;
+      border-bottom: 1px solid rgba(74, 58, 30, 0.58);
+      background: rgba(17, 17, 24, 0.94);
+      flex-wrap: wrap;
+    }
+
+    .console-tab {
+      padding: 4px 12px;
+      border: 1px solid var(--border);
+      background: transparent;
+      color: var(--dim);
+      cursor: pointer;
+      font-size: 0.76rem;
+      letter-spacing: 0.1em;
+      text-transform: lowercase;
+      transition: color 0.15s ease, border-color 0.15s ease, background 0.15s ease;
+    }
+
+    .console-tab:hover,
+    .console-tab:focus-visible {
+      color: var(--voice);
+      border-color: var(--voice);
+      outline: none;
+    }
+
+    .console-tab.is-active {
+      color: var(--voice);
+      border-color: var(--voice);
+      background: rgba(200, 169, 110, 0.08);
+    }
+
+    .console-stage {
+      min-height: 0;
+      overflow: auto;
+      padding: 22px 24px 26px;
+      display: flex;
+      flex-direction: column;
+    }
+
+    .console-panel {
+      display: none;
+      min-height: 100%;
+      border: 1px solid rgba(74, 58, 30, 0.6);
+      background: rgba(17, 17, 24, 0.9);
+      padding: 24px;
+      box-shadow: inset 0 0 0 1px rgba(200, 169, 110, 0.04);
+    }
+
+    .console-panel.is-active {
+      display: grid;
+      align-content: start;
+      gap: 14px;
+    }
+
+    .panel-phase {
+      color: var(--dim);
+      font-size: 0.74rem;
+      letter-spacing: 0.14em;
+      text-transform: uppercase;
+    }
+
+    .panel-title {
+      margin: 0;
+      color: var(--voice);
+      font-size: 1.2rem;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+    }
+
+    .panel-subtitle {
+      margin: 0;
+      color: var(--text);
+      font-size: 0.94rem;
+      line-height: 1.55;
+    }
+
+    .panel-note {
+      max-width: 70ch;
+      padding: 14px 16px;
+      border: 1px solid rgba(74, 58, 30, 0.32);
+      background: rgba(24, 17, 10, 0.34);
+      color: var(--dim);
+      font-size: 0.84rem;
+      line-height: 1.6;
+    }
+
+    .access-alert {
+      display: none;
+      padding: 16px 18px;
+      border: 1px solid rgba(200, 110, 110, 0.42);
+      background: rgba(200, 110, 110, 0.08);
+      color: var(--critical);
+      font-size: 0.9rem;
+      line-height: 1.6;
+    }
+
+    body.access-denied .console-nav,
+    body.access-denied .console-panel {
+      display: none;
+    }
+
+    body.access-denied .access-alert {
+      display: block;
+    }
+
+    @media (max-width: 980px) {
+      .header {
+        flex-direction: column;
+        align-items: flex-start;
+      }
+
+      .header-meta {
+        justify-content: flex-start;
+      }
+
+      .console-stage {
+        padding: 18px;
+      }
+
+      .console-panel {
+        padding: 18px;
+      }
+    }
+  </style>
+</head>
+<body data-ws-port="__WS_PORT__">
+  <div class="shell">
+    <header class="header">
+      <div class="brand">
+        <div class="brand-indicator">INANNA NYX</div>
+        <div class="console-subtitle">OPERATOR CONSOLE</div>
+      </div>
+      <div class="header-meta">
+        <div class="header-phase" id="phase-text">loading phase</div>
+        <div class="realm-indicator" id="realm-indicator">REALM: DEFAULT</div>
+        <div class="user-indicator dim" id="user-indicator">USER: NONE</div>
+        <div class="body-indicator" id="body-indicator">BODY: OK</div>
+        <div class="connection-indicator warn" id="connection-indicator">&#8226; CONNECTING</div>
+      </div>
+    </header>
+
+    <nav class="console-nav" aria-label="Console sections">
+      <button class="console-tab is-active" type="button" data-panel-button="tools">[ tools ]</button>
+      <button class="console-tab" type="button" data-panel-button="network">[ network ]</button>
+      <button class="console-tab" type="button" data-panel-button="faculties">[ faculties ]</button>
+      <button class="console-tab" type="button" data-panel-button="processes">[ processes ]</button>
+    </nav>
+
+    <main class="console-stage">
+      <div class="access-alert" id="access-alert"></div>
+
+      <section class="console-panel is-active" data-panel="tools" aria-labelledby="panel-tools-title">
+        <div class="panel-phase">Phase 5.2</div>
+        <h1 class="panel-title" id="panel-tools-title">Tool Registry - Phase 5.2</h1>
+        <p class="panel-subtitle">Registered tools will appear here.</p>
+        <div class="panel-note">
+          Phase 5.1 builds the governed console surface only. No tool execution occurs here yet.
+        </div>
+      </section>
+
+      <section class="console-panel" data-panel="network" aria-labelledby="panel-network-title">
+        <div class="panel-phase">Phase 5.3</div>
+        <h1 class="panel-title" id="panel-network-title">Network Eye - Phase 5.3</h1>
+        <p class="panel-subtitle">Network discovery and topology will appear here.</p>
+        <div class="panel-note">
+          Phase 5.1 does not perform scanning or host discovery. This panel is the placeholder door for that later governed work.
+        </div>
+      </section>
+
+      <section class="console-panel" data-panel="faculties" aria-labelledby="panel-faculties-title">
+        <div class="panel-phase">Phase 5.5</div>
+        <h1 class="panel-title" id="panel-faculties-title">Faculty Registry - Phase 5.5</h1>
+        <p class="panel-subtitle">Registered Faculties will appear here.</p>
+        <div class="panel-note">
+          Phase 5.1 opens the registry surface only. Faculty catalog and routing expansions arrive in later phases.
+        </div>
+      </section>
+
+      <section class="console-panel" data-panel="processes" aria-labelledby="panel-processes-title">
+        <div class="panel-phase">Phase 5.4</div>
+        <h1 class="panel-title" id="panel-processes-title">Process Monitor - Phase 5.4</h1>
+        <p class="panel-subtitle">Running services and health will appear here.</p>
+        <div class="panel-note">
+          Phase 5.1 does not inspect or control processes. It provides the placeholder surface for later monitored service health.
+        </div>
+      </section>
+    </main>
+  </div>
+
+  <script>
+    const STATUS_DOT = "\u2022";
+
+    const state = {
+      ws: null,
+      panel: "tools",
+      status: {
+        phase: "",
+        realm: "default",
+        active_user: null,
+        acting_as: null,
+        original_user: null,
+        body: {},
+        mode: "fallback",
+      },
+      redirectScheduled: false,
+    };
+
+    const phaseText = document.getElementById("phase-text");
+    const realmIndicator = document.getElementById("realm-indicator");
+    const userIndicator = document.getElementById("user-indicator");
+    const bodyIndicator = document.getElementById("body-indicator");
+    const connectionIndicator = document.getElementById("connection-indicator");
+    const accessAlert = document.getElementById("access-alert");
+    const panelButtons = Array.from(document.querySelectorAll("[data-panel-button]"));
+    const panels = Array.from(document.querySelectorAll("[data-panel]"));
+
+    function hasConsoleAccess(activeUser) {
+      const role = String(activeUser && activeUser.role || "").toLowerCase();
+      return role === "guardian" || role === "operator";
+    }
+
+    function setConnectionState(label, tone) {
+      connectionIndicator.textContent = `${STATUS_DOT} ${label}`;
+      connectionIndicator.classList.toggle("warn", tone === "warn");
+      connectionIndicator.classList.toggle("danger", tone === "danger");
+    }
+
+    function setActivePanel(panelName) {
+      state.panel = panelName;
+      panelButtons.forEach((button) => {
+        button.classList.toggle("is-active", button.dataset.panelButton === panelName);
+      });
+      panels.forEach((panel) => {
+        panel.classList.toggle("is-active", panel.dataset.panel === panelName);
+      });
+    }
+
+    function renderHeader() {
+      const activeUser = state.status.active_user;
+      const actingAs = state.status.acting_as;
+      const originalUser = state.status.original_user;
+      const body = state.status.body || {};
+
+      phaseText.textContent = state.status.phase || "loading phase";
+      realmIndicator.textContent = `REALM: ${(state.status.realm || "default").toUpperCase()}`;
+
+      if (activeUser && actingAs && originalUser) {
+        userIndicator.textContent = `USER: ${actingAs.display_name} [as ${originalUser.display_name}]`;
+        userIndicator.classList.remove("dim");
+      } else if (activeUser) {
+        userIndicator.textContent = `USER: ${activeUser.display_name}`;
+        userIndicator.classList.remove("dim");
+      } else {
+        userIndicator.textContent = "USER: NONE";
+        userIndicator.classList.add("dim");
+      }
+
+      const modelMode = body.model_mode || state.status.mode || "fallback";
+      const isWarn =
+        modelMode === "fallback" ||
+        (typeof body.memory_used_pct === "number" && body.memory_used_pct >= 80) ||
+        (typeof body.disk_free_gb === "number" && body.disk_free_gb < 1);
+
+      let bodyLabel = "BODY: OK";
+      if (modelMode === "fallback") {
+        bodyLabel = "BODY: FALLBACK";
+      } else if (isWarn) {
+        bodyLabel = "BODY: WARN";
+      }
+
+      bodyIndicator.textContent = bodyLabel;
+      bodyIndicator.classList.toggle("warn", isWarn);
+    }
+
+    function denyConsoleAccess() {
+      if (state.redirectScheduled) {
+        return;
+      }
+
+      state.redirectScheduled = true;
+      document.body.classList.add("access-denied");
+      accessAlert.textContent = "Access denied. Console requires Guardian or Operator role.";
+      setConnectionState("DENIED", "danger");
+      setTimeout(() => {
+        window.location.replace("/");
+      }, 2000);
+    }
+
+    function allowConsoleAccess() {
+      if (state.redirectScheduled) {
+        return;
+      }
+      document.body.classList.remove("access-denied");
+      accessAlert.textContent = "";
+    }
+
+    function handleServerMessage(payload) {
+      if (payload.type === "status") {
+        state.status = payload.data || {};
+        renderHeader();
+        if (hasConsoleAccess(state.status.active_user)) {
+          allowConsoleAccess();
+        } else {
+          denyConsoleAccess();
+        }
+        return;
+      }
+
+      if (payload.type === "console_access_denied") {
+        denyConsoleAccess();
+      }
+    }
+
+    function connect() {
+      const protocol = window.location.protocol === "https:" ? "wss" : "ws";
+      const wsPort = document.body.dataset.wsPort || "8081";
+      state.ws = new WebSocket(`${protocol}://localhost:${wsPort}/console`);
+
+      setConnectionState("CONNECTING", "warn");
+
+      state.ws.addEventListener("open", () => {
+        setConnectionState("CONNECTED", "ok");
+      });
+
+      state.ws.addEventListener("message", (event) => {
+        const payload = JSON.parse(event.data);
+        handleServerMessage(payload);
+      });
+
+      state.ws.addEventListener("close", () => {
+        if (state.redirectScheduled) {
+          return;
+        }
+        setConnectionState("RECONNECTING", "warn");
+        setTimeout(connect, 1000);
+      });
+
+      state.ws.addEventListener("error", () => {
+        if (state.redirectScheduled) {
+          return;
+        }
+        setConnectionState("RECONNECTING", "warn");
+      });
+    }
+
+    panelButtons.forEach((button) => {
+      button.addEventListener("click", () => {
+        setActivePanel(button.dataset.panelButton || "tools");
+      });
+    });
+
+    setActivePanel(state.panel);
+    renderHeader();
+    connect();
+  </script>
+</body>
+</html>

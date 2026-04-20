@@ -80,6 +80,7 @@ from main import (
 APP_ROOT = Path(__file__).resolve().parent.parent
 STATIC_ROOT = Path(__file__).resolve().parent / "static"
 INDEX_PATH = STATIC_ROOT / "index.html"
+CONSOLE_PATH = STATIC_ROOT / "console.html"
 
 load_dotenv(APP_ROOT / ".env")
 HTTP_PORT = int(os.getenv("INANNA_HTTP_PORT", "8080"))
@@ -91,18 +92,29 @@ def utc_now() -> str:
 
 
 class StaticHandler(BaseHTTPRequestHandler):
-    def do_GET(self) -> None:
-        if self.path in {"/", "/index.html"}:
-            content = INDEX_PATH.read_text(encoding="utf-8").replace(
-                "__WS_PORT__", str(WS_PORT)
-            )
-            payload = content.encode("utf-8")
-            self.send_response(200)
-            self.send_header("Content-Type", "text/html; charset=utf-8")
-            self.send_header("Content-Length", str(len(payload)))
-            self.send_header("Cache-Control", "no-store")
+    def _serve_html(self, file_path: Path) -> None:
+        if not file_path.exists():
+            self.send_response(404)
             self.end_headers()
-            self.wfile.write(payload)
+            return
+
+        content = file_path.read_text(encoding="utf-8").replace(
+            "__WS_PORT__", str(WS_PORT)
+        )
+        payload = content.encode("utf-8")
+        self.send_response(200)
+        self.send_header("Content-Type", "text/html; charset=utf-8")
+        self.send_header("Content-Length", str(len(payload)))
+        self.send_header("Cache-Control", "no-store")
+        self.end_headers()
+        self.wfile.write(payload)
+
+    def do_GET(self) -> None:
+        path = self.path.split("?", 1)[0]
+        if path in {"/", "/index.html"}:
+            self._serve_html(INDEX_PATH)
+        elif path == "/console":
+            self._serve_html(CONSOLE_PATH)
         else:
             self.send_response(404)
             self.end_headers()
@@ -211,7 +223,9 @@ class InterfaceServer:
         self.connections.add(connection)
         print(f"Client connected. Total: {len(self.connections)}")
         try:
-            await self.send_initial_state(connection)
+            allowed = await self.send_initial_state(connection)
+            if not allowed:
+                return
             async for raw_message in connection:
                 try:
                     payload = json.loads(raw_message)
@@ -1558,9 +1572,33 @@ class InterfaceServer:
             for r in sorted(self.proposal.pending_records(), key=lambda r: r["timestamp"])
         ]
 
-    async def send_initial_state(self, connection: ServerConnection) -> None:
+    def _connection_path(self, connection: ServerConnection) -> str:
+        request = getattr(connection, "request", None)
+        if request is None:
+            return "/"
+        return request.path.split("?", 1)[0]
+
+    def _has_console_access(self) -> bool:
+        if self.active_user is None:
+            return False
+        return self.active_user.role.strip().lower() in {"guardian", "operator"}
+
+    async def send_initial_state(self, connection: ServerConnection) -> bool:
         visible_memory_report = self._visible_memory_report()
-        payloads = [{"type": "status", "data": self.build_status_payload()}]
+        status_payload = {"type": "status", "data": self.build_status_payload()}
+        if self._connection_path(connection) == "/console" and not self._has_console_access():
+            await self.send_json(connection, status_payload)
+            await self.send_json(
+                connection,
+                {
+                    "type": "console_access_denied",
+                    "text": "Insufficient privileges for Console.",
+                },
+            )
+            await connection.close(code=1008, reason="Insufficient privileges for Console.")
+            return False
+
+        payloads = [status_payload]
         payloads.extend(
             {"type": "system", "text": message} for message in self.startup_messages
         )
@@ -1580,6 +1618,7 @@ class InterfaceServer:
         alerts, report = self.inspect_guardian()
         if any(alert.level in {"warn", "critical"} for alert in alerts):
             await self.send_json(connection, {"type": "guardian", "text": report})
+        return True
 
     async def broadcast_state(self) -> None:
         visible_memory_report = self._visible_memory_report()
