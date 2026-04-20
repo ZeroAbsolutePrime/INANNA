@@ -490,6 +490,7 @@ class CommandTests(unittest.TestCase):
                 "guardian",
                 "faculties",
                 "realms",
+                "create-realm",
                 "realm-context",
                 "switch-user",
                 "assign-realm",
@@ -499,6 +500,7 @@ class CommandTests(unittest.TestCase):
                 "invite",
                 "join",
                 "invites",
+                "admin-surface",
                 "history",
                 "proposal-history",
                 "routing-log",
@@ -517,12 +519,188 @@ class CommandTests(unittest.TestCase):
             startup_commands_line(),
             (
                 "Commands: users, create-user, login, logout, whoami, reflect, analyse, "
-                "audit, guardian, faculties, realms, realm-context, switch-user, "
+                "audit, guardian, faculties, realms, create-realm, realm-context, switch-user, "
                 "assign-realm, unassign-realm, my-log, user-log, invite, join, invites, "
-                "history, proposal-history, routing-log, nammu-log, memory-log, body, "
-                "status, diagnostics, approve, reject, forget, exit"
+                "admin-surface, history, proposal-history, routing-log, nammu-log, "
+                "memory-log, body, status, diagnostics, approve, reject, forget, exit"
             ),
         )
+
+    def test_admin_surface_lists_visible_users_invites_and_realms(self) -> None:
+        (
+            session,
+            memory,
+            proposal,
+            state_report,
+            engine,
+            analyst,
+            classifier,
+            routing_log,
+            startup_context,
+            config,
+        ) = self.make_runtime()
+        root = session.session_path.parent.parent
+        user_manager, session_state, _, _, _ = self.make_user_context(root)
+        guardian_user = session_state["active_user"]
+        assert guardian_user is not None
+        user_log = UserLog(root / "user_logs")
+        user_log.append(
+            guardian_user.user_id,
+            session.session_id,
+            "user",
+            "hello",
+            "world",
+        )
+        realm_manager = RealmManager(root)
+        realm_manager.ensure_default_realm()
+        realm_manager.create_realm("work", purpose="Focused work.")
+        user_manager.create_user("Alice", "user", ["work"], guardian_user.user_id)
+        user_manager.create_invite("user", ["work"], guardian_user.user_id)
+
+        result = handle_command(
+            "admin-surface",
+            session,
+            memory,
+            proposal,
+            state_report,
+            engine,
+            analyst,
+            classifier,
+            routing_log,
+            startup_context,
+            config,
+            realm_manager=realm_manager,
+            user_manager=user_manager,
+            session_state=session_state,  # type: ignore[arg-type]
+            user_log=user_log,
+        )
+
+        self.assertIn("admin-surface > Users: 2  Invites: 1  Realms: 2", result)
+        self.assertIn("USERS", result)
+        self.assertIn("ZAERA", result)
+        self.assertIn("Alice", result)
+        self.assertIn("INVITES", result)
+        self.assertIn("REALMS", result)
+        self.assertIn("[work]", result)
+
+    def test_admin_surface_operator_is_realm_scoped(self) -> None:
+        (
+            session,
+            memory,
+            proposal,
+            state_report,
+            engine,
+            analyst,
+            classifier,
+            routing_log,
+            startup_context,
+            config,
+        ) = self.make_runtime()
+        root = session.session_path.parent.parent
+        user_manager, session_state, token_store, _, _ = self.make_user_context(root)
+        guardian_user = session_state["active_user"]
+        assert guardian_user is not None
+        realm_manager = RealmManager(root)
+        realm_manager.ensure_default_realm()
+        realm_manager.create_realm("work", purpose="Focused work.")
+        realm_manager.create_realm("private", purpose="Private realm.")
+        operator = user_manager.create_user("OperatorOne", "operator", ["work"], guardian_user.user_id)
+        user_manager.create_user("PrivateUser", "user", ["private"], guardian_user.user_id)
+        user_manager.create_invite("user", ["private"], guardian_user.user_id)
+        user_manager.create_invite("user", ["work"], guardian_user.user_id)
+        session_state["active_user"] = operator
+        session_state["active_token"] = token_store.issue(
+            operator.user_id,
+            operator.display_name,
+            operator.role,
+        )
+
+        result = handle_command(
+            "admin-surface",
+            session,
+            memory,
+            proposal,
+            state_report,
+            engine,
+            analyst,
+            classifier,
+            routing_log,
+            startup_context,
+            config,
+            realm_manager=realm_manager,
+            user_manager=user_manager,
+            session_state=session_state,  # type: ignore[arg-type]
+            user_log=UserLog(root / "user_logs"),
+        )
+
+        self.assertIn("OperatorOne", result)
+        self.assertIn("[work]", result)
+        self.assertNotIn("PrivateUser", result)
+        self.assertNotIn("[private]", result)
+
+    def test_create_realm_requires_proposal_and_creates_realm_on_approval(self) -> None:
+        (
+            session,
+            memory,
+            proposal,
+            state_report,
+            engine,
+            analyst,
+            classifier,
+            routing_log,
+            startup_context,
+            config,
+        ) = self.make_runtime()
+        root = session.session_path.parent.parent
+        user_manager, session_state, _, _, _ = self.make_user_context(root)
+        realm_manager = RealmManager(root)
+        active_realm = realm_manager.ensure_default_realm()
+
+        proposal_result = handle_command(
+            "create-realm archive Long term archive",
+            session,
+            memory,
+            proposal,
+            state_report,
+            engine,
+            analyst,
+            classifier,
+            routing_log,
+            startup_context,
+            config,
+            realm_manager=realm_manager,
+            active_realm=active_realm,
+            user_manager=user_manager,
+            session_state=session_state,  # type: ignore[arg-type]
+        )
+
+        self.assertIn("create-realm > proposal required to create a new realm.", proposal_result)
+        self.assertIn("[REALM PROPOSAL]", proposal_result)
+        self.assertFalse(realm_manager.realm_exists("archive"))
+
+        approval_result = handle_command(
+            "approve",
+            session,
+            memory,
+            proposal,
+            state_report,
+            engine,
+            analyst,
+            classifier,
+            routing_log,
+            startup_context,
+            config,
+            realm_manager=realm_manager,
+            active_realm=active_realm,
+            user_manager=user_manager,
+            session_state=session_state,  # type: ignore[arg-type]
+        )
+
+        self.assertEqual("create-realm > Realm archive created.", approval_result)
+        self.assertTrue(realm_manager.realm_exists("archive"))
+        created = realm_manager.load_realm("archive")
+        assert created is not None
+        self.assertEqual("Long term archive", created.purpose)
 
     def test_users_command_lists_guardian_user(self) -> None:
         (

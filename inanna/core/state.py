@@ -60,9 +60,11 @@ class StateReport:
             ),
             (
                 "Capabilities: respond, users, create-user, login, logout, whoami, "
-                "reflect, analyse, audit, guardian, faculties, realms, realm-context, "
+                "reflect, analyse, audit, guardian, faculties, realms, create-realm, "
+                "realm-context, "
                 "switch-user, assign-realm, unassign-realm, my-log, user-log, invite, "
-                "join, invites, history, proposal-history, routing-log, nammu-log, "
+                "join, invites, admin-surface, history, proposal-history, routing-log, "
+                "nammu-log, "
                 "memory-log, body, status, diagnostics, approve, reject, forget, exit"
             ),
         ]

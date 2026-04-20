@@ -420,6 +420,135 @@
       border-color: var(--fallback);
     }
 
+    .admin-counts {
+      margin-left: 8px;
+      color: var(--dim);
+      font-size: 0.74rem;
+      letter-spacing: 0.08em;
+    }
+
+    .admin-panel,
+    .admin-subsection {
+      display: grid;
+      gap: 12px;
+    }
+
+    .admin-panel {
+      gap: 18px;
+    }
+
+    .admin-sub-title {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+      color: var(--dim);
+      font-size: 0.76rem;
+      letter-spacing: 0.12em;
+      text-transform: uppercase;
+    }
+
+    .admin-user-row,
+    .admin-invite-row,
+    .admin-realm-row {
+      display: grid;
+      gap: 6px;
+      padding: 8px 0 10px;
+      border-bottom: 1px solid rgba(74, 58, 30, 0.12);
+    }
+
+    .admin-user-head,
+    .admin-invite-head,
+    .admin-realm-head {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+      flex-wrap: wrap;
+    }
+
+    .admin-user-identity {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      flex-wrap: wrap;
+    }
+
+    .admin-user-name,
+    .admin-realm-name {
+      color: var(--text);
+      font-size: 0.87rem;
+      letter-spacing: 0.04em;
+    }
+
+    .admin-user-role,
+    .admin-user-status {
+      color: var(--dim);
+      font-size: 0.74rem;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+    }
+
+    .admin-user-status.active {
+      color: var(--connected);
+    }
+
+    .admin-user-status.suspended {
+      color: var(--voice);
+    }
+
+    .admin-user-realms,
+    .admin-invite-meta,
+    .admin-realm-meta {
+      color: var(--dim);
+      font-size: 0.78rem;
+      line-height: 1.45;
+    }
+
+    .admin-invite-code {
+      color: var(--text);
+      font-family: "IBM Plex Mono", "Fira Code", monospace;
+      font-size: 0.82rem;
+      letter-spacing: 0.06em;
+    }
+
+    .admin-inline-form {
+      display: grid;
+      gap: 10px;
+      padding: 10px 12px;
+      border: 1px solid rgba(74, 58, 30, 0.24);
+      background: rgba(24, 17, 10, 0.36);
+    }
+
+    .admin-inline-fields {
+      display: grid;
+      gap: 8px;
+    }
+
+    .admin-inline-form input,
+    .admin-inline-form select {
+      width: 100%;
+      padding: 7px 9px;
+      border: 1px solid var(--border);
+      background: rgba(10, 8, 6, 0.78);
+      color: var(--text);
+      font: inherit;
+      font-size: 0.82rem;
+    }
+
+    .admin-inline-form input:focus,
+    .admin-inline-form select:focus {
+      outline: none;
+      border-color: var(--voice);
+    }
+
+    .admin-inline-actions {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      flex-wrap: wrap;
+    }
+
     .filter-tabs {
       display: flex;
       gap: 8px;
@@ -1015,6 +1144,22 @@
       </section>
 
       <aside class="side-panel" id="side-panel">
+        <section class="section" data-section="admin" hidden>
+          <div class="section-header" data-section-header="admin" tabindex="0" role="button" aria-expanded="false">
+            <div class="section-title-row">
+              <span class="section-toggle" data-section-toggle="admin"></span>
+              <span class="section-title">ADMIN</span>
+              <span class="admin-counts" id="admin-counts"></span>
+            </div>
+            <div class="section-header-right">
+              <span class="section-badge" id="admin-badge">0</span>
+            </div>
+          </div>
+          <div class="section-body" id="admin-body">
+            <div class="admin-panel" id="admin-panel"></div>
+          </div>
+        </section>
+
         <section class="section" data-section="memory">
           <div class="section-header" data-section-header="memory" tabindex="0" role="button" aria-expanded="false">
             <div class="section-title-row">
@@ -1142,6 +1287,7 @@
     const MEMORY_DISPLAY_CAP = 100;
     const SECTION_STORAGE_KEY = "inanna.ui.section-state";
     const DEFAULT_SECTIONS = {
+      admin: false,
       memory: false,
       proposals: true,
       faculties: false,
@@ -1164,6 +1310,7 @@
       "guardian-clear-events",
       "faculties",
       "realms",
+      "create-realm",
       "realm-context",
       "switch-user",
       "assign-realm",
@@ -1173,6 +1320,7 @@
       "invite",
       "join",
       "invites",
+      "admin-surface",
       "history",
       "proposal-history",
       "routing-log",
@@ -1203,6 +1351,23 @@
         faculties: [],
       },
       messages: [],
+      adminVisible: false,
+      adminData: {
+        users: [],
+        invites: [],
+        realms: [],
+        total_users: 0,
+        total_invites: 0,
+        total_realms: 0,
+      },
+      adminForms: {
+        inviteOpen: false,
+        inviteRole: "user",
+        inviteRealm: "default",
+        realmOpen: false,
+        realmName: "",
+        realmPurpose: "",
+      },
       memoryRecords: [],
       proposalRecords: [],
       proposalHistoryRecords: [],
@@ -1231,6 +1396,8 @@
     const modeText = document.getElementById("mode-text");
     const actingBanner = document.getElementById("acting-banner");
     const conversationLog = document.getElementById("conversation-log");
+    const adminPanel = document.getElementById("admin-panel");
+    const adminCounts = document.getElementById("admin-counts");
     const memoryPanel = document.getElementById("memory-panel");
     const memoryBar = document.getElementById("memory-bar");
     const memoryBarLabel = document.getElementById("memory-bar-label");
@@ -1245,6 +1412,7 @@
     const auditPanel = document.getElementById("audit-panel");
     const inputForm = document.getElementById("input-form");
     const textInput = document.getElementById("text-input");
+    const adminBadge = document.getElementById("admin-badge");
     const memoryBadge = document.getElementById("memory-badge");
     const proposalBadge = document.getElementById("proposal-badge");
     const facultyBadge = document.getElementById("faculty-badge");
@@ -1257,6 +1425,11 @@
     const guardianClearEventsButton = document.getElementById("guardian-clear-events-button");
 
     const sectionRefs = {
+      admin: {
+        root: document.querySelector('[data-section="admin"]'),
+        header: document.querySelector('[data-section-header="admin"]'),
+        toggle: document.querySelector('[data-section-toggle="admin"]'),
+      },
       memory: {
         root: document.querySelector('[data-section="memory"]'),
         header: document.querySelector('[data-section-header="memory"]'),
@@ -1350,6 +1523,13 @@
       return String(sessionId || "").slice(0, 14);
     }
 
+    function formatRealmNames(realms) {
+      if (!Array.isArray(realms) || realms.length === 0) {
+        return "(none)";
+      }
+      return realms.map((realm) => String(realm || "").trim()).filter(Boolean).join(", ") || "(none)";
+    }
+
     function sortByTimestamp(records, key) {
       return [...records].sort((a, b) => {
         const left = parseIsoDate(a[key])?.getTime() || 0;
@@ -1383,6 +1563,36 @@
       return state.guardianAlerts.filter((alert) => alert.code !== "SYSTEM_HEALTHY").length;
     }
 
+    function adminInviteCount() {
+      return Number(state.adminData.total_invites || 0);
+    }
+
+    function resetAdminForms() {
+      state.adminForms.inviteOpen = false;
+      state.adminForms.inviteRole = "user";
+      state.adminForms.inviteRealm = state.status.realm || "default";
+      state.adminForms.realmOpen = false;
+      state.adminForms.realmName = "";
+      state.adminForms.realmPurpose = "";
+    }
+
+    function updateAdminVisibility(activeUser) {
+      const role = String(activeUser && activeUser.role || "").toLowerCase();
+      state.adminVisible = role === "guardian" || role === "operator";
+      sectionRefs.admin.root.hidden = !state.adminVisible;
+      if (!state.adminVisible) {
+        state.adminData = {
+          users: [],
+          invites: [],
+          realms: [],
+          total_users: 0,
+          total_invites: 0,
+          total_realms: 0,
+        };
+        resetAdminForms();
+      }
+    }
+
     function visibleAuditEvents() {
       if (state.auditLogLoaded && state.auditEvents.length > 0) {
         return newestFirst(state.auditEvents, "timestamp").slice(0, 20);
@@ -1391,6 +1601,9 @@
     }
 
     function ensureSectionData(sectionName) {
+      if (sectionName === "admin" && state.adminVisible) {
+        requestAdminSurface();
+      }
       if (sectionName === "guardian") {
         requestGuardianLog();
       }
@@ -1421,6 +1634,13 @@
 
     function requestGuardianLog() {
       sendCommand("guardian-log");
+    }
+
+    function requestAdminSurface() {
+      if (!state.adminVisible) {
+        return;
+      }
+      sendCommand("admin-surface");
     }
 
     function requestAuditLog() {
@@ -1554,6 +1774,20 @@
         return;
       }
 
+      if (payload.type === "admin_data") {
+        state.adminData = {
+          users: payload.users || [],
+          invites: payload.invites || [],
+          realms: payload.realms || [],
+          total_users: payload.total_users || 0,
+          total_invites: payload.total_invites || 0,
+          total_realms: payload.total_realms || 0,
+        };
+        renderAdmin();
+        renderSectionBadges();
+        return;
+      }
+
       if (payload.type === "access") {
         const text = normalizeSystemAccess(payload.text);
         addMessage("access", text);
@@ -1600,12 +1834,18 @@
           }
           state.startupContextShown = true;
         }
+        updateAdminVisibility(state.status.active_user);
         renderHeader();
         renderActingBanner();
+        renderAdmin();
         renderMemorySummary();
         renderFaculties();
         renderGuardian();
+        renderSections();
         renderSectionBadges();
+        if (state.adminVisible && state.sections.admin) {
+          requestAdminSurface();
+        }
         return;
       }
 
@@ -1747,6 +1987,12 @@
     }
 
     function renderSectionBadges() {
+      adminCounts.textContent = state.adminVisible
+        ? `(${state.adminData.total_users || 0} users  ${state.adminData.total_realms || 0} realms)`
+        : "";
+      adminBadge.textContent = String(adminInviteCount());
+      adminBadge.className = `section-badge${adminInviteCount() > 0 ? " warn" : ""}`;
+
       const totalLines = memoryTotalLines();
       memoryBadge.textContent = String(state.memoryRecords.length);
       memoryBadge.className = `section-badge${totalLines > MEMORY_DISPLAY_CAP ? " warn" : ""}`;
@@ -1766,6 +2012,361 @@
       const auditCount = visibleAuditEvents().length;
       auditBadge.textContent = String(auditCount);
       auditBadge.className = "section-badge";
+    }
+
+    function focusCommandInput(prefix) {
+      textInput.value = prefix;
+      textInput.focus();
+      textInput.setSelectionRange(textInput.value.length, textInput.value.length);
+    }
+
+    function openInviteForm(role, realmName) {
+      state.adminForms.realmOpen = false;
+      state.adminForms.inviteOpen = true;
+      state.adminForms.inviteRole = String(role || "user").toLowerCase();
+      state.adminForms.inviteRealm = String(realmName || state.status.realm || "default");
+      renderAdmin();
+    }
+
+    function openRealmForm() {
+      state.adminForms.inviteOpen = false;
+      state.adminForms.realmOpen = true;
+      renderAdmin();
+    }
+
+    function renderAdmin() {
+      if (!state.adminVisible) {
+        adminPanel.innerHTML = "";
+        adminCounts.textContent = "";
+        return;
+      }
+
+      adminPanel.innerHTML = "";
+
+      const usersSection = document.createElement("div");
+      usersSection.className = "admin-subsection";
+
+      const usersTitle = document.createElement("div");
+      usersTitle.className = "admin-sub-title";
+      const usersLabel = document.createElement("span");
+      usersLabel.textContent = "USERS";
+      const usersActions = document.createElement("div");
+      usersActions.className = "section-actions";
+      const addUserButton = document.createElement("button");
+      addUserButton.className = "panel-btn";
+      addUserButton.type = "button";
+      addUserButton.textContent = "[ + user ]";
+      addUserButton.addEventListener("click", () => {
+        focusCommandInput("create-user ");
+      });
+      usersActions.appendChild(addUserButton);
+      usersTitle.append(usersLabel, usersActions);
+      usersSection.appendChild(usersTitle);
+
+      if ((state.adminData.users || []).length === 0) {
+        const empty = document.createElement("div");
+        empty.className = "empty-state";
+        empty.textContent = "No visible users.";
+        usersSection.appendChild(empty);
+      } else {
+        state.adminData.users.forEach((user) => {
+          const row = document.createElement("div");
+          row.className = "admin-user-row";
+
+          const head = document.createElement("div");
+          head.className = "admin-user-head";
+
+          const identity = document.createElement("div");
+          identity.className = "admin-user-identity";
+          const name = document.createElement("div");
+          name.className = "admin-user-name";
+          name.textContent = user.display_name || "";
+          const role = document.createElement("div");
+          role.className = "admin-user-role";
+          role.textContent = `[${String(user.role || "").toLowerCase()}]`;
+          identity.append(name, role);
+
+          const actions = document.createElement("div");
+          actions.className = "section-actions";
+          const inviteButton = document.createElement("button");
+          inviteButton.className = "panel-btn";
+          inviteButton.type = "button";
+          inviteButton.textContent = "[ invite ]";
+          inviteButton.addEventListener("click", () => {
+            const defaultRealm = Array.isArray(user.assigned_realms) && user.assigned_realms.length > 0
+              ? user.assigned_realms[0]
+              : (state.status.realm || "default");
+            openInviteForm(user.role || "user", defaultRealm);
+          });
+          actions.appendChild(inviteButton);
+
+          head.append(identity, actions);
+          row.appendChild(head);
+
+          const realms = document.createElement("div");
+          realms.className = "admin-user-realms";
+          realms.textContent =
+            `realms: ${formatRealmNames(user.assigned_realms || [])}   log: ${user.log_count || 0}`;
+          row.appendChild(realms);
+
+          const status = document.createElement("div");
+          status.className = `admin-user-status ${String(user.status || "active").toLowerCase()}`;
+          status.textContent = `status: ${user.status || "active"}`;
+          row.appendChild(status);
+
+          usersSection.appendChild(row);
+        });
+      }
+
+      adminPanel.appendChild(usersSection);
+
+      const invitesSection = document.createElement("div");
+      invitesSection.className = "admin-subsection";
+
+      const invitesTitle = document.createElement("div");
+      invitesTitle.className = "admin-sub-title";
+      const invitesLabel = document.createElement("span");
+      invitesLabel.textContent = "INVITES";
+      const invitesActions = document.createElement("div");
+      invitesActions.className = "section-actions";
+      const addInviteButton = document.createElement("button");
+      addInviteButton.className = "panel-btn";
+      addInviteButton.type = "button";
+      addInviteButton.textContent = "[ + invite ]";
+      addInviteButton.addEventListener("click", () => {
+        openInviteForm("user", state.status.realm || "default");
+      });
+      invitesActions.appendChild(addInviteButton);
+      invitesTitle.append(invitesLabel, invitesActions);
+      invitesSection.appendChild(invitesTitle);
+
+      if ((state.adminData.invites || []).length === 0) {
+        const empty = document.createElement("div");
+        empty.className = "empty-state";
+        empty.textContent = "No visible invites.";
+        invitesSection.appendChild(empty);
+      } else {
+        state.adminData.invites.forEach((invite) => {
+          const row = document.createElement("div");
+          row.className = "admin-invite-row";
+
+          const head = document.createElement("div");
+          head.className = "admin-invite-head";
+
+          const code = document.createElement("div");
+          code.className = "admin-invite-code";
+          code.textContent = invite.invite_code || "";
+
+          const status = document.createElement("div");
+          status.className = "admin-user-status";
+          status.textContent = `[${invite.status || "pending"}]`;
+
+          head.append(code, status);
+          row.appendChild(head);
+
+          const meta = document.createElement("div");
+          meta.className = "admin-invite-meta";
+          meta.textContent =
+            `${invite.role || "user"}/${formatRealmNames(invite.assigned_realms || [])}   ${formatTimestamp(invite.created_at)}`;
+          row.appendChild(meta);
+
+          invitesSection.appendChild(row);
+        });
+      }
+
+      if (state.adminForms.inviteOpen) {
+        const form = document.createElement("div");
+        form.className = "admin-inline-form";
+
+        const fields = document.createElement("div");
+        fields.className = "admin-inline-fields";
+
+        const roleSelect = document.createElement("select");
+        ["user", "operator", "guardian"].forEach((roleName) => {
+          const option = document.createElement("option");
+          option.value = roleName;
+          option.textContent = roleName;
+          if (roleName === state.adminForms.inviteRole) {
+            option.selected = true;
+          }
+          roleSelect.appendChild(option);
+        });
+        roleSelect.addEventListener("change", () => {
+          state.adminForms.inviteRole = roleSelect.value;
+        });
+
+        const realmInput = document.createElement("input");
+        realmInput.type = "text";
+        realmInput.placeholder = "realm";
+        realmInput.value = state.adminForms.inviteRealm || "";
+        realmInput.addEventListener("input", () => {
+          state.adminForms.inviteRealm = realmInput.value;
+        });
+
+        const actions = document.createElement("div");
+        actions.className = "admin-inline-actions";
+
+        const createInviteButton = document.createElement("button");
+        createInviteButton.className = "panel-btn";
+        createInviteButton.type = "button";
+        createInviteButton.textContent = "[ create invite ]";
+        createInviteButton.addEventListener("click", () => {
+          const realmName = String(state.adminForms.inviteRealm || "").trim();
+          if (!realmName) {
+            realmInput.focus();
+            return;
+          }
+          sendCommand(`invite ${state.adminForms.inviteRole} ${realmName}`);
+          resetAdminForms();
+          renderAdmin();
+        });
+
+        realmInput.addEventListener("keydown", (event) => {
+          if (event.key === "Enter") {
+            event.preventDefault();
+            createInviteButton.click();
+          }
+        });
+
+        fields.append(roleSelect, realmInput);
+        form.appendChild(fields);
+
+        const cancelInviteButton = document.createElement("button");
+        cancelInviteButton.className = "panel-btn warn";
+        cancelInviteButton.type = "button";
+        cancelInviteButton.textContent = "[ cancel ]";
+        cancelInviteButton.addEventListener("click", () => {
+          resetAdminForms();
+          renderAdmin();
+        });
+
+        actions.append(createInviteButton, cancelInviteButton);
+        form.appendChild(actions);
+        invitesSection.appendChild(form);
+      }
+
+      adminPanel.appendChild(invitesSection);
+
+      const realmsSection = document.createElement("div");
+      realmsSection.className = "admin-subsection";
+
+      const realmsTitle = document.createElement("div");
+      realmsTitle.className = "admin-sub-title";
+      const realmsLabel = document.createElement("span");
+      realmsLabel.textContent = "REALMS";
+      const realmsActions = document.createElement("div");
+      realmsActions.className = "section-actions";
+      const addRealmButton = document.createElement("button");
+      addRealmButton.className = "panel-btn";
+      addRealmButton.type = "button";
+      addRealmButton.textContent = "[ + realm ]";
+      addRealmButton.addEventListener("click", () => {
+        openRealmForm();
+      });
+      realmsActions.appendChild(addRealmButton);
+      realmsTitle.append(realmsLabel, realmsActions);
+      realmsSection.appendChild(realmsTitle);
+
+      if ((state.adminData.realms || []).length === 0) {
+        const empty = document.createElement("div");
+        empty.className = "empty-state";
+        empty.textContent = "No visible realms.";
+        realmsSection.appendChild(empty);
+      } else {
+        state.adminData.realms.forEach((realm) => {
+          const row = document.createElement("div");
+          row.className = "admin-realm-row";
+
+          const head = document.createElement("div");
+          head.className = "admin-realm-head";
+
+          const name = document.createElement("div");
+          name.className = "admin-realm-name";
+          name.textContent = realm.name || "";
+
+          const sensitivity = document.createElement("div");
+          sensitivity.className = "admin-user-role";
+          sensitivity.textContent = `[${realm.governance_sensitivity || "open"}]`;
+
+          head.append(name, sensitivity);
+          row.appendChild(head);
+
+          const meta = document.createElement("div");
+          meta.className = "admin-realm-meta";
+          meta.textContent =
+            `${realm.purpose || "No purpose set."}   users: ${realm.user_count || 0}   memory: ${realm.memory_count || 0}`;
+          row.appendChild(meta);
+
+          realmsSection.appendChild(row);
+        });
+      }
+
+      if (state.adminForms.realmOpen) {
+        const form = document.createElement("div");
+        form.className = "admin-inline-form";
+
+        const fields = document.createElement("div");
+        fields.className = "admin-inline-fields";
+
+        const nameInput = document.createElement("input");
+        nameInput.type = "text";
+        nameInput.placeholder = "realm name";
+        nameInput.value = state.adminForms.realmName || "";
+        nameInput.addEventListener("input", () => {
+          state.adminForms.realmName = nameInput.value;
+        });
+
+        const purposeInput = document.createElement("input");
+        purposeInput.type = "text";
+        purposeInput.placeholder = "purpose";
+        purposeInput.value = state.adminForms.realmPurpose || "";
+        purposeInput.addEventListener("input", () => {
+          state.adminForms.realmPurpose = purposeInput.value;
+        });
+        purposeInput.addEventListener("keydown", (event) => {
+          if (event.key === "Enter") {
+            event.preventDefault();
+            createRealmButton.click();
+          }
+        });
+
+        fields.append(nameInput, purposeInput);
+        form.appendChild(fields);
+
+        const actions = document.createElement("div");
+        actions.className = "admin-inline-actions";
+
+        const createRealmButton = document.createElement("button");
+        createRealmButton.className = "panel-btn";
+        createRealmButton.type = "button";
+        createRealmButton.textContent = "[ create realm ]";
+        createRealmButton.addEventListener("click", () => {
+          const realmName = String(state.adminForms.realmName || "").trim();
+          const purpose = String(state.adminForms.realmPurpose || "").trim();
+          if (!realmName) {
+            nameInput.focus();
+            return;
+          }
+          sendCommand(purpose ? `create-realm ${realmName} ${purpose}` : `create-realm ${realmName}`);
+          resetAdminForms();
+          renderAdmin();
+        });
+
+        const cancelRealmButton = document.createElement("button");
+        cancelRealmButton.className = "panel-btn warn";
+        cancelRealmButton.type = "button";
+        cancelRealmButton.textContent = "[ cancel ]";
+        cancelRealmButton.addEventListener("click", () => {
+          resetAdminForms();
+          renderAdmin();
+        });
+
+        actions.append(createRealmButton, cancelRealmButton);
+        form.appendChild(actions);
+        realmsSection.appendChild(form);
+      }
+
+      adminPanel.appendChild(realmsSection);
     }
 
     function renderMemorySummary() {
@@ -2232,8 +2833,10 @@
     });
 
     connect();
+    updateAdminVisibility(state.status.active_user);
     renderHeader();
     renderActingBanner();
+    renderAdmin();
     renderSections();
     renderMessages();
     renderMemorySummary();

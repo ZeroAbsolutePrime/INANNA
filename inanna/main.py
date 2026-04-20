@@ -61,6 +61,7 @@ STARTUP_COMMANDS = (
     "guardian",
     "faculties",
     "realms",
+    "create-realm",
     "realm-context",
     "switch-user",
     "assign-realm",
@@ -70,6 +71,7 @@ STARTUP_COMMANDS = (
     "invite",
     "join",
     "invites",
+    "admin-surface",
     "history",
     "proposal-history",
     "routing-log",
@@ -314,6 +316,167 @@ def build_users_report(user_manager: UserManager) -> str:
     return "\n".join(lines)
 
 
+def format_realm_names(realms: list[str]) -> str:
+    cleaned = [realm.strip() for realm in realms if realm.strip()]
+    return ", ".join(cleaned) if cleaned else "(none)"
+
+
+def has_admin_surface_access(
+    user_manager: UserManager,
+    active_user: UserRecord | None,
+) -> bool:
+    if active_user is None:
+        return False
+    return user_manager.has_privilege(active_user.user_id, "all") or user_manager.has_privilege(
+        active_user.user_id,
+        "invite_users",
+    )
+
+
+def admin_scope_realms(active_user: UserRecord | None) -> set[str]:
+    if active_user is None:
+        return set()
+    return {realm.strip().lower() for realm in active_user.assigned_realms if realm.strip()}
+
+
+def record_matches_admin_scope(
+    assigned_realms: list[str],
+    scope_realms: set[str],
+) -> bool:
+    if not scope_realms or "all" in scope_realms:
+        return True
+    target_realms = {realm.strip().lower() for realm in assigned_realms if realm.strip()}
+    return "all" in target_realms or bool(target_realms & scope_realms)
+
+
+def build_admin_surface_payload(
+    user_manager: UserManager,
+    user_log: UserLog,
+    realm_manager: RealmManager,
+    active_user: UserRecord | None,
+) -> dict[str, object]:
+    scope_realms = admin_scope_realms(active_user)
+    full_access = (
+        active_user is None
+        or "all" in scope_realms
+        or user_manager.has_privilege(active_user.user_id, "all")
+    )
+    all_users = sorted(
+        user_manager.list_users(),
+        key=lambda record: (record.display_name.lower(), record.user_id),
+    )
+    visible_users = [
+        {
+            "user_id": record.user_id,
+            "display_name": record.display_name,
+            "role": record.role,
+            "assigned_realms": list(record.assigned_realms),
+            "status": record.status,
+            "log_count": user_log.entry_count(record.user_id),
+        }
+        for record in all_users
+        if full_access or record_matches_admin_scope(record.assigned_realms, scope_realms)
+    ]
+    visible_invites = [
+        {
+            "invite_code": invite.invite_code,
+            "role": invite.role,
+            "assigned_realms": list(invite.assigned_realms),
+            "status": invite.status,
+            "created_at": invite.created_at,
+        }
+        for invite in sorted(
+            user_manager.list_invites(),
+            key=lambda record: record.created_at,
+            reverse=True,
+        )
+        if full_access or record_matches_admin_scope(invite.assigned_realms, scope_realms)
+    ]
+    visible_realms: list[dict[str, object]] = []
+    for realm_name in realm_manager.list_realms():
+        if not full_access and realm_name.strip().lower() not in scope_realms:
+            continue
+        config = realm_manager.load_realm(realm_name)
+        if config is None:
+            continue
+        visible_realms.append(
+            {
+                "name": config.name,
+                "purpose": config.purpose,
+                "governance_sensitivity": config.governance_sensitivity,
+                "user_count": sum(
+                    1 for record in all_users if can_access_realm(record, config.name)
+                ),
+                "memory_count": count_records(
+                    realm_manager.realm_data_dirs(config.name)["memory"],
+                    "*.json",
+                ),
+            }
+        )
+    return {
+        "users": visible_users,
+        "invites": visible_invites,
+        "realms": visible_realms,
+        "total_users": len(visible_users),
+        "total_invites": len(visible_invites),
+        "total_realms": len(visible_realms),
+    }
+
+
+def build_admin_surface_report(admin_data: dict[str, object]) -> str:
+    users = list(admin_data.get("users", []))
+    invites = list(admin_data.get("invites", []))
+    realms = list(admin_data.get("realms", []))
+    total_users = int(admin_data.get("total_users", len(users)))
+    total_invites = int(admin_data.get("total_invites", len(invites)))
+    total_realms = int(admin_data.get("total_realms", len(realms)))
+    lines = [
+        f"admin-surface > Users: {total_users}  Invites: {total_invites}  Realms: {total_realms}",
+        "",
+        "USERS",
+    ]
+    if not users:
+        lines.append("  No visible users.")
+    else:
+        for record in users:
+            realms_text = format_realm_names(list(record.get("assigned_realms", [])))
+            lines.append(
+                "  "
+                f"{record.get('display_name', '')} "
+                f"[{record.get('role', '')}] "
+                f"{record.get('status', '')} "
+                f"realms: {realms_text} "
+                f"log: {record.get('log_count', 0)}"
+            )
+    lines.extend(["", "INVITES"])
+    if not invites:
+        lines.append("  No visible invites.")
+    else:
+        for invite in invites:
+            lines.append(
+                "  "
+                f"{invite.get('invite_code', '')} "
+                f"{invite.get('role', '')}/{format_realm_names(list(invite.get('assigned_realms', [])))} "
+                f"{invite.get('status', '')} "
+                f"{invite.get('created_at', '')}"
+            )
+    lines.extend(["", "REALMS"])
+    if not realms:
+        lines.append("  No visible realms.")
+    else:
+        for realm in realms:
+            purpose = str(realm.get("purpose", "")).strip() or "No purpose set."
+            lines.append(
+                "  "
+                f"[{realm.get('name', '')}] "
+                f"{purpose} "
+                f"sensitivity: {realm.get('governance_sensitivity', 'open')} "
+                f"users: {realm.get('user_count', 0)} "
+                f"memory: {realm.get('memory_count', 0)}"
+            )
+    return "\n".join(lines)
+
+
 def create_user_proposal(
     proposal: Proposal,
     display_name: str,
@@ -362,6 +525,31 @@ def create_invite_proposal(
         "line": (
             f"[INVITE PROPOSAL] {created['timestamp']} | "
             f"Create invite: role={role} realm={realm_name} | status: {created['status']}"
+        ),
+    }
+
+
+def create_realm_proposal(
+    proposal: Proposal,
+    realm_name: str,
+    purpose: str,
+    created_by: str,
+) -> dict[str, object]:
+    created = proposal.create(
+        what=f"Create realm: {realm_name}",
+        why="Realm creation requires visible approval before it takes effect.",
+        payload={
+            "action": "create_realm",
+            "realm_name": realm_name,
+            "purpose": purpose,
+            "created_by": created_by,
+        },
+    )
+    return {
+        **created,
+        "line": (
+            f"[REALM PROPOSAL] {created['timestamp']} | "
+            f"Create realm: {realm_name} | status: {created['status']}"
         ),
     }
 
@@ -1220,6 +1408,25 @@ def handle_command(
             )
         return build_invites_report(user_manager.list_invites(), current_user)
 
+    if lowered == "admin-surface":
+        if user_manager is None or user_log is None or realm_manager is None:
+            return "admin-surface > admin surface is unavailable."
+        if current_user is None:
+            return "access > No active session."
+        if not has_admin_surface_access(user_manager, current_user):
+            return (
+                f"access > Insufficient privileges. "
+                f"{current_user.display_name} ({current_user.role}) does not have: invite_users"
+            )
+        return build_admin_surface_report(
+            build_admin_surface_payload(
+                user_manager=user_manager,
+                user_log=user_log,
+                realm_manager=realm_manager,
+                active_user=current_user,
+            )
+        )
+
     if lowered == "status":
         history = proposal.history_report()
         return state_report.render(
@@ -1269,6 +1476,30 @@ def handle_command(
                 f"  Active: {active_realm_name}"
             )
         return build_realms_report(realm_manager, active_realm_name)
+
+    if lowered.startswith("create-realm"):
+        if realm_manager is None:
+            return "create-realm > realm management is unavailable."
+        if user_manager is not None:
+            allowed, reason = check_privilege(current_user, user_manager, "all")
+            if not allowed:
+                return f"access > {reason}"
+        parts = normalized.split(maxsplit=2)
+        if len(parts) < 2:
+            return "create-realm > usage: create-realm [name] [purpose]"
+        realm_name = parts[1].strip()
+        purpose = parts[2].strip() if len(parts) == 3 else ""
+        if not realm_name:
+            return "create-realm > usage: create-realm [name] [purpose]"
+        if realm_manager.realm_exists(realm_name):
+            return f"create-realm > Realm {realm_name} already exists."
+        created = create_realm_proposal(
+            proposal=proposal,
+            realm_name=realm_name,
+            purpose=purpose,
+            created_by=active_token.user_id if active_token is not None else "system",
+        )
+        return "create-realm > proposal required to create a new realm.\n" + str(created["line"])
 
     if lowered == "realm-context":
         current_realm = load_current_realm(realm_manager, active_realm)
@@ -1519,6 +1750,23 @@ def handle_command(
                 f"User created: {created_user.display_name} ({created_user.user_id}) "
                 f"role: {created_user.role}"
             )
+
+        if payload.get("action") == "create_realm":
+            realm_name = str(payload.get("realm_name", "")).strip()
+            purpose = str(payload.get("purpose", "")).strip()
+            if resolved["status"] != "approved":
+                return f"Rejected {resolved['proposal_id']}."
+            if realm_manager is None or not realm_name:
+                return f"Approved {resolved['proposal_id']} but realm management was unavailable."
+            if realm_manager.realm_exists(realm_name):
+                return f"create-realm > Realm {realm_name} already exists."
+            realm_manager.create_realm(realm_name, purpose)
+            append_audit_event(
+                session_audit,
+                "realm",
+                f"realm {realm_name} created",
+            )
+            return f"create-realm > Realm {realm_name} created."
 
         if payload.get("action") == "create_invite":
             if user_manager is None:

@@ -44,6 +44,7 @@ from main import (
     STARTUP_COMMANDS,
     append_audit_event,
     append_user_log_entry,
+    build_admin_surface_payload,
     build_body_report,
     build_body_summary,
     build_history_report,
@@ -60,12 +61,14 @@ from main import (
     build_whoami_report,
     build_tool_context_lines,
     create_invite_proposal,
+    create_realm_proposal,
     create_user_proposal,
     create_realm_assignment_proposal,
     create_memory_request_proposal,
     create_realm_context_proposal,
     create_tool_use_proposal,
     format_user_log_report,
+    has_admin_surface_access,
     initialize_realm_context,
     inspect_body_report,
     load_current_realm,
@@ -820,6 +823,30 @@ class InterfaceServer:
                 }
             )
             await self.broadcast_state()
+        elif command_name == "admin-surface":
+            if self.active_user is None:
+                await self.broadcast({"type": "system", "text": "access > No active session."})
+                return
+            if not has_admin_surface_access(self.user_manager, self.active_user):
+                await self.broadcast(
+                    {
+                        "type": "system",
+                        "text": (
+                            f"access > Insufficient privileges. "
+                            f"{self.active_user.display_name} ({self.active_user.role}) "
+                            "does not have: invite_users"
+                        ),
+                    }
+                )
+                return
+            admin_data = await asyncio.to_thread(
+                build_admin_surface_payload,
+                self.user_manager,
+                self.user_log,
+                self.realm_manager,
+                self.active_user,
+            )
+            await self.broadcast({"type": "admin_data", **admin_data})
         elif command_name == "reflect":
             await self.run_reflect()
         elif command_name == "audit":
@@ -840,6 +867,57 @@ class InterfaceServer:
                 self.active_realm.name,
             )
             await self.broadcast({"type": "system", "text": report})
+            await self.broadcast_state()
+        elif command_name == "create-realm":
+            allowed, reason = check_privilege(self.active_user, self.user_manager, "all")
+            if not allowed:
+                await self.broadcast({"type": "system", "text": f"access > {reason}"})
+                await self.broadcast_state()
+                return
+            parts = raw_cmd.split(maxsplit=2)
+            if len(parts) < 2:
+                await self.broadcast(
+                    {
+                        "type": "system",
+                        "text": "create-realm > usage: create-realm [name] [purpose]",
+                    }
+                )
+                await self.broadcast_state()
+                return
+            realm_name = parts[1].strip()
+            purpose = parts[2].strip() if len(parts) == 3 else ""
+            if not realm_name:
+                await self.broadcast(
+                    {
+                        "type": "system",
+                        "text": "create-realm > usage: create-realm [name] [purpose]",
+                    }
+                )
+                await self.broadcast_state()
+                return
+            if self.realm_manager.realm_exists(realm_name):
+                await self.broadcast(
+                    {
+                        "type": "system",
+                        "text": f"create-realm > Realm {realm_name} already exists.",
+                    }
+                )
+                await self.broadcast_state()
+                return
+            created = await asyncio.to_thread(
+                create_realm_proposal,
+                self.proposal,
+                realm_name,
+                purpose,
+                self.active_token.user_id if self.active_token is not None else "system",
+            )
+            await self.broadcast(
+                {
+                    "type": "system",
+                    "text": "create-realm > proposal required to create a new realm.",
+                }
+            )
+            await self.broadcast({"type": "system", "text": str(created["line"])})
             await self.broadcast_state()
         elif command_name == "realm-context":
             if command_args:
@@ -1181,6 +1259,22 @@ class InterfaceServer:
                     f"User created: {created_user.display_name} ({created_user.user_id}) "
                     f"role: {created_user.role}"
                 )
+            if payload.get("action") == "create_realm":
+                realm_name = str(payload.get("realm_name", "")).strip()
+                purpose = str(payload.get("purpose", "")).strip()
+                if not realm_name:
+                    return (
+                        f"Approved {resolved['proposal_id']} but realm management was unavailable."
+                    )
+                if self.realm_manager.realm_exists(realm_name):
+                    return f"create-realm > Realm {realm_name} already exists."
+                self.realm_manager.create_realm(realm_name, purpose)
+                append_audit_event(
+                    self.session_audit,
+                    "realm",
+                    f"realm {realm_name} created",
+                )
+                return f"create-realm > Realm {realm_name} created."
             if payload.get("action") == "create_invite":
                 invite = self.user_manager.create_invite(
                     role=str(payload.get("role", "")).strip(),
@@ -1222,6 +1316,7 @@ class InterfaceServer:
             "assign_realm",
             "unassign_realm",
             "create_user",
+            "create_realm",
             "create_invite",
         }:
             return f"Rejected {resolved['proposal_id']}."
