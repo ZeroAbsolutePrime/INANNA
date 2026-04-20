@@ -1,296 +1,264 @@
-# CURRENT PHASE: Cycle 6 - Phase 6.1 - The User Profile
+# CURRENT PHASE: Cycle 6 - Phase 6.2 - The Onboarding Survey
 **Status: ACTIVE**
 **Authorized by: ZAERA (Guardian) + Claude (Command Center)**
 **Date opened: 2026-04-20**
 **Cycle: 6 - The Relational Memory**
-**Master plan: docs/cycle6_master_plan.md**
-**Prerequisite: Cycle 5 complete — verify_cycle5.py passed 90 checks**
+**Replaces: Cycle 6 Phase 6.1 - The User Profile (COMPLETE)**
 
 ---
 
 ## What This Phase Is
 
-Cycle 5 proved that INANNA knows what she can do.
-Cycle 6 teaches her to know who she serves.
+Phase 6.1 created the profile — an empty vessel waiting to be filled.
+Phase 6.2 is the first filling: the onboarding survey.
 
-Phase 6.1 is the foundation: the UserProfile.
+The first time an operator opens a session with INANNA,
+she notices they have not yet been welcomed properly.
+She pauses the normal conversation flow and asks five questions —
+gently, conversationally, as though meeting someone for the first time.
 
-Every person who interacts with INANNA gains a profile —
-a living document that begins empty and deepens with every session.
-It holds their preferred name, their pronouns, their organizational
-context, their communication style, their interests, their trust patterns.
+Not a form. A meeting.
 
-The profile is theirs. They can read it. They can edit it. They can
-delete it. INANNA uses it silently to serve them better.
-Law IV governs: readable system truth.
+After the survey completes (or is skipped), it never repeats.
+The answers live in the profile. INANNA uses them silently
+to address the person as they wish to be addressed.
+
+This phase also implements the first active use of the profile:
+INANNA greets the user by their preferred_name after onboarding
+and uses their pronouns correctly in the conversation.
 
 ---
 
 ## What You Are Building
 
-### Task 1 - inanna/core/profile.py
+### Task 1 - Onboarding detection in server.py and main.py
 
-Create: inanna/core/profile.py
+After the active session starts (user logged in, profile loaded),
+check if onboarding is needed:
 
 ```python
-from dataclasses import dataclass, field
-from pathlib import Path
-from datetime import datetime, timezone
-import json
-
-def utc_now() -> str:
-    return datetime.now(timezone.utc).isoformat()
-
-@dataclass
-class UserProfile:
-    user_id: str
-    version: str = "1.0"
-    created_at: str = field(default_factory=utc_now)
-    last_updated: str = field(default_factory=utc_now)
-
-    # Identity
-    preferred_name: str = ""
-    pronouns: str = ""
-    gender: str = ""
-    sex: str = ""
-    languages: list[str] = field(default_factory=list)
-    timezone: str = ""
-    location_city: str = ""
-    location_region: str = ""
-    location_country: str = ""
-
-    # Organizational
-    departments: list[str] = field(default_factory=list)
-    groups: list[str] = field(default_factory=list)
-    notification_scope: str = "realm"  # "all" | "realm" | "none"
-
-    # Communication (observed by INANNA)
-    communication_style: str = ""
-    preferred_length: str = ""
-    formality: str = ""
-    observed_patterns: list[str] = field(default_factory=list)
-
-    # Interests (observed by INANNA)
-    domains: list[str] = field(default_factory=list)
-    recurring_topics: list[str] = field(default_factory=list)
-    named_projects: list[str] = field(default_factory=list)
-
-    # Trust patterns
-    session_trusted_tools: list[str] = field(default_factory=list)
-    persistent_trusted_tools: list[str] = field(default_factory=list)
-
-    # Onboarding
-    onboarding_completed: bool = False
-    onboarding_completed_at: str = ""
-    survey_responses: dict = field(default_factory=dict)
-
-    # INANNA's observations (proposal-governed)
-    inanna_notes: list[str] = field(default_factory=list)
-
-
-class ProfileManager:
-    def __init__(self, profiles_dir: Path):
-        self.profiles_dir = profiles_dir
-        profiles_dir.mkdir(parents=True, exist_ok=True)
-
-    def _profile_path(self, user_id: str) -> Path:
-        return self.profiles_dir / f"{user_id}.json"
-
-    def ensure_profile_exists(self, user_id: str) -> UserProfile:
-        if self._profile_path(user_id).exists():
-            return self.load(user_id)
-        profile = UserProfile(user_id=user_id)
-        self.save(profile)
-        return profile
-
-    def load(self, user_id: str) -> UserProfile | None:
-        path = self._profile_path(user_id)
-        if not path.exists():
-            return None
-        try:
-            data = json.loads(path.read_text(encoding="utf-8"))
-            # Remove unknown keys for forward compatibility
-            known = {f.name for f in UserProfile.__dataclass_fields__.values()}
-            filtered = {k: v for k, v in data.items() if k in known}
-            return UserProfile(**filtered)
-        except Exception:
-            return UserProfile(user_id=user_id)
-
-    def save(self, profile: UserProfile) -> None:
-        profile.last_updated = utc_now()
-        data = {
-            k: getattr(profile, k)
-            for k in profile.__dataclass_fields__
-        }
-        self._profile_path(profile.user_id).write_text(
-            json.dumps(data, indent=2, ensure_ascii=False),
-            encoding="utf-8",
-        )
-
-    def update_field(self, user_id: str, field_name: str, value) -> bool:
-        profile = self.load(user_id)
-        if profile is None:
-            profile = UserProfile(user_id=user_id)
-        if not hasattr(profile, field_name):
-            return False
-        setattr(profile, field_name, value)
-        self.save(profile)
-        return True
-
-    def delete(self, user_id: str) -> bool:
-        path = self._profile_path(user_id)
-        if path.exists():
-            path.unlink()
-            return True
+def needs_onboarding(profile: UserProfile | None) -> bool:
+    if profile is None:
         return False
-
-    def list_profiles(self) -> list[UserProfile]:
-        profiles = []
-        for path in self.profiles_dir.glob("*.json"):
-            p = self.load(path.stem)
-            if p:
-                profiles.append(p)
-        return profiles
-
-    def display_name_for(self, user_id: str, fallback: str = "") -> str:
-        profile = self.load(user_id)
-        if profile and profile.preferred_name:
-            return profile.preferred_name
-        return fallback
-
-    def pronouns_for(self, user_id: str) -> str:
-        profile = self.load(user_id)
-        if profile:
-            return profile.pronouns
-        return ""
+    return not profile.onboarding_completed
 ```
 
-### Task 2 - Instantiate ProfileManager in server.py and main.py
+If onboarding is needed, inject a special system message into
+the conversation BEFORE the user's first input reaches CROWN:
 
-Add to server.py __init__ and main.py startup:
+```
+{"type": "onboarding", "text": "...survey intro message..."}
+```
+
+This triggers the onboarding flow in the UI.
+
+### Task 2 - Onboarding state machine in server.py
+
+The onboarding survey is a 5-step conversational flow.
+Track state in the server session:
 
 ```python
-from core.profile import ProfileManager
-
-PROFILES_DIR = DATA_ROOT / "profiles"
-self.profile_manager = ProfileManager(PROFILES_DIR)
+self.onboarding_active = False
+self.onboarding_step = 0
+self.onboarding_responses = {}
 ```
 
-When a user logs in or a session starts, call:
-```python
-self.profile_manager.ensure_profile_exists(active_token.user_id)
-```
+The five questions (asked one at a time, in order):
 
-This creates an empty profile silently on first login.
-No output. No proposal. Just the foundation being laid.
+Step 1: "What would you like me to call you?"
+  Field: preferred_name
+  Skip phrase: "skip" | "no preference" | empty
 
-### Task 3 - Use preferred_name in grounding
+Step 2: "What pronouns do you use? For example: she/her, he/him,
+  they/them — or skip this if you prefer."
+  Field: pronouns
+  Skip phrase: "skip" | "prefer not" | empty
 
-In the grounding text sent to CROWN and SENTINEL,
-if the active user has a preferred_name set, use it:
+Step 3: "What brings you here? What are you working on?"
+  Field: survey_responses["purpose"]
+  Skip phrase: "skip"
 
-```python
-preferred = profile_manager.display_name_for(
-    active_token.user_id,
-    fallback=active_token.display_name
-)
-grounding_prefix = f"You are speaking with {preferred}."
-```
+Step 4: "Are there domains or topics you would like me to be
+  especially thoughtful about?"
+  Field: survey_responses["sensitive_domains"]
+  Skip phrase: "skip" | "none"
 
-This is the first moment INANNA uses the profile to personalize.
-It is subtle and silent — CROWN simply knows the person's name.
+Step 5: "Is there anything else you would like me to know
+  about you that would help me serve you well?"
+  Field: survey_responses["additional"]
+  Skip phrase: "skip" | "nothing" | "no"
 
-### Task 4 - "profile-status" in status payload
+After Step 5 (or after the user types "skip all"):
+  - Save all collected responses to the profile
+  - Set profile.onboarding_completed = True
+  - Set profile.onboarding_completed_at = utc_now()
+  - Broadcast a warm completion message:
+    "Thank you, [preferred_name or display_name]. I will remember
+     what you have shared. You can update your profile at any time
+     with the my-profile command. Let us begin."
+  - Resume normal conversation flow
 
-Add to the status payload:
-```json
-"profile": {
-    "exists": true,
-    "preferred_name": "ZAERA",
-    "onboarding_completed": false,
-    "departments": [],
-    "pronouns": ""
+### Task 3 - Onboarding message interception
+
+While onboarding_active is True, incoming user messages are
+treated as survey responses, not conversation inputs.
+They are NOT sent to NAMMU or CROWN.
+
+The response to each survey answer is the next question.
+
+If the user types "skip all" at any point:
+  Complete onboarding immediately with whatever was collected.
+  Mark as completed.
+
+### Task 4 - "onboarding" message type in index.html
+
+Add a distinct onboarding message type to the UI:
+
+```css
+.msg-row.onboarding .msg-bubble {
+    background: rgba(120, 72, 176, .08);
+    border: 1px solid rgba(120, 72, 176, .3);
+    border-left: 3px solid var(--vio3);
+    font-family: var(--serif);
+    font-size: 14px;
+    line-height: 2;
+    color: var(--rose5);
+}
+.msg-row.onboarding .msg-label {
+    color: var(--vio3);
+    font-family: var(--serif);
 }
 ```
 
-This lets the UI know whether to show the onboarding prompt
-in a future phase.
+The label text: "inanna ∴"
 
-### Task 5 - Update identity.py and state.py
+Onboarding messages feel like INANNA speaking warmly —
+rose/pink text, violet border, Cinzel font.
+Distinct from normal conversation but unmistakably INANNA.
 
-CURRENT_PHASE = "Cycle 6 - Phase 6.1 - The User Profile"
+### Task 5 - Onboarding skip button in UI
 
-Add "profile-status" awareness (no new command yet —
-it is part of the status payload, not a standalone command).
+When an onboarding message arrives, optionally show
+a subtle [ skip survey ] button beneath it:
 
-### Task 6 - Tests
+```html
+<div class="onboarding-skip">
+  <button onclick="sendSkipOnboarding()">[ skip survey ]</button>
+</div>
+```
 
-Create inanna/tests/test_profile.py:
-  - UserProfile can be instantiated with user_id only
-  - All fields have correct defaults
-  - ProfileManager.ensure_profile_exists() creates profile file
-  - ProfileManager.load() returns UserProfile for existing profile
-  - ProfileManager.load() returns None for missing profile
-  - ProfileManager.save() writes JSON to disk
-  - ProfileManager.update_field() updates a string field
-  - ProfileManager.update_field() updates a list field
-  - ProfileManager.update_field() returns False for unknown field
-  - ProfileManager.delete() removes profile file
-  - ProfileManager.list_profiles() returns all profiles
-  - ProfileManager.display_name_for() returns preferred_name if set
-  - ProfileManager.display_name_for() returns fallback if not set
-  - ProfileManager.pronouns_for() returns pronouns if set
-  - ProfileManager.pronouns_for() returns empty string if not set
-  - Profile JSON is valid after save/load round-trip
+```javascript
+function sendSkipOnboarding() {
+  if (ws && ws.readyState === 1) {
+    ws.send(JSON.stringify({type: 'input', text: 'skip all'}));
+  }
+}
+```
+
+This appears only for the first onboarding message,
+not for each question.
+
+### Task 6 - Profile update after onboarding
+
+After onboarding completes, the profile is updated:
+
+```python
+if response_step1:
+    profile_manager.update_field(user_id, 'preferred_name', response_step1)
+if response_step2:
+    profile_manager.update_field(user_id, 'pronouns', response_step2)
+# survey_responses dict stored as JSON
+profile_manager.update_field(user_id, 'survey_responses', collected)
+profile_manager.update_field(user_id, 'onboarding_completed', True)
+profile_manager.update_field(user_id, 'onboarding_completed_at', utc_now())
+```
+
+Immediately after saving, INANNA's grounding is refreshed
+to include the new preferred_name:
+
+```python
+sync_profile_grounding(engine, profile_manager, active_user, active_token)
+```
+
+### Task 7 - INANNA uses preferred_name in completion message
+
+The onboarding completion message uses the name the user provided:
+
+```python
+name = profile_manager.display_name_for(user_id, fallback=display_name)
+completion_msg = (
+    f"Thank you, {name}. I will remember what you have shared. "
+    f"You can update your profile at any time with the my-profile command. "
+    f"Let us begin."
+)
+```
+
+### Task 8 - Update identity.py and state.py
+
+CURRENT_PHASE = "Cycle 6 - Phase 6.2 - The Onboarding Survey"
+
+### Task 9 - Tests
+
+Update inanna/tests/test_profile.py:
+  - needs_onboarding() returns True for incomplete profile
+  - needs_onboarding() returns False for completed profile
+  - needs_onboarding() returns False for None profile
 
 Update test_identity.py: update CURRENT_PHASE assertion.
+
+No new test file needed — onboarding logic is integration-level
+and is tested via the existing profile tests + manual verification.
 
 ---
 
 ## Permitted file changes
 
 inanna/identity.py              <- MODIFY: update CURRENT_PHASE
-inanna/main.py                  <- MODIFY: instantiate ProfileManager,
-                                           ensure_profile on login,
-                                           preferred_name in grounding,
-                                           profile in status payload
-inanna/config/
-  (no config changes)
-inanna/core/
-  profile.py                    <- NEW
-  state.py                      <- MODIFY: update phase only
+inanna/main.py                  <- MODIFY: onboarding detection,
+                                           onboarding state machine,
+                                           profile update on complete
 inanna/ui/
-  server.py                     <- MODIFY: instantiate ProfileManager,
-                                           ensure_profile on login,
-                                           preferred_name in grounding,
-                                           profile in status payload
+  server.py                     <- MODIFY: onboarding detection,
+                                           message interception,
+                                           state machine,
+                                           profile update on complete
+  static/index.html             <- MODIFY: onboarding message type CSS,
+                                           onboarding label,
+                                           skip survey button
+inanna/core/
+  state.py                      <- MODIFY: update phase only
 inanna/tests/
-  test_profile.py               <- NEW
+  test_profile.py               <- MODIFY: add needs_onboarding tests
   test_identity.py              <- MODIFY: update phase assertion
 
 ---
 
 ## What You Are NOT Building
 
-- No onboarding survey (Phase 6.2)
 - No profile commands (Phase 6.3)
 - No communication learning (Phase 6.4)
-- No departments/groups UI (Phase 6.5)
-- No pronoun use in INANNA's language (Phase 6.6)
-- No trust persistence (Phase 6.7)
-- No reflective memory (Phase 6.8)
-- No changes to console.html or index.html
+- No department/group fields (Phase 6.5)
+- No pronoun use in third-person language (Phase 6.6)
+- Do not change console.html
+- The Guardian (ZAERA) is NOT shown the onboarding survey —
+  only new non-guardian users see it on first login.
+  Guardian profile is created in Phase 6.1 but marked completed
+  to skip the survey (Guardian configured the system).
 
 ---
 
 ## Definition of Done
 
-- [ ] core/profile.py exists with UserProfile and ProfileManager
-- [ ] ProfileManager.ensure_profile_exists() creates profiles silently
-- [ ] ProfileManager wired into server.py and main.py
-- [ ] Empty profile created on user login
-- [ ] preferred_name used in grounding when set
-- [ ] profile section in status payload
+- [ ] needs_onboarding() function exists and works correctly
+- [ ] Onboarding detected on first login for non-guardian users
+- [ ] Guardian profile marked onboarding_completed on creation
+- [ ] Survey proceeds through 5 steps conversationally
+- [ ] "skip all" exits survey immediately
+- [ ] Profile updated with collected responses after survey
+- [ ] preferred_name used in completion message
+- [ ] grounding refreshed after onboarding completes
+- [ ] Onboarding message type renders distinctly in index.html
+- [ ] Skip survey button appears on first onboarding message
 - [ ] CURRENT_PHASE updated
 - [ ] All tests pass: py -3 -m unittest discover -s tests
 - [ ] Pushed to origin/main immediately
@@ -299,18 +267,19 @@ inanna/tests/
 
 ## Handoff
 
-Commit: cycle6-phase1-complete
+Commit: cycle6-phase2-complete
 Push immediately to origin/main.
-Report: docs/implementation/CYCLE6_PHASE1_REPORT.md
-Stop. Do not begin Phase 6.2 without new CURRENT_PHASE.md.
+Report: docs/implementation/CYCLE6_PHASE2_REPORT.md
+Stop. Do not begin Phase 6.3 without new CURRENT_PHASE.md.
 
 ---
 
 *Written by: Claude (Command Center)*
 *Guardian approval: ZAERA*
 *Date: 2026-04-20*
-*The first profile is created.*
-*Empty. Waiting.*
 *INANNA meets someone for the first time.*
-*She does not yet know who they are.*
-*But she is ready to learn.*
+*She asks who they are.*
+*She listens.*
+*She remembers.*
+*Not because she was told to.*
+*Because she cares.*
