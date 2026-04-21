@@ -1,943 +1,549 @@
-# CURRENT PHASE: Cycle 8 - Phase 8.1 - The Desktop Faculty Core
+# CURRENT PHASE: Cycle 8 - Phase 8.2 - Communication Faculty: Signal & WhatsApp
 **Status: ACTIVE**
 **Authorized by: ZAERA (Guardian) + Claude (Command Center)**
 **Date opened: 2026-04-21**
 **Cycle: 8 - The Desktop Bridge**
-**Master plan: docs/cycle8_master_plan.md**
-**Prerequisite: Cycle 7 complete — 432 tests, 18 tools, authentication**
+**Replaces: Cycle 8 Phase 8.1 - The Desktop Faculty Core (COMPLETE)**
 
 ---
 
 ## Agent Roles for This Phase
 
 ARCHITECT:  Command Center (Claude) — this document
-BUILDER:    Codex — implement Desktop Faculty and Windows backend
+BUILDER:    Codex — implement CommunicationWorkflows + routing
 TESTER:     Codex — unit tests (offline, no apps required)
 VERIFIER:   Command Center — confirm after push
 
 BUILDER forbidden from:
-  - Touching voice/ directory
-  - Modifying auth system
-  - Building app-specific workflows (Phase 8.2+)
+  - Modifying core/desktop_faculty.py
+  - Changing the five abstract desktop tools
   - Making actual UI automation calls in tests
+  - Voice changes, auth changes
+
+---
+
+## Current System State
+
+Signal 8.7.0 is installed (OpenWhisperSystems.Signal).
+WhatsApp Desktop is NOT installed — can be installed via:
+  winget install WhatsApp.WhatsApp
+
+Both are Electron apps — identical accessibility structure
+on Windows and Linux.
 
 ---
 
 ## What This Phase Is
 
-This phase builds the architecture that all of Cycle 8 rests on.
+Phase 8.1 built the abstract Desktop Faculty — five tools that
+reach any application.
 
-The Desktop Faculty is the bridge between INANNA and every
-application running on the computer. Instead of building
-one integration per app, we build five abstract tools that
-work with any app. Then Phases 8.2-8.6 use these same five
-tools to reach WhatsApp, LibreOffice, email, browser, calendar.
+Phase 8.2 builds the first real workflows on top of those tools:
+reading messages and sending replies in Signal and WhatsApp.
 
-The Windows backend uses Windows-MCP — already connected to
-the system and verified working.
+The key insight: we are NOT building new tools.
+We are building **conversation workflows** — sequences of
+the five existing desktop tools that accomplish a task.
 
-The Linux backend is stubbed and ready for Phase 8.7 when
-the system moves to NixOS.
-
----
-
-## Technical Foundation: Windows-MCP
-
-Windows-MCP is already installed and running on this machine.
-It is available at: Windows-MCP tools (Snapshot, Click, Type,
-Screenshot, App, PowerShell).
-
-Key tools we will use:
-  Snapshot — reads the UI accessibility tree of any window.
-             Returns elements with their names, roles, states.
-             No screenshots needed. Deterministic by name.
-
-  App      — opens any application by name.
-
-  Click    — clicks a UI element by its accessibility label.
-
-  Type     — types text into the focused element.
-
-  Screenshot — captures the current screen state as an image.
-
-Windows-MCP uses the Windows UI Automation API — the same API
-screen readers use. It finds "Send" button by name, not pixel.
-Works with classic Windows apps, Windows 11, Electron, and
-Chromium-based browsers. Deterministic regardless of DPI,
-theme, resolution, or window position.
+The CommunicationWorkflows class orchestrates these sequences.
+INANNA receives a natural language request, the workflow runs
+the appropriate sequence, each consequential step requires
+proposal approval.
 
 ---
 
-## The Five Abstract Tools
+## Architecture: Workflows vs Tools
 
-All five tools work identically on Windows (via Windows-MCP)
-and on Linux (via AT-SPI2, Phase 8.7).
+```
+User: "read my Signal messages"
+        ↓
+NAMMU routes to OPERATOR
+        ↓
+OPERATOR detects communication intent
+        ↓
+CommunicationWorkflows.read_messages("signal")
+        ↓
+  desktop_open_app("signal")        ← proposal: open app
+  desktop_screenshot()              ← no proposal: observe
+  desktop_read_window("signal")     ← no proposal: observe
+        ↓
+CROWN receives the content and summarizes it
+        ↓
+"You have 3 unread messages from Maria..."
+```
 
-### desktop_open_app
-Open any installed application by name.
 ```
-input:  {"app": "whatsapp"}
-output: success/failure, window_title
+User: "send a message to Maria saying I will be late"
+        ↓
+CommunicationWorkflows.send_message("signal", "Maria", "I will be late")
+        ↓
+  desktop_open_app("signal")        ← proposal: open
+  desktop_read_window()             ← observe: find Maria
+  desktop_click("Maria")            ← proposal: click contact
+  desktop_click("message field")    ← proposal: focus input
+  desktop_type("I will be late")    ← proposal: type draft
+  --- USER SEES THE DRAFT ---
+  desktop_click("Send")             ← MANDATORY PROPOSAL: send
+        ↓
+CROWN confirms: "Message sent to Maria."
 ```
-Governance: requires proposal (Light)
 
-### desktop_read_window
-Read the accessibility tree content of a window.
-Returns structured text of all visible UI elements.
-```
-input:  {"app_name": "whatsapp", "max_depth": 5}
-output: structured element tree as text
-```
-Governance: no proposal required (observation only)
-
-### desktop_click
-Click a UI element by its accessibility name.
-```
-input:  {"label": "Send", "app_name": "whatsapp"}
-output: success/failure, element_found
-```
-Governance: requires proposal for consequential elements
-(Send, Delete, Submit, Buy, Confirm)
-
-### desktop_type
-Type text into the currently focused element.
-```
-input:  {"text": "Hello, how are you?", "submit": false}
-output: success/failure, chars_typed
-```
-Governance: requires proposal (typing is visible action)
-submit=True sends Enter after typing (consequential)
-
-### desktop_screenshot
-Capture the current state of a window as an image.
-```
-input:  {"app_name": "whatsapp"}
-output: screenshot path, dimensions
-```
-Governance: no proposal required (observation only)
+Every step that changes state requires proposal approval.
+The Send action ALWAYS requires proposal — no auto-trust ever.
 
 ---
 
 ## What You Are Building
 
-### Task 1 — inanna/core/desktop_faculty.py
+### Task 1 — inanna/core/communication_workflows.py
 
-Create: inanna/core/desktop_faculty.py
+Create: inanna/core/communication_workflows.py
 
 ```python
 """
-INANNA NYX Desktop Faculty
-Platform-agnostic bridge to the desktop UI.
+INANNA NYX Communication Workflows
+Orchestrates Desktop Faculty tools for messaging applications.
 
-Windows backend: Windows-MCP (UI Automation API)
-Linux backend: AT-SPI2 via python-atspi (Phase 8.7)
-
-The five abstract tools:
-  desktop_open_app      — open any application
-  desktop_read_window   — read UI content
-  desktop_click         — click by accessibility name
-  desktop_type          — type text
-  desktop_screenshot    — capture screen state
+Supported apps: Signal, WhatsApp (when installed)
+Future: Telegram, Discord, Slack (Phase 8.2+)
 
 Governance:
-  Observation (read, screenshot): no proposal needed
-  Light action (open, navigate): proposal required, auto-trust after 3x
-  Consequential (send, delete, submit): proposal ALWAYS required
+  Reading messages: observation — no proposal
+  Opening apps: light — proposal required
+  Typing drafts: light — proposal required
+  Sending messages: ALWAYS mandatory proposal
 """
 from __future__ import annotations
 
-import platform
-import subprocess
 from dataclasses import dataclass, field
-from pathlib import Path
 from typing import Optional
 
-
-# Consequential element names — clicking these always requires proposal
-# regardless of trust level
-CONSEQUENTIAL_LABELS = {
-    "send", "send message", "send reply", "send email",
-    "delete", "remove", "trash",
-    "submit", "confirm", "ok",
-    "buy", "purchase", "pay",
-    "post", "publish",
-}
-
-
-def is_consequential_label(label: str) -> bool:
-    """Returns True if clicking this label requires mandatory proposal."""
-    return label.lower().strip() in CONSEQUENTIAL_LABELS
+from core.desktop_faculty import DesktopFaculty, DesktopResult
 
 
 @dataclass
-class DesktopResult:
+class MessageRecord:
+    sender: str
+    content: str
+    timestamp: str = ""
+    unread: bool = False
+    app: str = ""
+
+
+@dataclass
+class WorkflowResult:
     success: bool
-    tool: str           # open_app | read_window | click | type | screenshot
-    query: str          # the app name or element name
-    output: str = ""    # text output (window content, confirmation)
-    screenshot_path: str = ""
+    workflow: str        # read_messages | send_message | list_contacts
+    app: str
+    messages: list[MessageRecord] = field(default_factory=list)
+    output: str = ""
+    draft_visible: bool = False  # True when draft is typed but not sent
     error: Optional[str] = None
-    window_title: str = ""
-    element_found: bool = False
-    consequential: bool = False  # True if this was a send/delete/submit
+    steps_completed: list[str] = field(default_factory=list)
 
 
-class DesktopFaculty:
-    """
-    Platform-agnostic desktop automation.
-    Automatically selects the right backend based on the OS.
-    """
-
-    def __init__(self) -> None:
-        self._os = platform.system()
-        self._backend = self._select_backend()
-
-    def _select_backend(self):
-        if self._os == "Windows":
-            return WindowsMCPBackend()
-        elif self._os == "Linux":
-            return LinuxAtspiBackend()
-        else:
-            return FallbackBackend(self._os)
-
-    @property
-    def backend_name(self) -> str:
-        return self._backend.name
-
-    def open_app(self, app: str) -> DesktopResult:
-        """
-        Open an application by name.
-        Requires proposal approval (Light governance).
-        """
-        return self._backend.open_app(app)
-
-    def read_window(
-        self, app_name: str = "", max_depth: int = 5
-    ) -> DesktopResult:
-        """
-        Read the accessibility tree of a window.
-        No proposal required — observation only.
-        """
-        return self._backend.read_window(app_name, max_depth)
-
-    def click(
-        self, label: str, app_name: str = ""
-    ) -> DesktopResult:
-        """
-        Click a UI element by its accessibility name.
-        Consequential elements (Send, Delete) always require proposal.
-        """
-        result = self._backend.click(label, app_name)
-        result.consequential = is_consequential_label(label)
-        return result
-
-    def type_text(
-        self, text: str, submit: bool = False
-    ) -> DesktopResult:
-        """
-        Type text into the focused element.
-        submit=True sends Enter after (consequential).
-        """
-        result = self._backend.type_text(text, submit)
-        result.consequential = submit
-        return result
-
-    def screenshot(self, app_name: str = "") -> DesktopResult:
-        """
-        Capture the screen or a specific app window.
-        No proposal required — observation only.
-        """
-        return self._backend.screenshot(app_name)
-
-    def format_result(self, result: DesktopResult) -> str:
-        """Format a DesktopResult for display in the conversation."""
-        if not result.success:
-            return f"desktop > error: {result.error}"
-
-        if result.tool == "open_app":
-            return (
-                f"desktop > opened: {result.query}"
-                + (f" [{result.window_title}]" if result.window_title else "")
-            )
-
-        if result.tool == "read_window":
-            lines = [f"desktop > window content: {result.query}", ""]
-            if result.output:
-                lines.append(result.output[:2000])
-            else:
-                lines.append("(empty or no accessible content)")
-            return "\n".join(lines)
-
-        if result.tool == "click":
-            return (
-                f"desktop > clicked: '{result.query}'"
-                + (" [consequential action]" if result.consequential else "")
-            )
-
-        if result.tool == "type":
-            preview = result.query[:40] + ("..." if len(result.query) > 40 else "")
-            return (
-                f"desktop > typed: '{preview}'"
-                + (" [submitted]" if result.consequential else "")
-            )
-
-        if result.tool == "screenshot":
-            return (
-                f"desktop > screenshot captured: {result.query}"
-                + (f" [{result.screenshot_path}]" if result.screenshot_path else "")
-            )
-
-        return f"desktop > {result.tool}: {result.query}"
-
-
-# ── WINDOWS BACKEND ──────────────────────────────────────────────────
-
-class WindowsMCPBackend:
-    """
-    Desktop Faculty backend using Windows-MCP subprocess calls.
-
-    Windows-MCP is available as a running MCP server connected to
-    the current session. For INANNA's use, we call it via PowerShell
-    subprocess using pywinauto and the Windows UI Automation API.
-
-    This backend wraps pywinauto — the Python library that powers
-    Windows-MCP under the hood — for direct programmatic access.
-    """
-
-    name = "windows-mcp"
-
-    def _has_pywinauto(self) -> bool:
-        try:
-            import pywinauto  # noqa: F401
-            return True
-        except ImportError:
-            return False
-
-    def open_app(self, app: str) -> DesktopResult:
-        try:
-            # Use PowerShell Start-Process for reliable app launch
-            result = subprocess.run(
-                ["powershell", "-Command",
-                 f'Start-Process "{app}"'],
-                capture_output=True, text=True, timeout=10,
-            )
-            if result.returncode == 0:
-                return DesktopResult(
-                    True, "open_app", app,
-                    output=f"Started {app}",
-                )
-            # Fallback: try the run command
-            result2 = subprocess.run(
-                ["cmd", "/c", "start", "", app],
-                capture_output=True, text=True, timeout=10,
-                shell=True,
-            )
-            return DesktopResult(
-                result2.returncode == 0,
-                "open_app", app,
-                output=f"Started {app}" if result2.returncode == 0 else "",
-                error=result2.stderr[:200] if result2.returncode != 0 else None,
-            )
-        except subprocess.TimeoutExpired:
-            return DesktopResult(
-                False, "open_app", app,
-                error=f"Timeout launching {app}",
-            )
-        except Exception as e:
-            return DesktopResult(False, "open_app", app, error=str(e))
-
-    def read_window(
-        self, app_name: str = "", max_depth: int = 5
-    ) -> DesktopResult:
-        if not self._has_pywinauto():
-            return self._fallback_read_window(app_name)
-        try:
-            import pywinauto
-            if app_name:
-                app = pywinauto.Application(backend="uia").connect(
-                    title_re=f".*{app_name}.*",
-                    timeout=5,
-                )
-                window = app.top_window()
-            else:
-                from pywinauto import Desktop
-                desktop = Desktop(backend="uia")
-                windows = desktop.windows()
-                if not windows:
-                    return DesktopResult(
-                        False, "read_window", app_name,
-                        error="No windows found",
-                    )
-                window = windows[0]
-
-            # Extract accessibility tree as text
-            lines = []
-            self._extract_tree(window.wrapper_object(), lines, 0, max_depth)
-            return DesktopResult(
-                True, "read_window", app_name,
-                output="\n".join(lines),
-                window_title=window.window_text(),
-            )
-        except Exception as e:
-            return DesktopResult(
-                False, "read_window", app_name, error=str(e)
-            )
-
-    def _extract_tree(self, element, lines, depth, max_depth):
-        """Recursively extract accessibility tree as text."""
-        if depth > max_depth:
-            return
-        try:
-            name = element.window_text() or ""
-            ctrl_type = element.element_info.control_type or ""
-            if name or ctrl_type:
-                indent = "  " * depth
-                line = f"{indent}[{ctrl_type}] {name}".strip()
-                if line:
-                    lines.append(line)
-        except Exception:
-            pass
-        try:
-            for child in element.children():
-                self._extract_tree(child, lines, depth + 1, max_depth)
-        except Exception:
-            pass
-
-    def _fallback_read_window(self, app_name: str) -> DesktopResult:
-        """Fallback using PowerShell accessibility when pywinauto absent."""
-        script = """
-Add-Type -AssemblyName UIAutomationClient
-Add-Type -AssemblyName UIAutomationTypes
-$ae = [System.Windows.Automation.AutomationElement]::RootElement
-$children = $ae.FindAll(
-    [System.Windows.Automation.TreeScope]::Children,
-    [System.Windows.Automation.Condition]::TrueCondition
-)
-foreach ($c in $children) {
-    Write-Output ("[" + $c.Current.ControlType.ProgrammaticName + "] " + $c.Current.Name)
+# Map of supported app names to their window title patterns
+APP_WINDOW_PATTERNS = {
+    "signal":   ["Signal", "Signal Messenger", "Signal Desktop"],
+    "whatsapp": ["WhatsApp", "WhatsApp Desktop"],
+    "telegram": ["Telegram"],
+    "discord":  ["Discord"],
+    "slack":    ["Slack"],
 }
-"""
-        try:
-            result = subprocess.run(
-                ["powershell", "-Command", script],
-                capture_output=True, text=True, timeout=10,
-            )
-            return DesktopResult(
-                True, "read_window", app_name,
-                output=result.stdout[:2000],
-            )
-        except Exception as e:
-            return DesktopResult(
-                False, "read_window", app_name, error=str(e)
-            )
 
-    def click(self, label: str, app_name: str = "") -> DesktopResult:
-        if not self._has_pywinauto():
-            return DesktopResult(
-                False, "click", label,
-                error="pywinauto not installed. Run: pip install pywinauto",
-            )
-        try:
-            import pywinauto
-            if app_name:
-                app = pywinauto.Application(backend="uia").connect(
-                    title_re=f".*{app_name}.*", timeout=5
-                )
-                window = app.top_window()
-            else:
-                from pywinauto import Desktop
-                window = Desktop(backend="uia").windows()[0]
-
-            element = window.child_window(title=label, found_index=0)
-            element.click_input()
-            return DesktopResult(
-                True, "click", label,
-                output=f"Clicked '{label}'",
-                element_found=True,
-            )
-        except Exception as e:
-            return DesktopResult(False, "click", label, error=str(e))
-
-    def type_text(self, text: str, submit: bool = False) -> DesktopResult:
-        try:
-            import pywinauto
-            from pywinauto.keyboard import send_keys
-            # Type using keyboard send_keys
-            # Escape special characters for pywinauto
-            escaped = text.replace("{", "{{").replace("}", "}}")
-            send_keys(escaped, with_spaces=True, pause=0.02)
-            if submit:
-                send_keys("{ENTER}")
-            return DesktopResult(
-                True, "type", text,
-                output=f"Typed {len(text)} characters"
-                + (" and submitted" if submit else ""),
-            )
-        except ImportError:
-            # Fallback: PowerShell SendKeys
-            try:
-                script = (
-                    "Add-Type -AssemblyName System.Windows.Forms; "
-                    f"[System.Windows.Forms.SendKeys]::SendWait('{text}')"
-                )
-                if submit:
-                    script += "; [System.Windows.Forms.SendKeys]::SendWait('{ENTER}')"
-                subprocess.run(
-                    ["powershell", "-Command", script],
-                    timeout=10, capture_output=True,
-                )
-                return DesktopResult(
-                    True, "type", text,
-                    output=f"Typed {len(text)} characters",
-                )
-            except Exception as e:
-                return DesktopResult(False, "type", text, error=str(e))
-        except Exception as e:
-            return DesktopResult(False, "type", text, error=str(e))
-
-    def screenshot(self, app_name: str = "") -> DesktopResult:
-        try:
-            import tempfile
-            out = Path(tempfile.mktemp(suffix=".png"))
-            script = (
-                "Add-Type -AssemblyName System.Windows.Forms; "
-                "Add-Type -AssemblyName System.Drawing; "
-                "$screen = [System.Windows.Forms.Screen]::PrimaryScreen; "
-                "$bounds = $screen.Bounds; "
-                "$bitmap = New-Object System.Drawing.Bitmap($bounds.Width, $bounds.Height); "
-                "$graphics = [System.Drawing.Graphics]::FromImage($bitmap); "
-                "$graphics.CopyFromScreen($bounds.Location, "
-                "[System.Drawing.Point]::Empty, $bounds.Size); "
-                f"$bitmap.Save('{str(out)}'); "
-                "$graphics.Dispose(); $bitmap.Dispose()"
-            )
-            subprocess.run(
-                ["powershell", "-Command", script],
-                capture_output=True, timeout=10,
-            )
-            if out.exists():
-                return DesktopResult(
-                    True, "screenshot", app_name or "desktop",
-                    screenshot_path=str(out),
-                    output=f"Screenshot saved: {out.name}",
-                )
-            return DesktopResult(
-                False, "screenshot", app_name,
-                error="Screenshot file not created",
-            )
-        except Exception as e:
-            return DesktopResult(False, "screenshot", app_name, error=str(e))
+# Map app names to winget IDs for installation check
+APP_WINGET_IDS = {
+    "signal":   "OpenWhisperSystems.Signal",
+    "whatsapp": "WhatsApp.WhatsApp",
+    "telegram": "Telegram.TelegramDesktop",
+    "discord":  "Discord.Discord",
+    "slack":    "SlackTechnologies.Slack",
+}
 
 
-# ── LINUX BACKEND (Phase 8.7 — NixOS AT-SPI2) ────────────────────────
+def normalize_app_name(name: str) -> str:
+    """Normalize user-provided app name to our canonical name."""
+    name = name.lower().strip()
+    aliases = {
+        "whatsapp": "whatsapp",
+        "whats app": "whatsapp",
+        "wa": "whatsapp",
+        "signal": "signal",
+        "signal messenger": "signal",
+        "telegram": "telegram",
+        "tg": "telegram",
+        "discord": "discord",
+        "slack": "slack",
+    }
+    return aliases.get(name, name)
 
-class LinuxAtspiBackend:
+
+class CommunicationWorkflows:
     """
-    Desktop Faculty backend using AT-SPI2 on Linux/NixOS.
-
-    Requires: at-spi2-core, python3-pyatspi
-    NixOS: services.gnome.at-spi2-core.enable = true;
-           environment.systemPackages = [ pkgs.at-spi2-core ];
-
-    This backend is stubbed for Phase 8.7.
-    It will be implemented when the system migrates to NixOS.
-    The interface is identical to WindowsMCPBackend.
+    Orchestrates Desktop Faculty tools to accomplish messaging tasks.
+    Each workflow returns a WorkflowResult describing what happened.
+    The caller (server.py) handles the proposal flow for each step.
     """
 
-    name = "linux-atspi2"
+    def __init__(self, desktop: DesktopFaculty) -> None:
+        self.desktop = desktop
 
-    def open_app(self, app: str) -> DesktopResult:
-        try:
-            subprocess.Popen(["xdg-open", app])
-            return DesktopResult(True, "open_app", app)
-        except Exception as e:
-            # Try direct process launch
-            try:
-                subprocess.Popen([app])
-                return DesktopResult(True, "open_app", app)
-            except Exception as e2:
-                return DesktopResult(
-                    False, "open_app", app, error=str(e2)
-                )
+    def read_messages(self, app: str) -> WorkflowResult:
+        """
+        Read messages from a messaging app.
+        Steps: open app → screenshot → read window
+        Governance: open requires proposal; read/screenshot do not.
+        """
+        app = normalize_app_name(app)
+        result = WorkflowResult(True, "read_messages", app)
 
-    def read_window(
-        self, app_name: str = "", max_depth: int = 5
-    ) -> DesktopResult:
-        try:
-            import pyatspi
-            desktop = pyatspi.Registry.getDesktop(0)
-            lines = []
-            for app in desktop:
-                if app_name and app_name.lower() not in app.name.lower():
-                    continue
-                self._extract_tree(app, lines, 0, max_depth)
-            return DesktopResult(
-                True, "read_window", app_name,
-                output="\n".join(lines),
-            )
-        except ImportError:
-            return DesktopResult(
-                False, "read_window", app_name,
-                error="pyatspi not installed. Run: pip install pyatspi2",
-            )
-        except Exception as e:
-            return DesktopResult(
-                False, "read_window", app_name, error=str(e)
-            )
+        # Step 1: Open the app (light — proposal handled by caller)
+        open_r = self.desktop.open_app(app)
+        result.steps_completed.append(f"open:{open_r.success}")
+        if not open_r.success:
+            result.success = False
+            result.error = f"Could not open {app}: {open_r.error}"
+            return result
 
-    def _extract_tree(self, element, lines, depth, max_depth):
-        if depth > max_depth:
-            return
-        try:
-            role = element.getRoleName()
-            name = element.name or ""
-            indent = "  " * depth
-            if name or role:
-                lines.append(f"{indent}[{role}] {name}".strip())
-        except Exception:
-            pass
-        try:
-            for i in range(element.childCount):
-                self._extract_tree(
-                    element.getChildAtIndex(i), lines, depth + 1, max_depth
-                )
-        except Exception:
-            pass
-
-    def click(self, label: str, app_name: str = "") -> DesktopResult:
-        try:
-            import pyatspi
-            desktop = pyatspi.Registry.getDesktop(0)
-            for app in desktop:
-                if app_name and app_name.lower() not in app.name.lower():
-                    continue
-                element = self._find_by_name(app, label)
-                if element:
-                    element.queryAction().doAction(0)
-                    return DesktopResult(
-                        True, "click", label, element_found=True,
-                        output=f"Clicked '{label}'",
-                    )
-            return DesktopResult(
-                False, "click", label,
-                error=f"Element '{label}' not found",
-            )
-        except ImportError:
-            return DesktopResult(
-                False, "click", label,
-                error="pyatspi not installed",
-            )
-        except Exception as e:
-            return DesktopResult(False, "click", label, error=str(e))
-
-    def _find_by_name(self, element, name: str):
-        """Recursively find element by accessibility name."""
-        try:
-            if element.name.lower() == name.lower():
-                return element
-        except Exception:
-            pass
-        try:
-            for i in range(element.childCount):
-                child = element.getChildAtIndex(i)
-                found = self._find_by_name(child, name)
-                if found:
-                    return found
-        except Exception:
-            pass
-        return None
-
-    def type_text(self, text: str, submit: bool = False) -> DesktopResult:
-        try:
-            subprocess.run(
-                ["xdotool", "type", "--clearmodifiers", text],
-                capture_output=True, timeout=10,
-            )
-            if submit:
-                subprocess.run(
-                    ["xdotool", "key", "Return"],
-                    capture_output=True, timeout=5,
-                )
-            return DesktopResult(True, "type", text)
-        except FileNotFoundError:
-            # Try ydotool (Wayland)
-            try:
-                subprocess.run(
-                    ["ydotool", "type", text],
-                    capture_output=True, timeout=10,
-                )
-                return DesktopResult(True, "type", text)
-            except Exception as e:
-                return DesktopResult(
-                    False, "type", text,
-                    error="xdotool/ydotool not available: " + str(e),
-                )
-        except Exception as e:
-            return DesktopResult(False, "type", text, error=str(e))
-
-    def screenshot(self, app_name: str = "") -> DesktopResult:
-        import tempfile
-        out = Path(tempfile.mktemp(suffix=".png"))
-        try:
-            subprocess.run(
-                ["scrot", str(out)],
-                capture_output=True, timeout=10,
-            )
-            if out.exists():
-                return DesktopResult(
-                    True, "screenshot", app_name or "desktop",
-                    screenshot_path=str(out),
-                )
-            # Fallback: gnome-screenshot
-            subprocess.run(
-                ["gnome-screenshot", "-f", str(out)],
-                capture_output=True, timeout=10,
-            )
-            return DesktopResult(
-                out.exists(), "screenshot", app_name,
-                screenshot_path=str(out) if out.exists() else "",
-                error=None if out.exists() else "Screenshot failed",
-            )
-        except Exception as e:
-            return DesktopResult(False, "screenshot", app_name, error=str(e))
-
-
-# ── FALLBACK BACKEND ─────────────────────────────────────────────────
-
-class FallbackBackend:
-    """Fallback for unsupported platforms."""
-
-    def __init__(self, os_name: str) -> None:
-        self.name = f"fallback-{os_name.lower()}"
-        self._os = os_name
-
-    def _unsupported(self, tool: str, query: str) -> DesktopResult:
-        return DesktopResult(
-            False, tool, query,
-            error=f"Desktop Faculty not supported on {self._os}",
+        # Step 2: Read the window content (no proposal — observation)
+        import time; time.sleep(1.5)  # wait for app to render
+        read_r = self.desktop.read_window(
+            app_name=APP_WINDOW_PATTERNS.get(app, [app])[0],
+            max_depth=6,
         )
+        result.steps_completed.append(f"read:{read_r.success}")
+        if read_r.success:
+            result.output = read_r.output
+            result.messages = self._parse_messages(read_r.output, app)
 
-    def open_app(self, app: str) -> DesktopResult:
-        return self._unsupported("open_app", app)
+        return result
 
-    def read_window(self, app_name: str = "", max_depth: int = 5) -> DesktopResult:
-        return self._unsupported("read_window", app_name)
+    def send_message(
+        self, app: str, contact: str, message: str
+    ) -> WorkflowResult:
+        """
+        Send a message to a contact.
+        Steps: open → find contact → click contact →
+               click message field → type draft →
+               [USER APPROVES] → click Send
 
-    def click(self, label: str, app_name: str = "") -> DesktopResult:
-        return self._unsupported("click", label)
+        The Send step is ALWAYS a mandatory proposal.
+        The caller must handle proposal flow before calling this.
+        This method types the draft and returns draft_visible=True.
+        The caller then asks for Send approval separately.
+        """
+        app = normalize_app_name(app)
+        result = WorkflowResult(False, "send_message", app)
 
-    def type_text(self, text: str, submit: bool = False) -> DesktopResult:
-        return self._unsupported("type", text)
+        # Step 1: Open app
+        open_r = self.desktop.open_app(app)
+        result.steps_completed.append(f"open:{open_r.success}")
+        if not open_r.success:
+            result.error = f"Could not open {app}: {open_r.error}"
+            return result
 
-    def screenshot(self, app_name: str = "") -> DesktopResult:
-        return self._unsupported("screenshot", app_name)
+        import time; time.sleep(1.5)
+
+        # Step 2: Find and click the contact
+        contact_r = self.desktop.click(contact, app_name=app)
+        result.steps_completed.append(f"click_contact:{contact_r.success}")
+        if not contact_r.success:
+            # Try searching for the contact
+            search_r = self.desktop.click("Search", app_name=app)
+            if search_r.success:
+                self.desktop.type_text(contact, submit=False)
+                time.sleep(0.8)
+                contact_r2 = self.desktop.click(contact, app_name=app)
+                result.steps_completed.append(f"search_contact:{contact_r2.success}")
+                if not contact_r2.success:
+                    result.error = f"Could not find contact '{contact}' in {app}"
+                    return result
+            else:
+                result.error = f"Could not find contact '{contact}' in {app}"
+                return result
+
+        time.sleep(0.5)
+
+        # Step 3: Click the message input field
+        for field_name in ["message field", "message input",
+                           "type a message", "Message", "New message"]:
+            field_r = self.desktop.click(field_name, app_name=app)
+            if field_r.success:
+                result.steps_completed.append(f"click_field:{field_name}")
+                break
+        else:
+            # Fallback: just type and hope focus is correct
+            result.steps_completed.append("click_field:fallback")
+
+        # Step 4: Type the draft (proposal handled by caller)
+        type_r = self.desktop.type_text(message, submit=False)
+        result.steps_completed.append(f"type_draft:{type_r.success}")
+        if not type_r.success:
+            result.error = f"Could not type message: {type_r.error}"
+            return result
+
+        # Draft is now visible on screen
+        result.success = True
+        result.draft_visible = True
+        result.output = (
+            f"Draft typed in {app} to {contact}:\n"
+            f'"{message}"\n'
+            f"Waiting for Send approval."
+        )
+        return result
+
+    def execute_send(self, app: str) -> WorkflowResult:
+        """
+        Actually click Send — ONLY called after explicit proposal approval.
+        This is the MANDATORY consequential step.
+        """
+        app = normalize_app_name(app)
+        result = WorkflowResult(False, "execute_send", app)
+
+        # Try multiple Send button names (apps vary)
+        for send_label in ["Send", "Send message", "Send Message",
+                           "Send reply", "\u21b5", "Enter"]:
+            send_r = self.desktop.click(send_label, app_name=app)
+            if send_r.success:
+                result.success = True
+                result.output = f"Message sent via {app}."
+                result.steps_completed.append(f"send:{send_label}")
+                return result
+
+        # Final fallback: keyboard Enter
+        enter_r = self.desktop.type_text("", submit=True)
+        result.success = enter_r.success
+        result.output = "Message sent via Enter key." if enter_r.success else ""
+        result.error = enter_r.error if not enter_r.success else None
+        result.steps_completed.append("send:enter_key")
+        return result
+
+    def list_contacts(self, app: str) -> WorkflowResult:
+        """List visible contacts in the app sidebar."""
+        app = normalize_app_name(app)
+        result = WorkflowResult(True, "list_contacts", app)
+
+        open_r = self.desktop.open_app(app)
+        result.steps_completed.append(f"open:{open_r.success}")
+        if not open_r.success:
+            result.success = False
+            result.error = f"Could not open {app}: {open_r.error}"
+            return result
+
+        import time; time.sleep(1.5)
+        read_r = self.desktop.read_window(
+            app_name=APP_WINDOW_PATTERNS.get(app, [app])[0],
+        )
+        result.steps_completed.append(f"read:{read_r.success}")
+        if read_r.success:
+            result.output = read_r.output
+        return result
+
+    def _parse_messages(
+        self, window_content: str, app: str
+    ) -> list[MessageRecord]:
+        """
+        Parse message records from window content.
+        This is a best-effort parser — messaging apps vary in structure.
+        """
+        messages = []
+        if not window_content:
+            return messages
+
+        # Look for lines that look like messages
+        lines = window_content.splitlines()
+        for i, line in enumerate(lines):
+            line = line.strip()
+            if not line or len(line) < 3:
+                continue
+            # Skip UI elements
+            if line.lower() in {
+                "send", "search", "settings", "new chat",
+                "archive", "muted", "button", "menu",
+            }:
+                continue
+            # Simple heuristic: if a line has content that looks
+            # like a message (has spaces, reasonable length)
+            if 5 < len(line) < 500 and " " in line:
+                messages.append(MessageRecord(
+                    sender="unknown",
+                    content=line,
+                    app=app,
+                ))
+        return messages[:20]  # Return at most 20 messages
+
+    def format_result(self, result: WorkflowResult) -> str:
+        """Format WorkflowResult for CROWN to summarize."""
+        if not result.success and result.error:
+            return f"comm > error in {result.app}: {result.error}"
+
+        if result.workflow == "read_messages":
+            if result.messages:
+                lines = [
+                    f"comm > {result.app}: {len(result.messages)} items visible"
+                ]
+                for m in result.messages[:10]:
+                    lines.append(f"  {m.content[:80]}")
+                return "\n".join(lines)
+            return (
+                f"comm > {result.app}: window opened\n"
+                f"{result.output[:500] if result.output else '(no content)'}"
+            )
+
+        if result.workflow == "send_message" and result.draft_visible:
+            return (
+                f"comm > draft ready in {result.app}\n"
+                f"{result.output}"
+            )
+
+        if result.workflow == "execute_send":
+            return f"comm > {result.output or 'sent'}"
+
+        if result.workflow == "list_contacts":
+            return (
+                f"comm > contacts in {result.app}:\n"
+                f"{result.output[:800] if result.output else '(none visible)'}"
+            )
+
+        return f"comm > {result.workflow} in {result.app}: done"
 ```
 
-### Task 2 — Register Desktop tools in tools.json
+### Task 2 — Register communication tools in tools.json
 
 Add to inanna/config/tools.json:
 
 ```json
-"desktop_open_app": {
-  "display_name": "Open Application",
-  "description": "Open any installed application by name",
-  "category": "desktop",
-  "requires_approval": true,
-  "enabled": true,
-  "parameters": {
-    "app": "Application name (e.g. whatsapp, firefox, libreoffice)"
-  }
-},
-"desktop_read_window": {
-  "display_name": "Read Window Content",
-  "description": "Read accessible content from any application window",
-  "category": "desktop",
+"comm_read_messages": {
+  "display_name": "Read Messages",
+  "description": "Read messages from Signal, WhatsApp, or other messaging apps",
+  "category": "communication",
   "requires_approval": false,
   "enabled": true,
   "parameters": {
-    "app_name": "Application name filter (optional)",
-    "max_depth": "UI tree depth (default 5)"
+    "app": "App name: signal, whatsapp, telegram"
   }
 },
-"desktop_click": {
-  "display_name": "Click UI Element",
-  "description": "Click a UI element by its accessibility name",
-  "category": "desktop",
+"comm_send_message": {
+  "display_name": "Send Message",
+  "description": "Type and send a message to a contact (send always requires approval)",
+  "category": "communication",
   "requires_approval": true,
   "enabled": true,
   "parameters": {
-    "label": "Accessibility name of the element to click",
-    "app_name": "Application to target (optional)"
+    "app": "App name: signal, whatsapp",
+    "contact": "Contact name as shown in the app",
+    "message": "Message text to send"
   }
 },
-"desktop_type": {
-  "display_name": "Type Text",
-  "description": "Type text into the focused UI element",
-  "category": "desktop",
-  "requires_approval": true,
-  "enabled": true,
-  "parameters": {
-    "text": "Text to type",
-    "submit": "Send Enter after typing (default: false)"
-  }
-},
-"desktop_screenshot": {
-  "display_name": "Take Screenshot",
-  "description": "Capture the current screen state",
-  "category": "desktop",
+"comm_list_contacts": {
+  "display_name": "List Contacts",
+  "description": "List visible contacts in a messaging app",
+  "category": "communication",
   "requires_approval": false,
   "enabled": true,
   "parameters": {
-    "app_name": "Application to capture (optional, defaults to full screen)"
+    "app": "App name: signal, whatsapp, telegram"
   }
 }
 ```
 
-### Task 3 — Wire DesktopFaculty into server.py and main.py
+### Task 3 — Wire CommunicationWorkflows into server.py and main.py
 
-Add DESKTOP_TOOL_NAMES set:
+Add COMMUNICATION_TOOL_NAMES:
 ```python
-DESKTOP_TOOL_NAMES = {
-    "desktop_open_app",
-    "desktop_read_window",
-    "desktop_click",
-    "desktop_type",
-    "desktop_screenshot",
+COMMUNICATION_TOOL_NAMES = {
+    "comm_read_messages",
+    "comm_send_message",
+    "comm_list_contacts",
 }
-```
-
-Add to execute_tool_request():
-```python
-if tool_name in DESKTOP_TOOL_NAMES:
-    return run_desktop_tool(
-        desktop_faculty or DesktopFaculty(),
-        tool_name,
-        params,
-    )
-```
-
-Add run_desktop_tool() function:
-```python
-def run_desktop_tool(
-    desktop_faculty: DesktopFaculty,
-    tool_name: str,
-    params: dict,
-) -> ToolResult:
-    if tool_name == "desktop_open_app":
-        r = desktop_faculty.open_app(str(params.get("app", "")))
-    elif tool_name == "desktop_read_window":
-        r = desktop_faculty.read_window(
-            str(params.get("app_name", "")),
-            int(params.get("max_depth", 5)),
-        )
-    elif tool_name == "desktop_click":
-        r = desktop_faculty.click(
-            str(params.get("label", "")),
-            str(params.get("app_name", "")),
-        )
-    elif tool_name == "desktop_type":
-        r = desktop_faculty.type_text(
-            str(params.get("text", "")),
-            bool(params.get("submit", False)),
-        )
-    elif tool_name == "desktop_screenshot":
-        r = desktop_faculty.screenshot(str(params.get("app_name", "")))
-    else:
-        r = DesktopResult(False, tool_name, "", error="Unknown desktop tool")
-
-    return ToolResult(
-        tool=tool_name,
-        query=r.query,
-        success=r.success,
-        data={
-            "output": r.output,
-            "window_title": r.window_title,
-            "screenshot_path": r.screenshot_path,
-            "consequential": r.consequential,
-        },
-        error=r.error,
-        formatted=desktop_faculty.format_result(r),
-    )
 ```
 
 Instantiate in InterfaceServer.__init__:
 ```python
-from core.desktop_faculty import DesktopFaculty
-self.desktop_faculty = DesktopFaculty()
+from core.communication_workflows import CommunicationWorkflows
+self.communication_workflows = CommunicationWorkflows(
+    self.desktop_faculty
+)
 ```
+
+Add run_communication_tool() following the same pattern
+as run_desktop_tool() in Phase 8.1.
+
+For comm_send_message: the workflow runs in two phases:
+  Phase A: type_draft (proposal for typing)
+  Phase B: execute_send (MANDATORY separate proposal)
+
+The server must present TWO proposals:
+  1. "Type this message as a draft in Signal to [contact]?"
+  2. "Send this message to [contact]? [ approve ] [ decline ]"
+
+The second proposal must show the draft text clearly.
 
 ### Task 4 — Natural language routing
 
-Add domain hints for desktop tools in governance_signals.json:
+Add domain hints in governance_signals.json:
 ```json
-"desktop": [
-  "open app", "launch app", "start app", "open application",
-  "read window", "what is in", "what does", "show me the screen",
-  "click", "press button", "tap", "select",
-  "type", "write", "enter text", "fill in",
-  "screenshot", "take a photo of screen", "capture screen",
-  "switch to", "focus on"
+"communication": [
+  "send message", "send signal", "message to",
+  "text to", "whatsapp", "signal message",
+  "read messages", "check messages", "new messages",
+  "reply to", "write to", "contact",
+  "unread", "chat", "inbox"
 ]
 ```
 
-Add extract_desktop_tool_request() in main.py:
-Pattern matching for:
-  "open [app]" → desktop_open_app
-  "read [app] window" → desktop_read_window
-  "click [label]" → desktop_click
-  "type [text]" → desktop_type
-  "take a screenshot" → desktop_screenshot
+Add extract_communication_tool_request() in main.py:
 
-### Task 5 — Add pywinauto to requirements.txt
+Patterns:
+  "read my signal messages" → comm_read_messages(app=signal)
+  "check whatsapp" → comm_read_messages(app=whatsapp)
+  "send a signal message to [name] saying [text]"
+    → comm_send_message(app=signal, contact=name, message=text)
+  "message [name] on signal: [text]"
+    → comm_send_message(app=signal, contact=name, message=text)
+  "list my signal contacts" → comm_list_contacts(app=signal)
 
-Add:
+### Task 5 — Update help_system.py
+
+Add COMMUNICATION section to HELP_COMMON:
 ```
-# Desktop Faculty (Windows backend)
-pywinauto>=0.6.8
-```
-
-Note: pywinauto is optional — DesktopFaculty gracefully falls back
-to PowerShell-based automation when pywinauto is not installed.
-
-### Task 6 — Update help_system.py
-
-Add DESKTOP section to HELP_COMMON:
-```
-  DESKTOP (speak naturally or use commands)
-    "open firefox"                Open any application
-    "read the whatsapp window"    Read window content
-    "click the Send button"       Click any UI element (approval)
-    "type hello world"            Type text (approval)
-    "take a screenshot"           Capture screen
-    (consequential: send/delete always require approval)
+  COMMUNICATION (Signal, WhatsApp)
+    "read my Signal messages"          Read messages (no approval)
+    "check WhatsApp"                   Read WhatsApp (no approval)
+    "list my Signal contacts"          List contacts (no approval)
+    "send a message to Maria on Signal saying hello"
+                                       Send message (approval x2:
+                                       type draft + confirm send)
+    (sending ALWAYS requires approval — no exceptions)
 ```
 
-### Task 7 — Update identity.py
+### Task 6 — Update identity.py
 
-CURRENT_PHASE = "Cycle 8 - Phase 8.1 - The Desktop Faculty Core"
+CURRENT_PHASE = "Cycle 8 - Phase 8.2 - Communication Faculty"
 
-### Task 8 — Tests
+### Task 7 — Tests (all offline — no actual UI calls)
 
-Create inanna/tests/test_desktop_faculty.py:
-  - DesktopFaculty instantiates without error
-  - backend_name is non-empty string
-  - is_consequential_label("send") returns True
-  - is_consequential_label("delete") returns True
-  - is_consequential_label("read") returns False
-  - is_consequential_label("Send Message") returns True (case-insensitive)
-  - WindowsMCPBackend instantiates
-  - LinuxAtspiBackend instantiates
-  - FallbackBackend instantiates with custom OS name
-  - FallbackBackend.open_app returns success=False
-  - DesktopResult dataclass creates correctly
-  - format_result for open_app (success) has app name
-  - format_result for error shows "desktop > error:"
-  - format_result for read_window includes "window content"
-  - format_result for click (consequential) includes "consequential"
-  - DESKTOP_TOOL_NAMES contains all 5 tools
-  - desktop_open_app in tools.json with requires_approval=True
-  - desktop_read_window in tools.json with requires_approval=False
-  - desktop_screenshot in tools.json with requires_approval=False
+Create inanna/tests/test_communication_workflows.py:
+  - CommunicationWorkflows instantiates
+  - normalize_app_name("whatsapp") returns "whatsapp"
+  - normalize_app_name("WhatsApp") returns "whatsapp"
+  - normalize_app_name("Signal Messenger") returns "signal"
+  - normalize_app_name("wa") returns "whatsapp"
+  - normalize_app_name("tg") returns "telegram"
+  - APP_WINDOW_PATTERNS contains signal and whatsapp
+  - APP_WINGET_IDS contains correct IDs for signal and whatsapp
+  - WorkflowResult dataclass creates correctly
+  - MessageRecord dataclass creates correctly
+  - _parse_messages returns empty list for empty input
+  - _parse_messages returns list for non-empty content
+  - _parse_messages skips UI element names ("Send", "Search")
+  - format_result for error shows "comm > error"
+  - format_result for draft_visible shows "draft ready"
+  - format_result for execute_send shows sent confirmation
+  - COMMUNICATION_TOOL_NAMES contains all 3 tools
+  - comm_read_messages in tools.json requires_approval=False
+  - comm_send_message in tools.json requires_approval=True
+  - comm_list_contacts in tools.json requires_approval=False
 
 Update test_identity.py: update CURRENT_PHASE assertion.
 
@@ -945,61 +551,73 @@ Update test_identity.py: update CURRENT_PHASE assertion.
 
 ## Permitted file changes
 
-inanna/core/desktop_faculty.py           <- NEW
-inanna/main.py                           <- MODIFY: DESKTOP_TOOL_NAMES, routing
-inanna/ui/server.py                      <- MODIFY: DesktopFaculty instantiation
-inanna/config/tools.json                 <- MODIFY: add 5 desktop tools
-inanna/config/governance_signals.json    <- MODIFY: desktop domain hints
-inanna/requirements.txt                  <- MODIFY: add pywinauto
-inanna/core/help_system.py               <- MODIFY: desktop section
-inanna/identity.py                       <- MODIFY: CURRENT_PHASE
-inanna/tests/test_desktop_faculty.py     <- NEW
-inanna/tests/test_identity.py            <- MODIFY
+inanna/core/communication_workflows.py  <- NEW
+inanna/main.py                          <- MODIFY: routing, tool names
+inanna/ui/server.py                     <- MODIFY: wire workflows
+inanna/config/tools.json                <- MODIFY: add 3 comm tools
+inanna/config/governance_signals.json   <- MODIFY: comm hints
+inanna/core/help_system.py              <- MODIFY: comm section
+inanna/identity.py                      <- MODIFY: CURRENT_PHASE
+inanna/tests/test_communication_workflows.py  <- NEW
+inanna/tests/test_identity.py           <- MODIFY
 
 ---
 
 ## What You Are NOT Building
 
-- No app-specific workflows (WhatsApp, LibreOffice, etc.) — Phase 8.2+
-- No actual UI automation calls in tests (all offline)
-- No vision/screenshot analysis — text accessibility only
-- No voice changes
-- No auth changes
-- Do NOT call pywinauto in tests — only test class structure
+- No changes to core/desktop_faculty.py
+- No actual Signal/WhatsApp calls in tests
+- No screenshot analysis or vision
+- No voice changes, no auth changes
+- Do not build Telegram, Discord, Slack (future phases)
+
+---
+
+## A Note on Real-World Usage
+
+When a user actually runs a communication workflow:
+
+1. Signal must be installed and open on the computer
+2. The user must be logged in to Signal
+3. INANNA uses the accessibility tree to find contacts and messages
+4. Every message that gets sent goes through TWO proposal approvals:
+   first for typing the draft, second for clicking Send
+
+The draft is always visible on screen before sending.
+The user always sees what will be sent before it is sent.
+This is non-negotiable — by design, by governance, by law.
 
 ---
 
 ## Definition of Done
 
-- [ ] core/desktop_faculty.py with DesktopFaculty + 3 backends
-- [ ] 5 desktop tools in tools.json (23 total)
-- [ ] Desktop domain hints in governance_signals.json
-- [ ] DesktopFaculty wired into server.py and main.py
-- [ ] pywinauto in requirements.txt
-- [ ] help_system.py updated with desktop section
-- [ ] CURRENT_PHASE updated to Cycle 8 Phase 8.1
+- [ ] core/communication_workflows.py with CommunicationWorkflows
+- [ ] 3 communication tools in tools.json (26 total)
+- [ ] Communication domain hints in governance_signals.json
+- [ ] CommunicationWorkflows wired into server.py and main.py
+- [ ] Two-stage send flow (draft proposal + send proposal)
+- [ ] help_system.py updated with communication section
+- [ ] CURRENT_PHASE updated
 - [ ] All tests pass: py -3 -m unittest discover -s tests
-- [ ] Pushed as cycle8-phase1-complete
+- [ ] Pushed as cycle8-phase2-complete
 
 ---
 
 ## Handoff
 
-Commit: cycle8-phase1-complete
+Commit: cycle8-phase2-complete
 Push immediately to origin/main.
-Report: docs/implementation/CYCLE8_PHASE1_REPORT.md
-Stop. Do not begin Phase 8.2 without new CURRENT_PHASE.md.
+Report: docs/implementation/CYCLE8_PHASE2_REPORT.md
+Stop. Do not begin Phase 8.3 without new CURRENT_PHASE.md.
 
 ---
 
 *Written by: Claude (Command Center)*
 *Guardian approval: ZAERA*
 *Date: 2026-04-21*
-*Cycle 8 begins.*
-*INANNA gains hands that reach beyond the terminal.*
-*Five abstract tools. Three platform backends.*
-*Every application on the computer becomes reachable.*
-*WhatsApp. LibreOffice. Email. Browser. Calendar.*
-*All through the same channel.*
-*With your word, she reaches.*
-*Without your word, she observes and waits.*
+*Signal is installed. OpenWhisperSystems.Signal v8.7.0.*
+*INANNA can now read messages — with your word.*
+*INANNA can now send messages — with TWO of your words.*
+*First: type the draft. You see it.*
+*Second: send it. Only then.*
+*The message leaves only with your blessing.*
