@@ -2249,6 +2249,13 @@ class InterfaceServer:
         elif command_name == "status":
             await self.broadcast({"type": "system", "text": self.build_status_payload()["report"]})
             await self.broadcast_state()
+        elif command_name == "help":
+            from core.help_system import build_help_response
+            role = self.active_token.role if self.active_token else "anonymous"
+            parts = raw_cmd.strip().split(None, 1)
+            topic = parts[1] if len(parts) > 1 else ""
+            help_text = build_help_response(role, topic)
+            await self.broadcast({"type": "system", "text": help_text})
         elif command_name in {"approve", "reject"}:
             resolved = await asyncio.to_thread(
                 self.resolve_proposal, command_name, payload.get("proposal_id")

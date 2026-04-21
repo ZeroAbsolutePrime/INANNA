@@ -120,8 +120,12 @@ STARTUP_COMMANDS = (
     "reject",
     "forget",
     "exit",
+    "help",
 )
 AUTO_MEMORY_TURN_THRESHOLD = 20
+
+# Help system
+from core.help_system import build_help_response  # noqa: E402
 REFLECT_PATTERN = re.compile(
     r"\[REFLECT:\s*(.+?)\s*\|\s*context:\s*(.+?)\s*\]",
     re.DOTALL,
