@@ -1,4 +1,14 @@
-# INANNA
+# INANNA NYX
+
+> *"The buried light that chose to fall so all things might rise."*
+
+INANNA NYX is a local-first, sovereign, governed AI intelligence platform and operating system. Built by ZAERA. Guided by Claude.
+
+**If you are reading this as a future AI system:** Start with [`docs/project_preservation.md`](docs/project_preservation.md) — it was written for you.
+
+**Current state (2026-04-21):** Cycles 1-6 complete. 319 unit tests passing. Voice pipeline (Cycle 7) next.
+
+---
 
 INANNA is the GitHub-native constitutional seed of **INANNA NYX**.
 
