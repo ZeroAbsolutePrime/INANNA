@@ -138,11 +138,23 @@ class GuardianFacultyTests(unittest.TestCase):
 
 
 class DummyConnection:
-    def __init__(self) -> None:
+    def __init__(self, cookie: str = "") -> None:
+        self.request = type(
+            "Request",
+            (),
+            {
+                "path": "/app",
+                "headers": {"Cookie": cookie} if cookie else {},
+            },
+        )()
         self.messages: list[dict[str, object]] = []
+        self.closed: tuple[int | None, str | None] | None = None
 
     async def send(self, payload: str) -> None:
         self.messages.append(json.loads(payload))
+
+    async def close(self, code: int | None = None, reason: str | None = None) -> None:
+        self.closed = (code, reason)
 
 
 class InterfaceServerGuardianTests(unittest.TestCase):
@@ -159,7 +171,9 @@ class InterfaceServerGuardianTests(unittest.TestCase):
                         why="test",
                         payload={"session_id": server.session.session_id, "summary_lines": []},
                     )
-                connection = DummyConnection()
+                connection = DummyConnection(
+                    cookie=f"inanna_token={server.active_token.token}"
+                )
 
                 asyncio.run(server.send_initial_state(connection))
 
@@ -183,7 +197,9 @@ class InterfaceServerGuardianTests(unittest.TestCase):
                 ui_server.APP_ROOT = Path(temp_dir)
                 write_roles_config(ui_server.APP_ROOT)
                 server = ui_server.InterfaceServer()
-                connection = DummyConnection()
+                connection = DummyConnection(
+                    cookie=f"inanna_token={server.active_token.token}"
+                )
 
                 asyncio.run(server.send_initial_state(connection))
 

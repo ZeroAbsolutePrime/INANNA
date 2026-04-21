@@ -6,6 +6,7 @@ import os
 import threading
 import time
 from datetime import datetime, timezone
+from http.cookies import SimpleCookie
 from http.server import BaseHTTPRequestHandler, HTTPServer
 from pathlib import Path
 from typing import Any
@@ -15,6 +16,7 @@ from websockets.asyncio.server import ServerConnection, serve
 from websockets.exceptions import ConnectionClosed
 
 from config import Config
+from core.auth import AuthStore
 from core.filesystem_faculty import FileSystemFaculty
 from core.governance import GovernanceLayer
 from core.guardian import GuardianFaculty
@@ -142,6 +144,7 @@ from main import (
 APP_ROOT = Path(__file__).resolve().parent.parent
 STATIC_ROOT = Path(__file__).resolve().parent / "static"
 INDEX_PATH = STATIC_ROOT / "index.html"
+LOGIN_PATH = STATIC_ROOT / "login.html"
 CONSOLE_PATH = STATIC_ROOT / "console.html"
 
 load_dotenv(APP_ROOT / ".env")
@@ -151,6 +154,18 @@ WS_PORT = int(os.getenv("INANNA_WS_PORT", "8081"))
 
 def utc_now() -> str:
     return datetime.now(timezone.utc).isoformat()
+
+
+def request_token_from_cookie_header(header: str) -> str:
+    if not header:
+        return ""
+    cookie = SimpleCookie()
+    try:
+        cookie.load(header)
+    except Exception:
+        return ""
+    morsel = cookie.get("inanna_token")
+    return morsel.value if morsel is not None else ""
 
 
 def run_sentinel_response(
@@ -171,40 +186,135 @@ def run_sentinel_response(
     )
 
 
-class StaticHandler(BaseHTTPRequestHandler):
-    def _serve_html(self, file_path: Path) -> None:
-        if not file_path.exists():
+def make_static_handler(interface_server: "InterfaceServer") -> type[BaseHTTPRequestHandler]:
+    class StaticHandler(BaseHTTPRequestHandler):
+        def _serve_html(self, file_path: Path) -> None:
+            if not file_path.exists():
+                self.send_response(404)
+                self.end_headers()
+                return
+
+            content = (
+                file_path.read_text(encoding="utf-8")
+                .replace("__WS_PORT__", str(WS_PORT))
+                .replace("__CURRENT_PHASE__", phase_banner())
+            )
+            payload = content.encode("utf-8")
+            self.send_response(200)
+            self.send_header("Content-Type", "text/html; charset=utf-8")
+            self.send_header("Content-Length", str(len(payload)))
+            self.send_header("Cache-Control", "no-store")
+            self.end_headers()
+            self.wfile.write(payload)
+
+        def _redirect(self, location: str) -> None:
+            self.send_response(302)
+            self.send_header("Location", location)
+            self.send_header("Cache-Control", "no-store")
+            self.end_headers()
+
+        def _json_response(
+            self,
+            status: int,
+            payload: dict[str, Any],
+            cookie_token: str | None = None,
+        ) -> None:
+            encoded = json.dumps(payload).encode("utf-8")
+            self.send_response(status)
+            self.send_header("Content-Type", "application/json; charset=utf-8")
+            self.send_header("Content-Length", str(len(encoded)))
+            self.send_header("Cache-Control", "no-store")
+            if cookie_token:
+                self.send_header(
+                    "Set-Cookie",
+                    f"inanna_token={cookie_token}; Path=/; HttpOnly; SameSite=Lax",
+                )
+            self.end_headers()
+            self.wfile.write(encoded)
+
+        def _request_token(self) -> str:
+            return request_token_from_cookie_header(self.headers.get("Cookie", ""))
+
+        def _authenticated_token(self) -> str | None:
+            token = self._request_token()
+            if not token:
+                return None
+            if not interface_server.restore_token_session(token):
+                return None
+            return token
+
+        def do_GET(self) -> None:
+            path = self.path.split("?", 1)[0]
+            token = self._authenticated_token()
+            if path == "/":
+                if token:
+                    self._redirect("/app")
+                else:
+                    self._serve_html(LOGIN_PATH)
+                return
+            if path == "/login":
+                if token:
+                    self._redirect("/app")
+                else:
+                    self._serve_html(LOGIN_PATH)
+                return
+            if path in {"/app", "/index.html"}:
+                if not token:
+                    self._redirect("/login")
+                    return
+                self._serve_html(INDEX_PATH)
+                return
+            if path == "/console":
+                if not token:
+                    self._redirect("/login")
+                    return
+                self._serve_html(CONSOLE_PATH)
+                return
             self.send_response(404)
             self.end_headers()
-            return
 
-        content = file_path.read_text(encoding="utf-8").replace(
-            "__WS_PORT__", str(WS_PORT)
-        )
-        payload = content.encode("utf-8")
-        self.send_response(200)
-        self.send_header("Content-Type", "text/html; charset=utf-8")
-        self.send_header("Content-Length", str(len(payload)))
-        self.send_header("Cache-Control", "no-store")
-        self.end_headers()
-        self.wfile.write(payload)
+        def do_POST(self) -> None:
+            path = self.path.split("?", 1)[0]
+            if path != "/login":
+                self.send_response(404)
+                self.end_headers()
+                return
+            try:
+                length = int(self.headers.get("Content-Length", "0") or "0")
+            except ValueError:
+                length = 0
+            try:
+                body = self.rfile.read(length)
+                data = json.loads(body.decode("utf-8"))
+                username = str(data.get("username", "")).strip()
+                password = str(data.get("password", ""))
+            except Exception:
+                self._json_response(400, {"error": "Invalid request"})
+                return
 
-    def do_GET(self) -> None:
-        path = self.path.split("?", 1)[0]
-        if path in {"/", "/index.html"}:
-            self._serve_html(INDEX_PATH)
-        elif path == "/console":
-            self._serve_html(CONSOLE_PATH)
-        else:
-            self.send_response(404)
-            self.end_headers()
+            token = interface_server.login_from_auth(username, password)
+            if token is None:
+                self._json_response(401, {"error": "Invalid credentials"})
+                return
 
-    def log_message(self, format: str, *args: Any) -> None:
-        pass
+            self._json_response(
+                200,
+                {
+                    "token": token.token,
+                    "username": token.display_name,
+                    "role": token.role,
+                },
+                cookie_token=token.token,
+            )
+
+        def log_message(self, format: str, *args: Any) -> None:
+            pass
+
+    return StaticHandler
 
 
-def run_http_server() -> None:
-    httpd = HTTPServer(("", HTTP_PORT), StaticHandler)
+def run_http_server(interface_server: "InterfaceServer") -> None:
+    httpd = HTTPServer(("", HTTP_PORT), make_static_handler(interface_server))
     print(f"HTTP server ready on http://localhost:{HTTP_PORT}")
     httpd.serve_forever()
 
@@ -235,6 +345,13 @@ class InterfaceServer:
             roles_config_path=APP_ROOT / "config" / "roles.json",
         )
         self.guardian_user = ensure_guardian_exists(self.user_manager)
+        self.auth_store = AuthStore(self.data_root / "realms" / self.active_realm.name)
+        self.auth_store.seed_user(
+            user_id=self.guardian_user.user_id,
+            username="ZAERA",
+            password="ETERNALOVE",
+            role="guardian",
+        )
         self.profile_manager = ProfileManager(self.data_root / "profiles")
         self.notification_store = NotificationStore(self.data_root / "notifications")
         self.reflective_memory = ReflectiveMemory(self.data_root / "self")
@@ -470,6 +587,77 @@ class InterfaceServer:
         self.startup_context = self.memory.load_startup_context(
             user_id=self._memory_scope_user_id()
         )
+
+    def _activate_user_session(
+        self,
+        target: UserRecord,
+        token,
+        source: str = "login",
+    ) -> None:
+        self.active_user = target
+        self.active_token = token
+        self.original_user = None
+        self.original_token = None
+        if target.role.strip().lower() == "guardian":
+            ensure_guardian_profile_completed(self.profile_manager, target.user_id)
+            self.guardian_token = token
+        else:
+            self.profile_manager.ensure_profile_exists(target.user_id)
+        append_audit_event(
+            self.session_audit,
+            "login",
+            f"{target.display_name} ({target.role}) logged in via {source}",
+        )
+        self._refresh_startup_context()
+
+    def login_from_auth(self, username: str, password: str):
+        record = self.auth_store.authenticate(username, password)
+        if record is None:
+            return None
+        target = self.user_manager.get_user(record.user_id)
+        if target is None:
+            target = self.user_manager.get_user_by_display_name(record.username)
+        if target is None:
+            return None
+        self._finalize_auto_memory("session end")
+        self.token_store.revoke_all_for_user(target.user_id)
+        token = self.token_store.issue(target.user_id, target.display_name, target.role)
+        self._activate_user_session(target, token, source="password auth")
+        return token
+
+    def restore_token_session(self, token_value: str) -> bool:
+        token = self.token_store.validate(token_value)
+        if token is None:
+            return False
+        target = self.user_manager.get_user(token.user_id)
+        if target is None:
+            return False
+        if (
+            self.active_token is not None
+            and self.active_token.token == token.token
+            and self.active_user is not None
+            and self.active_user.user_id == target.user_id
+        ):
+            return True
+        self.active_user = target
+        self.active_token = token
+        self.original_user = None
+        self.original_token = None
+        if target.role.strip().lower() == "guardian":
+            ensure_guardian_profile_completed(self.profile_manager, target.user_id)
+            self.guardian_token = token
+        else:
+            self.profile_manager.ensure_profile_exists(target.user_id)
+        self._refresh_startup_context()
+        return True
+
+    def _connection_token(self, connection: ServerConnection) -> str | None:
+        request = getattr(connection, "request", None)
+        headers = getattr(request, "headers", None)
+        if headers is None or not hasattr(headers, "get"):
+            return None
+        token = request_token_from_cookie_header(str(headers.get("Cookie", "")))
+        return token or None
 
     def _onboarding_state(self) -> dict[str, Any]:
         return {
@@ -1087,22 +1275,7 @@ class InterfaceServer:
                 await asyncio.to_thread(self._finalize_auto_memory, "session end")
                 self.token_store.revoke_all_for_user(target.user_id)
                 token = self.token_store.issue(target.user_id, target.display_name, target.role)
-                self.active_user = target
-                self.active_token = token
-                self.original_user = None
-                self.original_token = None
-                if target.role.strip().lower() == "guardian":
-                    ensure_guardian_profile_completed(self.profile_manager, target.user_id)
-                else:
-                    self.profile_manager.ensure_profile_exists(target.user_id)
-                if self.guardian_user is not None and target.user_id == self.guardian_user.user_id:
-                    self.guardian_token = token
-                append_audit_event(
-                    self.session_audit,
-                    "login",
-                    f"{target.display_name} ({target.role}) logged in",
-                )
-                self._refresh_startup_context()
+                self._activate_user_session(target, token, source="command")
                 for line in (
                     f"login > session started for {target.display_name} ({target.role})",
                     f"login > token: {token_preview(token)} valid for 8 hours",
@@ -3039,6 +3212,10 @@ class InterfaceServer:
         return self.active_user.role.strip().lower() in {"guardian", "operator"}
 
     async def send_initial_state(self, connection: ServerConnection) -> bool:
+        connection_token = self._connection_token(connection)
+        if connection_token is None or not self.restore_token_session(connection_token):
+            await connection.close(code=1008, reason="Authentication required.")
+            return False
         visible_memory_report = self._visible_memory_report()
         status_payload = {"type": "status", "data": self.build_status_payload()}
         active_profile = (
@@ -3127,7 +3304,7 @@ class InterfaceServer:
 
 
 def start_server() -> None:
-    http_thread = threading.Thread(target=run_http_server, daemon=True)
-    http_thread.start()
     server = InterfaceServer()
+    http_thread = threading.Thread(target=run_http_server, args=(server,), daemon=True)
+    http_thread.start()
     asyncio.run(server.start())
