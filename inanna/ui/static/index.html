@@ -1235,7 +1235,7 @@ function handleStatus(d){
   const role=au.role||'';
   const acting=d.acting_as;
   const body=d.body_status||'OK';
-  const mode=d.model_mode||'';
+  const mode=d.model_mode||d.mode||'';
   S.role=role;S.actingAs=acting;
 
   document.getElementById('phase-text').textContent=phase;
@@ -1254,7 +1254,7 @@ function handleStatus(d){
   if(ap)ap.style.display=(role==='guardian'||role==='operator')?'':'none';
 
   // Memory bar
-  const lines=d.memory_total_lines||0,cap=100;
+  const lines=d.memory_total_lines||d.memory_count||0,cap=100;
   const pct=Math.min(100,(lines/cap)*100);
   const fill=document.getElementById('mem-fill');
   if(fill){
