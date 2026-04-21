@@ -1081,6 +1081,35 @@ html,body{
 .sw-card-btn.launch:hover {
   background: rgba(90,170,112,.12);
 }
+
+/* INTERACTIVE HELP PANEL */
+.help-panel{font-family:var(--mono);font-size:11px;line-height:1.5;color:var(--ivory);width:100%;max-width:640px;}
+.help-title{font-family:var(--dec);font-size:13px;letter-spacing:4px;color:var(--gold4);margin-bottom:16px;padding-bottom:8px;border-bottom:1px solid var(--silt);}
+.help-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px;}
+.help-section{border:1px solid var(--dust);border-radius:3px;overflow:hidden;}
+.help-section.wide{grid-column:1/-1;}
+.help-section-head{padding:6px 10px;font-family:var(--serif);font-size:8px;letter-spacing:4px;display:flex;align-items:center;gap:6px;}
+.help-section.conversation .help-section-head{background:rgba(90,170,112,.12);color:var(--jade);border-bottom:1px solid rgba(90,170,112,.2);}
+.help-section.profile      .help-section-head{background:rgba(212,160,48,.10);color:var(--gold3);border-bottom:1px solid rgba(212,160,48,.2);}
+.help-section.files        .help-section-head{background:rgba(106,159,216,.10);color:#6a9fd8;border-bottom:1px solid rgba(106,159,216,.2);}
+.help-section.software     .help-section-head{background:rgba(168,112,216,.10);color:var(--vio4);border-bottom:1px solid rgba(168,112,216,.2);}
+.help-section.system       .help-section-head{background:rgba(80,200,184,.10);color:#50c8b8;border-bottom:1px solid rgba(80,200,184,.2);}
+.help-section.governance   .help-section-head{background:rgba(224,112,48,.10);color:#e07030;border-bottom:1px solid rgba(224,112,48,.2);}
+.help-section.session      .help-section-head{background:rgba(200,168,96,.10);color:var(--gold2);border-bottom:1px solid rgba(200,168,96,.2);}
+.help-section.operator     .help-section-head{background:rgba(204,96,96,.10);color:#cc6060;border-bottom:1px solid rgba(204,96,96,.2);}
+.help-section.guardian     .help-section-head{background:rgba(204,96,96,.15);color:#cc6060;border-bottom:1px solid rgba(204,96,96,.3);}
+.help-row{display:flex;align-items:center;gap:6px;padding:4px 8px;border-bottom:.5px solid rgba(46,32,16,.5);transition:background .1s;}
+.help-row:last-child{border-bottom:none;}
+.help-row:hover{background:rgba(212,160,48,.04);}
+.help-cmd{font-size:10px;color:var(--cream);min-width:160px;flex-shrink:0;letter-spacing:.5px;}
+.help-cmd.natural{color:var(--ivory);font-style:italic;font-size:9px;}
+.help-desc{font-size:9px;color:var(--faded);flex:1;letter-spacing:.5px;}
+.help-run-btn{background:transparent;border:1px solid var(--dust);color:var(--dim);font-family:var(--mono);font-size:7px;letter-spacing:2px;padding:2px 6px;cursor:pointer;transition:all .15s;flex-shrink:0;white-space:nowrap;}
+.help-run-btn:hover{border-color:var(--gold2);color:var(--gold3);background:rgba(212,160,48,.06);}
+.help-note{font-size:8px;color:var(--dim);letter-spacing:1px;padding:4px 8px 5px;border-top:.5px solid rgba(46,32,16,.5);font-style:italic;}
+.help-footer{margin-top:10px;padding-top:8px;border-top:1px solid var(--dust);font-size:8px;color:var(--dim);letter-spacing:2px;display:flex;gap:8px;flex-wrap:wrap;align-items:center;}
+.help-topic-btn{background:transparent;border:1px solid var(--dust);color:var(--faded);font-family:var(--mono);font-size:8px;letter-spacing:1px;padding:2px 7px;cursor:pointer;transition:all .15s;}
+.help-topic-btn:hover{border-color:var(--gold2);color:var(--gold3);}
 </style>
 </head>
 <body>
@@ -1542,7 +1571,13 @@ function addMessage(type,text,meta){
       const pid=extractPid(text);
       row.innerHTML=`<div class="msg-bubble has-proposal">${esc(text)}<div class="prop-inline-actions">${pid?`<button class="pi-approve" onclick="approveP('${pid}')">[ approve ]</button><button class="pi-decline" onclick="declineP('${pid}')">[ decline ]</button>`:''}</div></div>`;
     }else{
-      row.innerHTML=`<div class="msg-bubble">${esc(text)}</div>`;
+      const _rl = S.status && S.status.active_user ? (S.status.active_user.role||'user') : 'user';
+      const _hh = buildHelpPanel(text, _rl);
+      if (_hh) {
+        row.innerHTML=`<div class="msg-label">help</div><div class="msg-bubble">${_hh}</div>`;
+      } else {
+        row.innerHTML=`<div class="msg-bubble">${esc(text)}</div>`;
+      }
     }
   }else if(type==='nammu'){
     row.className='msg-row nammu';
@@ -2214,6 +2249,82 @@ function sendSoftwareAction(action, appName) {
 // Hook into operator message rendering to append software cards
 const _origAddMsg = addMessage;
 // We patch at the operator rendering level
+
+// INTERACTIVE HELP PANEL
+const HELP_DEF = {
+  user: [
+    {id:'conversation',label:'CONVERSATION',cls:'conversation',
+     rows:[{cmd:'Just type naturally',desc:'INANNA hears you',run:null},{cmd:'analyse [question]',desc:'Structured reasoning',run:'analyse '}],
+     note:'NAMMU routes your intent automatically'},
+    {id:'profile',label:'PROFILE',cls:'profile',
+     rows:[{cmd:'my-profile',desc:'View profile card',run:'my-profile'},{cmd:'my-profile edit name X',desc:'Set your name',run:'my-profile edit name '},{cmd:'my-profile edit city X',desc:'Set your city',run:'my-profile edit city '},{cmd:'my-profile clear communication',desc:'Reset style observations',run:'my-profile clear communication'}]},
+    {id:'software',label:'SOFTWARE',cls:'software',wide:true,
+     rows:[{cmd:'software',desc:'All installed apps + launch buttons',run:'software'},{cmd:'software [name]',desc:'Filter installed apps',run:'software '},{cmd:'open firefox',desc:'Launch any installed app',run:'open firefox',natural:true},{cmd:'install vlc',desc:'Install software (approval)',run:'install vlc',natural:true},{cmd:'search for a text editor',desc:'Search available packages',run:'search for a text editor',natural:true},{cmd:'list installed',desc:'Show all installed apps',run:'list installed software',natural:true}]},
+    {id:'files',label:'FILES',cls:'files',
+     rows:[{cmd:'list my Documents',desc:'List a directory',run:'list my Documents folder',natural:true},{cmd:'read the file at ~/X',desc:'Read a file',run:'read the file at ~/',natural:true},{cmd:'find all .py files',desc:'Search by pattern',run:'find all .py files in ~/',natural:true},{cmd:'write a file called X',desc:'Write file (approval)',run:'write a file called notes.txt with content: ',natural:true}],
+     note:'list/info/search: no approval  -  write: always approval'},
+    {id:'system',label:'SYSTEM',cls:'system',
+     rows:[{cmd:'how is the system?',desc:'CPU, RAM, disk, uptime',run:'how is the system doing?',natural:true},{cmd:'what uses my memory?',desc:'Top processes by RAM',run:'what is using all my memory?',natural:true},{cmd:'kill process [pid]',desc:'Terminate (approval)',run:'kill process ',natural:true},{cmd:'run echo hello',desc:'Shell command (approval)',run:'run echo hello',natural:true}],
+     note:'list/system_info: no approval  -  kill/run: always approval'},
+    {id:'governance',label:'GOVERNANCE',cls:'governance',
+     rows:[{cmd:'my-trust',desc:'Show persistent trust',run:'my-trust'},{cmd:'governance-trust [tool]',desc:'Trust a tool permanently',run:'governance-trust '},{cmd:'governance-revoke [tool]',desc:'Revoke trust',run:'governance-revoke '},{cmd:'my-departments',desc:'Your departments',run:'my-departments'}]},
+    {id:'session',label:'SESSION',cls:'session',
+     rows:[{cmd:'whoami',desc:'Current identity',run:'whoami'},{cmd:'history',desc:'Conversation history',run:'history'},{cmd:'inanna-reflect',desc:'INANNA self-knowledge',run:'inanna-reflect'},{cmd:'logout',desc:'End session',run:'logout'}]},
+  ],
+  operator_extra:[
+    {id:'operator',label:'OPERATOR',cls:'operator',wide:true,
+     rows:[{cmd:'tool-registry',desc:'All registered tools',run:'tool-registry'},{cmd:'faculty-registry',desc:'All Faculties',run:'faculty-registry'},{cmd:'status',desc:'Full system status',run:'status'},{cmd:'body',desc:'Body health report',run:'body'},{cmd:'audit',desc:'Audit trail',run:'audit'},{cmd:'routing-log',desc:'NAMMU routing',run:'routing-log'},{cmd:'network-status',desc:'Network status',run:'network-status'},{cmd:'process-status',desc:'Running processes',run:'process-status'},{cmd:'proposal-history',desc:'Full proposal history',run:'proposal-history'}]},
+  ],
+  guardian_extra:[
+    {id:'guardian',label:'GUARDIAN',cls:'guardian',wide:true,
+     rows:[{cmd:'users',desc:'List all users',run:'users'},{cmd:'create-user [name] [role]',desc:'Create a user',run:'create-user '},{cmd:'invite [role]',desc:'Generate invite code',run:'invite user'},{cmd:'guardian',desc:'Run GUARDIAN inspection',run:'guardian'},{cmd:'diagnostics',desc:'Deep diagnostics',run:'diagnostics'},{cmd:'admin-surface',desc:'Admin dashboard',run:'admin-surface'},{cmd:'reflect [observation]',desc:'Propose reflection',run:'reflect '}]},
+  ],
+};
+const HELP_ICONS = {conversation:'\u{12041}',profile:'\u25c6',software:'\u25c8',files:'\u25fb',system:'\u25c9',governance:'\u2726',session:'\u25cc',operator:'\u27c1',guardian:'\ud83c\udcab'};
+const HELP_TOPICS_LIST = ['my-profile','governance-trust','inanna-reflect','faculties','tools','files','processes','packages','memory'];
+
+function buildHelpPanel(text, role) {
+  if (!text || text.indexOf('\u{12041}') < 0) return null;
+  let secs = [...HELP_DEF.user];
+  if (role==='operator'||role==='guardian') secs = secs.concat(HELP_DEF.operator_extra);
+  if (role==='guardian') secs = secs.concat(HELP_DEF.guardian_extra);
+  let h = '<div class="help-panel">';
+  h += '<div class="help-title">\u{12041}\u00a0INANNA NYX \u2014 Command Reference</div>';
+  h += '<div class="help-grid">';
+  for (const sec of secs) {
+    h += `<div class="help-section ${sec.cls}${sec.wide?' wide':''}">`;
+    const ico = HELP_ICONS[sec.id] || '';
+    h += `<div class="help-section-head">${ico} ${sec.label}</div>`;
+    for (const row of sec.rows) {
+      h += '<div class="help-row">';
+      h += `<span class="help-cmd${row.natural?' natural':''}">${esc(row.cmd)}</span>`;
+      h += `<span class="help-desc">${esc(row.desc)}</span>`;
+      if (row.run !== null) {
+        const c = row.run.replace(/"/g,'&quot;').replace(/'/g,"\\'");
+        h += `<button class="help-run-btn" onclick="helpRunCmd('${c}')">[\u00a0run\u00a0]</button>`;
+      }
+      h += '</div>';
+    }
+    if (sec.note) h += `<div class="help-note">${esc(sec.note)}</div>`;
+    h += '</div>';
+  }
+  h += '</div>';
+  h += '<div class="help-footer"><span style="font-size:8px;letter-spacing:2px;color:var(--dim)">DEEP HELP:</span>';
+  for (const t of HELP_TOPICS_LIST) h += `<button class="help-topic-btn" onclick="helpRunCmd('help ${t}')">help ${t}</button>`;
+  h += '</div></div>';
+  return h;
+}
+
+function helpRunCmd(cmd) {
+  if (!cmd) return;
+  const inp = document.getElementById('input');
+  if (!inp) return;
+  if (!cmd.endsWith(' ') && S.ws && S.ws.readyState === 1) {
+    S.ws.send(JSON.stringify({type:'input', text:cmd}));
+  } else {
+    inp.value = cmd; inp.focus();
+  }
+}
 </script>
 </body>
 </html>

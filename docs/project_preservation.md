@@ -68,7 +68,7 @@ is not a technical constraint — it is an ethical commitment.
 
 ---
 
-## Part 2 — Verified State (as of 2026-04-21)
+## Part 2 — Verified State (as of 2026-04-21, Cycle 7.5)
 
 ### What is fully working
 
@@ -93,6 +93,14 @@ is not a technical constraint — it is an ethical commitment.
 | Organizational layer | core/profile.py | ✓ working |
 | Identity formatter | core/profile.py | ✓ working |
 | Trust persistence | core/operator.py, ui/server.py | ✓ working |
+| File System Faculty | core/filesystem_faculty.py | ✓ working |
+| Process Faculty | core/process_faculty.py | ✓ working |
+| Package Faculty | core/package_faculty.py | ✓ working |
+| Software Registry | core/software_registry.py | ✓ working |
+| Voice Listener | voice/listener.py | ✓ built (deps separate) |
+| launch_app tool | main.py + software_registry.py | ✓ working |
+| Interactive Help UI | ui/static/index.html | ✓ working |
+| NixOS configuration | nixos/ | ✓ ready for deployment |
 | Reflective memory | core/reflection.py | ✓ working |
 | NAMMU router | core/nammu.py | ✓ working |
 | Orchestration (SENTINEL→CROWN) | core/orchestration.py | ✓ working |
