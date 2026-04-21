@@ -18,6 +18,7 @@ from websockets.exceptions import ConnectionClosed
 
 from config import Config
 from core.auth import AuthStore
+from core.desktop_faculty import DesktopFaculty
 from core.filesystem_faculty import FileSystemFaculty
 from core.governance import GovernanceLayer
 from core.guardian import GuardianFaculty
@@ -63,6 +64,7 @@ from main import (
     build_admin_surface_payload,
     build_body_report,
     build_body_summary,
+    build_desktop_audit_entry,
     build_faculty_registry_payload,
     build_package_audit_entry,
     build_filesystem_audit_entry,
@@ -104,6 +106,7 @@ from main import (
     clear_communication_observations,
     complete_orchestration_resolution as complete_orchestration_backend_resolution,
     default_profile_field_value,
+    detect_desktop_tool_action,
     detect_filesystem_tool_action,
     detect_package_tool_action,
     detect_process_tool_action,
@@ -393,6 +396,7 @@ class InterfaceServer:
         )
         self.guardian = GuardianFaculty()
         self.operator = OperatorFaculty()
+        self.desktop_faculty = DesktopFaculty()
         self.filesystem_faculty = FileSystemFaculty()
         self.process_faculty = ProcessFaculty()
         self.package_faculty = PackageFaculty()
@@ -846,6 +850,52 @@ class InterfaceServer:
                 },
                 "proposal": created,
             }
+
+        desktop_action = detect_desktop_tool_action(
+            text,
+            self.desktop_faculty,
+        )
+        if desktop_action is not None:
+            self._record_routing_decision("operator", text)
+            self._record_governance_decision(
+                "tool",
+                str(desktop_action.get("reason", "Governed desktop tool use.")),
+                text,
+            )
+            if bool(desktop_action.get("requires_proposal", False)):
+                created = create_tool_use_proposal(
+                    proposal=self.proposal,
+                    session=self.session,
+                    user_input=text,
+                    tool=str(desktop_action["tool"]),
+                    query=str(desktop_action["query"]),
+                    params=dict(desktop_action.get("params", {})),
+                )
+                return {
+                    "response": {
+                        "type": "operator",
+                        "text": (
+                            f'tool proposed: {desktop_action["tool"]} - '
+                            f'"{desktop_action["query"]}"'
+                        ),
+                    },
+                    "proposal": {**created, "line": created["tool_line"]},
+                }
+            outcome = self.complete_tool_resolution(
+                {
+                    "payload": {
+                        "original_input": text,
+                        "query": str(desktop_action["query"]),
+                        "tool": str(desktop_action["tool"]),
+                        "params": dict(desktop_action.get("params", {})),
+                    }
+                },
+                "approve",
+            )
+            responses = list(outcome["operator_payloads"])
+            if outcome["assistant_text"]:
+                responses.append({"type": "assistant", "text": outcome["assistant_text"]})
+            return {"responses": responses}
 
         filesystem_action = detect_filesystem_tool_action(
             text,
@@ -2962,6 +3012,7 @@ class InterfaceServer:
                 filesystem_faculty=self.filesystem_faculty,
                 process_faculty=self.process_faculty,
                 package_faculty=self.package_faculty,
+                desktop_faculty=self.desktop_faculty,
                 software_registry=self.software_registry,
             )
             self.faculty_monitor.record_call(
@@ -2974,6 +3025,7 @@ class InterfaceServer:
                 or build_filesystem_audit_entry(result)
                 or build_process_audit_entry(result)
                 or build_package_audit_entry(result)
+                or build_desktop_audit_entry(result)
             )
             if audit_entry is not None:
                 append_audit_event(

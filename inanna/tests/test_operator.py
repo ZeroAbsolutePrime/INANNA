@@ -32,6 +32,11 @@ class OperatorFacultyTests(unittest.TestCase):
                 "install_package",
                 "remove_package",
                 "launch_app",
+                "desktop_open_app",
+                "desktop_read_window",
+                "desktop_click",
+                "desktop_type",
+                "desktop_screenshot",
             },
         )
         self.assertEqual(

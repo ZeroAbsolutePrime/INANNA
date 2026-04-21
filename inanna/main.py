@@ -14,6 +14,7 @@ from dotenv import load_dotenv
 
 from config import Config
 from core.body import BodyInspector, BodyReport
+from core.desktop_faculty import DesktopFaculty, DesktopResult, is_consequential_label
 from core.faculty_monitor import FacultyMonitor
 from core.filesystem_faculty import FileInfo, FileSystemFaculty, FileSystemResult
 from core.governance import GovernanceLayer
@@ -262,6 +263,13 @@ PACKAGE_TOOL_NAMES = {
     "remove_package",
     "launch_app",
 }
+DESKTOP_TOOL_NAMES = {
+    "desktop_open_app",
+    "desktop_read_window",
+    "desktop_click",
+    "desktop_type",
+    "desktop_screenshot",
+}
 PROCESS_HINT_FALLBACKS = (
     "process",
     "processes",
@@ -292,6 +300,27 @@ PACKAGE_HINT_FALLBACKS = (
     "brew",
     "winget",
     "software",
+)
+DESKTOP_HINT_FALLBACKS = (
+    "open app",
+    "launch app",
+    "start app",
+    "open application",
+    "read window",
+    "what is in the",
+    "what does",
+    "show me the screen",
+    "click",
+    "press button",
+    "tap",
+    "select",
+    "type",
+    "enter text",
+    "fill in",
+    "screenshot",
+    "capture screen",
+    "switch to",
+    "focus on",
 )
 PACKAGE_SEARCH_TERMS = (
     "app",
@@ -373,6 +402,25 @@ def load_package_domain_hints(
     return cleaned or list(PACKAGE_HINT_FALLBACKS)
 
 
+def load_desktop_domain_hints(
+    signals_path: Path = FILESYSTEM_SIGNAL_PATH,
+) -> list[str]:
+    try:
+        payload = json.loads(signals_path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return list(DESKTOP_HINT_FALLBACKS)
+
+    domain_hints = payload.get("domain_hints", {})
+    if not isinstance(domain_hints, dict):
+        return list(DESKTOP_HINT_FALLBACKS)
+    hints = domain_hints.get("desktop", [])
+    if not isinstance(hints, list):
+        return list(DESKTOP_HINT_FALLBACKS)
+
+    cleaned = [str(item).strip().lower() for item in hints if str(item).strip()]
+    return cleaned or list(DESKTOP_HINT_FALLBACKS)
+
+
 def normalize_request_fragment(value: str) -> str:
     cleaned = str(value or "").strip()
     if len(cleaned) >= 2 and cleaned[0] == cleaned[-1] and cleaned[0] in {'"', "'"}:
@@ -438,6 +486,16 @@ def build_tool_request_query(tool_name: str, params: dict[str, Any]) -> str:
         return str(params.get("filter", "")).strip() or "installed"
     if tool_name in {"search_packages", "install_package", "remove_package"}:
         return str(params.get("package", "") or params.get("query", "")).strip()
+    if tool_name == "desktop_open_app":
+        return str(params.get("app", "")).strip()
+    if tool_name == "desktop_read_window":
+        return str(params.get("app_name", "")).strip() or "active window"
+    if tool_name == "desktop_click":
+        return str(params.get("label", "")).strip()
+    if tool_name == "desktop_type":
+        return str(params.get("text", "")).strip()
+    if tool_name == "desktop_screenshot":
+        return str(params.get("app_name", "")).strip() or "desktop"
     if tool_name in FILESYSTEM_TOOL_NAMES:
         return str(params.get("path", "")).strip()
     return str(params.get("query", "")).strip()
@@ -718,6 +776,182 @@ def detect_process_tool_action(
     return {
         **request,
         "requires_proposal": process_request_requires_proposal(request),
+    }
+
+
+def _strip_common_request_prefixes(value: str) -> tuple[str, str]:
+    normalized = str(value or "").strip()
+    lowered = normalized.lower()
+    pattern = r"^(?:inanna[,\s]+|hey inanna[,\s]+|please[,\s]+|can you[,\s]+)"
+    normalized_stripped = re.sub(pattern, "", normalized, flags=re.IGNORECASE).strip()
+    lowered_stripped = re.sub(pattern, "", lowered, flags=re.IGNORECASE).strip()
+    return normalized_stripped, lowered_stripped
+
+
+def _looks_like_file_target(candidate: str) -> bool:
+    cleaned = str(candidate or "").strip().lower()
+    if not cleaned:
+        return False
+    if cleaned.startswith(("file ", "the file ", "~/", "/", ".\\", "..\\", "c:\\", "d:\\")):
+        return True
+    return any(
+        cleaned.endswith(ext)
+        for ext in (
+            ".txt",
+            ".md",
+            ".json",
+            ".py",
+            ".csv",
+            ".pdf",
+            ".doc",
+            ".docx",
+            ".xls",
+            ".xlsx",
+            ".png",
+            ".jpg",
+            ".jpeg",
+        )
+    )
+
+
+def extract_desktop_tool_request(
+    text: str,
+    hints: list[str] | None = None,
+) -> dict[str, Any] | None:
+    normalized = str(text or "").strip()
+    lowered = normalized.lower()
+    normalized_stripped, lowered_stripped = _strip_common_request_prefixes(normalized)
+    active_hints = hints or load_desktop_domain_hints()
+    hint_match = any(hint in lowered for hint in active_hints)
+    if not hint_match and not re.match(
+        r"^(open|launch|start|switch to|focus on|read|show|what is in|what does|click|press|tap|select|type|enter|take|capture|screenshot)\b",
+        lowered_stripped,
+    ):
+        return None
+
+    screenshot_match = re.match(
+        r"^(?:take|capture)(?:\s+(?:a|the))?\s+screenshot(?:\s+(?:of|for)\s+(?P<app>.+))?$",
+        normalized_stripped,
+        flags=re.IGNORECASE,
+    )
+    if screenshot_match or lowered_stripped in {
+        "screenshot",
+        "take a screenshot",
+        "capture screen",
+        "capture the screen",
+    }:
+        params = {
+            "app_name": normalize_request_fragment(
+                (screenshot_match.group("app") if screenshot_match else "") or ""
+            ),
+        }
+        return {
+            "tool": "desktop_screenshot",
+            "params": params,
+            "query": build_tool_request_query("desktop_screenshot", params),
+            "reason": "Desktop observation routed to OPERATOR tool use.",
+        }
+
+    read_match = re.match(
+        r"^(?:read|show)(?:\s+me)?(?:\s+the)?\s+(?P<app>.+?)\s+window$",
+        normalized_stripped,
+        flags=re.IGNORECASE,
+    )
+    if not read_match:
+        read_match = re.match(
+            r"^(?:what is in|what does)(?:\s+the)?\s+(?P<app>.+?)\s+window(?:\s+say)?$",
+            normalized_stripped,
+            flags=re.IGNORECASE,
+        )
+    if read_match:
+        params = {
+            "app_name": normalize_request_fragment(read_match.group("app")),
+            "max_depth": 5,
+        }
+        return {
+            "tool": "desktop_read_window",
+            "params": params,
+            "query": build_tool_request_query("desktop_read_window", params),
+            "reason": "Desktop window reading routed to OPERATOR tool use.",
+        }
+
+    click_match = re.match(
+        r"^(?:click|press|tap|select)(?:\s+the)?\s+(?P<label>.+?)(?:\s+(?:button|link|tab|icon))?(?:\s+(?:in|on)\s+(?P<app>.+))?$",
+        normalized_stripped,
+        flags=re.IGNORECASE,
+    )
+    if click_match:
+        params = {
+            "label": normalize_request_fragment(click_match.group("label")),
+            "app_name": normalize_request_fragment(click_match.group("app") or ""),
+        }
+        return {
+            "tool": "desktop_click",
+            "params": params,
+            "query": build_tool_request_query("desktop_click", params),
+            "reason": "Desktop clicking routed to OPERATOR tool use.",
+        }
+
+    type_match = re.match(
+        r"^(?:type|enter(?:\s+text)?)\s+(?P<text>.+?)(?:\s+and\s+(?P<submit>submit|send|press enter))?$",
+        normalized_stripped,
+        flags=re.IGNORECASE | re.DOTALL,
+    )
+    if type_match:
+        params = {
+            "text": normalize_request_fragment(type_match.group("text")),
+            "submit": bool(type_match.group("submit")),
+        }
+        return {
+            "tool": "desktop_type",
+            "params": params,
+            "query": build_tool_request_query("desktop_type", params),
+            "reason": "Desktop typing requires governed tool use.",
+        }
+
+    open_match = re.match(
+        r"^(?:open|launch|start|switch to|focus on)(?:\s+(?:the|app|application))?\s+(?P<app>.+)$",
+        normalized_stripped,
+        flags=re.IGNORECASE,
+    )
+    if open_match:
+        app = normalize_request_fragment(open_match.group("app"))
+        if app.lower().endswith(" window") or _looks_like_file_target(app):
+            return None
+        params = {"app": app}
+        return {
+            "tool": "desktop_open_app",
+            "params": params,
+            "query": build_tool_request_query("desktop_open_app", params),
+            "reason": "Desktop app launch requires governed tool use.",
+        }
+
+    return None
+
+
+def desktop_request_requires_proposal(desktop_request: dict[str, Any]) -> bool:
+    tool_name = str(desktop_request.get("tool", "")).strip().lower()
+    params = desktop_request.get("params", {})
+    if not isinstance(params, dict):
+        params = {}
+    if tool_name in {"desktop_open_app", "desktop_type"}:
+        return True
+    if tool_name == "desktop_click":
+        return is_consequential_label(str(params.get("label", "")))
+    return False
+
+
+def detect_desktop_tool_action(
+    text: str,
+    desktop_faculty: DesktopFaculty | None = None,
+) -> dict[str, Any] | None:
+    del desktop_faculty
+    request = extract_desktop_tool_request(text)
+    if request is None:
+        return None
+    return {
+        **request,
+        "requires_proposal": desktop_request_requires_proposal(request),
     }
 
 
@@ -3299,6 +3533,30 @@ def build_package_tool_result(
     )
 
 
+def build_desktop_tool_result(
+    tool_name: str,
+    desktop_result: DesktopResult,
+    desktop_faculty: DesktopFaculty,
+) -> ToolResult:
+    data: dict[str, Any] = {
+        "formatted": desktop_faculty.format_result(desktop_result),
+        "operation": desktop_result.tool,
+        "output": desktop_result.output,
+        "window_title": desktop_result.window_title,
+        "screenshot_path": desktop_result.screenshot_path,
+        "element_found": desktop_result.element_found,
+        "consequential": desktop_result.consequential,
+        "backend": desktop_faculty.backend_name,
+    }
+    return ToolResult(
+        tool=tool_name,
+        query=desktop_result.query,
+        success=desktop_result.success,
+        data=data,
+        error=str(desktop_result.error or ""),
+    )
+
+
 def run_filesystem_tool(
     filesystem_faculty: FileSystemFaculty,
     tool_name: str,
@@ -3359,6 +3617,47 @@ def run_process_tool(
             error=f"Unknown process tool: {tool_name}",
         )
     return build_process_tool_result(tool_name, result, process_faculty)
+
+
+def parse_boolish(value: Any) -> bool:
+    if isinstance(value, bool):
+        return value
+    return str(value or "").strip().lower() in {"1", "true", "yes", "y", "on"}
+
+
+def run_desktop_tool(
+    desktop_faculty: DesktopFaculty,
+    tool_name: str,
+    params: dict[str, Any],
+) -> ToolResult:
+    if tool_name == "desktop_open_app":
+        result = desktop_faculty.open_app(str(params.get("app", "") or params.get("query", "")))
+    elif tool_name == "desktop_read_window":
+        try:
+            max_depth = int(params.get("max_depth", 5) or 5)
+        except (TypeError, ValueError):
+            max_depth = 5
+        result = desktop_faculty.read_window(
+            str(params.get("app_name", "") or params.get("query", "")),
+            max_depth,
+        )
+    elif tool_name == "desktop_click":
+        result = desktop_faculty.click(
+            str(params.get("label", "") or params.get("query", "")),
+            str(params.get("app_name", "")),
+        )
+    elif tool_name == "desktop_type":
+        result = desktop_faculty.type_text(
+            str(params.get("text", "") or params.get("query", "")),
+            parse_boolish(params.get("submit", False)),
+        )
+    elif tool_name == "desktop_screenshot":
+        result = desktop_faculty.screenshot(
+            str(params.get("app_name", "") or params.get("query", "")),
+        )
+    else:
+        result = DesktopResult(False, tool_name, "", error=f"Unknown desktop tool: {tool_name}")
+    return build_desktop_tool_result(tool_name, result, desktop_faculty)
 
 
 def run_package_tool(
@@ -3427,6 +3726,7 @@ def execute_tool_request(
     filesystem_faculty: FileSystemFaculty | None = None,
     process_faculty: ProcessFaculty | None = None,
     package_faculty: PackageFaculty | None = None,
+    desktop_faculty: DesktopFaculty | None = None,
     software_registry: SoftwareRegistry | None = None,
 ) -> ToolResult:
     if tool_name in FILESYSTEM_TOOL_NAMES:
@@ -3440,6 +3740,8 @@ def execute_tool_request(
             params,
             software_registry=software_registry,
         )
+    if tool_name in DESKTOP_TOOL_NAMES:
+        return run_desktop_tool(desktop_faculty or DesktopFaculty(), tool_name, params)
     return operator.execute(tool_name, params)
 
 
@@ -3623,7 +3925,63 @@ def build_package_context_lines(result: ToolResult) -> list[str]:
     ]
 
 
+def build_desktop_context_lines(result: ToolResult) -> list[str]:
+    if not result.success:
+        return [
+            f"tool result ({result.tool}) query: {result.query}",
+            f"error: {result.error or 'unknown desktop error'}",
+        ]
+
+    if result.tool == "desktop_open_app":
+        lines = [f"tool result ({result.tool}) app: {result.query}"]
+        if result.data.get("window_title"):
+            lines.append(f"window_title: {result.data.get('window_title')}")
+        if result.data.get("output"):
+            lines.append(f"message: {str(result.data.get('output', ''))[:400]}")
+        return lines
+
+    if result.tool == "desktop_read_window":
+        lines = [f"tool result ({result.tool}) window: {result.query or 'active window'}"]
+        if result.data.get("window_title"):
+            lines.append(f"title: {result.data.get('window_title')}")
+        output = str(result.data.get("output", "")).strip()
+        if output:
+            lines.append(f"output_excerpt: {output[:4000]}")
+        return lines
+
+    if result.tool == "desktop_click":
+        return [
+            f"tool result ({result.tool}) label: {result.query}",
+            f"element_found: {'yes' if result.data.get('element_found') else 'no'}",
+            f"consequential: {'yes' if result.data.get('consequential') else 'no'}",
+        ]
+
+    if result.tool == "desktop_type":
+        return [
+            f"tool result ({result.tool}) text: {str(result.query)[:120]}",
+            f"chars_typed: {len(str(result.query or ''))}",
+            f"submitted: {'yes' if result.data.get('consequential') else 'no'}",
+        ]
+
+    if result.tool == "desktop_screenshot":
+        lines = [f"tool result ({result.tool}) target: {result.query or 'desktop'}"]
+        if result.data.get("screenshot_path"):
+            lines.append(f"screenshot_path: {result.data.get('screenshot_path')}")
+        return lines
+
+    return [
+        f"tool result ({result.tool}) query: {result.query}",
+        str(result.data.get("formatted", "")),
+    ]
+
+
 def build_tool_result_text(result: ToolResult) -> str:
+    if result.tool in DESKTOP_TOOL_NAMES:
+        return str(
+            result.data.get("formatted")
+            or f"desktop > error: {result.error or 'Unknown desktop error.'}"
+        )
+
     if result.tool in PACKAGE_TOOL_NAMES:
         return str(
             result.data.get("formatted")
@@ -3700,6 +4058,9 @@ def build_tool_result_text(result: ToolResult) -> str:
 
 
 def build_tool_context_lines(result: ToolResult) -> list[str]:
+    if result.tool in DESKTOP_TOOL_NAMES:
+        return build_desktop_context_lines(result)
+
     if result.tool in PACKAGE_TOOL_NAMES:
         return build_package_context_lines(result)
 
@@ -3935,6 +4296,45 @@ def build_package_audit_entry(result: ToolResult) -> dict[str, object] | None:
     return details
 
 
+def build_desktop_audit_entry(result: ToolResult) -> dict[str, object] | None:
+    if result.tool not in DESKTOP_TOOL_NAMES:
+        return None
+
+    query = str(result.query).strip() or "desktop"
+    result_text = result.error or "unknown"
+    details: dict[str, object] = {
+        "tool": result.tool,
+        "query": query,
+        "backend": str(result.data.get("backend", "") or "unknown"),
+    }
+
+    if not result.success:
+        result_text = result.error or "failed"
+    elif result.tool == "desktop_open_app":
+        result_text = str(result.data.get("window_title") or result.data.get("output") or "opened")
+        if result.data.get("window_title"):
+            details["window_title"] = str(result.data.get("window_title", ""))
+    elif result.tool == "desktop_read_window":
+        output = str(result.data.get("output", ""))
+        result_text = f"{len(output.splitlines())} lines"
+        if result.data.get("window_title"):
+            details["window_title"] = str(result.data.get("window_title", ""))
+    elif result.tool == "desktop_click":
+        result_text = "clicked"
+        details["element_found"] = bool(result.data.get("element_found", False))
+        details["consequential"] = bool(result.data.get("consequential", False))
+    elif result.tool == "desktop_type":
+        result_text = f"typed {len(query)} chars"
+        details["consequential"] = bool(result.data.get("consequential", False))
+    elif result.tool == "desktop_screenshot":
+        result_text = str(result.data.get("screenshot_path") or "captured")
+        details["screenshot_path"] = str(result.data.get("screenshot_path", ""))
+
+    details["result"] = result_text
+    details["summary"] = f"{result.tool} {query} -> {result_text}"
+    return details
+
+
 def build_tool_registry_report(payload: dict[str, object]) -> str:
     tools = list(payload.get("tools", []))
     total = int(payload.get("total", len(tools)))
@@ -4054,6 +4454,7 @@ def complete_tool_resolution(
     filesystem_faculty: FileSystemFaculty | None = None,
     process_faculty: ProcessFaculty | None = None,
     package_faculty: PackageFaculty | None = None,
+    desktop_faculty: DesktopFaculty | None = None,
     session_audit: list[dict[str, object]] | None = None,
     active_realm_name: str = "",
     conversation_state: dict[str, int] | None = None,
@@ -4081,6 +4482,7 @@ def complete_tool_resolution(
             filesystem_faculty=filesystem_faculty,
             process_faculty=process_faculty,
             package_faculty=package_faculty,
+            desktop_faculty=desktop_faculty,
         )
         if faculty_monitor is not None:
             faculty_monitor.record_call("operator", (time.monotonic() - t0) * 1000, result.success)
@@ -4089,6 +4491,7 @@ def complete_tool_resolution(
             or build_filesystem_audit_entry(result)
             or build_process_audit_entry(result)
             or build_package_audit_entry(result)
+            or build_desktop_audit_entry(result)
         )
         if audit_entry is not None:
             append_audit_event(
@@ -4228,6 +4631,7 @@ def handle_command(
     filesystem_faculty: FileSystemFaculty | None = None,
     process_faculty: ProcessFaculty | None = None,
     package_faculty: PackageFaculty | None = None,
+    desktop_faculty: DesktopFaculty | None = None,
     guardian: GuardianFaculty | None = None,
     guardian_metrics: dict[str, int] | None = None,
     nammu_dir: Path | None = None,
@@ -4247,6 +4651,7 @@ def handle_command(
 ) -> str | None:
     normalized = command.strip()
     guardian_metrics = ensure_guardian_metrics(guardian_metrics)
+    desktop_faculty = desktop_faculty or DesktopFaculty()
     filesystem_faculty = filesystem_faculty or FileSystemFaculty()
     process_faculty = process_faculty or ProcessFaculty()
     package_faculty = package_faculty or PackageFaculty()
@@ -5292,6 +5697,7 @@ def handle_command(
                 filesystem_faculty=filesystem_faculty,
                 process_faculty=process_faculty,
                 package_faculty=package_faculty,
+                desktop_faculty=desktop_faculty,
                 session_audit=session_audit,
                 active_realm_name=active_realm_name,
                 conversation_state=conversation_state,
@@ -5491,6 +5897,69 @@ def handle_command(
             f"{created['line']}"
         )
 
+    desktop_action = detect_desktop_tool_action(
+        normalized,
+        desktop_faculty,
+    )
+    if desktop_action is not None:
+        append_routing_decision(
+            routing_log,
+            session,
+            "operator",
+            normalized,
+            nammu_dir=nammu_dir,
+        )
+        append_governance_event(
+            resolve_nammu_dir(session, nammu_dir),
+            session.session_id,
+            "tool",
+            str(desktop_action.get("reason", "Governed desktop tool use.")),
+            normalized[:60],
+        )
+        if bool(desktop_action.get("requires_proposal", False)):
+            created = create_tool_use_proposal(
+                proposal=proposal,
+                session=session,
+                user_input=normalized,
+                tool=str(desktop_action["tool"]),
+                query=str(desktop_action["query"]),
+                params=dict(desktop_action.get("params", {})),
+            )
+            return (
+                f'operator > tool proposed: {desktop_action["tool"]} - "{desktop_action["query"]}"\n'
+                'Type "approve" to execute or "reject" to cancel.\n'
+                f"{created['tool_line']}"
+            )
+        return complete_tool_resolution(
+            {
+                "payload": {
+                    "original_input": normalized,
+                    "query": str(desktop_action["query"]),
+                    "tool": str(desktop_action["tool"]),
+                    "params": dict(desktop_action.get("params", {})),
+                }
+            },
+            "approve",
+            session,
+            proposal,
+            memory,
+            engine,
+            startup_context,
+            operator or OperatorFaculty(),
+            guardian_metrics,
+            active_token=active_token,
+            user_log=user_log,
+            faculty_monitor=faculty_monitor,
+            filesystem_faculty=filesystem_faculty,
+            process_faculty=process_faculty,
+            package_faculty=package_faculty,
+            desktop_faculty=desktop_faculty,
+            session_audit=session_audit,
+            active_realm_name=active_realm_name,
+            conversation_state=conversation_state,
+            reflective_memory=reflective_memory,
+        )
+
     filesystem_action = detect_filesystem_tool_action(
         normalized,
         filesystem_faculty,
@@ -5550,6 +6019,7 @@ def handle_command(
             filesystem_faculty=filesystem_faculty,
             process_faculty=process_faculty,
             package_faculty=package_faculty,
+            desktop_faculty=desktop_faculty,
             session_audit=session_audit,
             active_realm_name=active_realm_name,
             conversation_state=conversation_state,
@@ -5612,6 +6082,7 @@ def handle_command(
             filesystem_faculty=filesystem_faculty,
             process_faculty=process_faculty,
             package_faculty=package_faculty,
+            desktop_faculty=desktop_faculty,
             session_audit=session_audit,
             active_realm_name=active_realm_name,
             conversation_state=conversation_state,
@@ -5668,12 +6139,13 @@ def handle_command(
             startup_context,
             operator or OperatorFaculty(),
             guardian_metrics,
-                active_token=active_token,
-                user_log=user_log,
-                faculty_monitor=faculty_monitor,
-                filesystem_faculty=filesystem_faculty,
-                process_faculty=process_faculty,
-                package_faculty=package_faculty,
+            active_token=active_token,
+            user_log=user_log,
+            faculty_monitor=faculty_monitor,
+            filesystem_faculty=filesystem_faculty,
+            process_faculty=process_faculty,
+            package_faculty=package_faculty,
+            desktop_faculty=desktop_faculty,
             session_audit=session_audit,
             active_realm_name=active_realm_name,
             conversation_state=conversation_state,
@@ -5768,6 +6240,7 @@ def handle_command(
                 filesystem_faculty=filesystem_faculty,
                 process_faculty=process_faculty,
                 package_faculty=package_faculty,
+                desktop_faculty=desktop_faculty,
                 session_audit=session_audit,
                 active_realm_name=active_realm_name,
                 conversation_state=conversation_state,
@@ -5950,6 +6423,7 @@ def main() -> None:
     filesystem_faculty = FileSystemFaculty()
     process_faculty = ProcessFaculty()
     package_faculty = PackageFaculty()
+    desktop_faculty = DesktopFaculty()
     governance = GovernanceLayer(engine=engine)
     sync_profile_grounding(engine, profile_manager, guardian_user, guardian_token, reflective_memory)
     classifier = IntentClassifier(
@@ -6061,6 +6535,7 @@ def main() -> None:
             filesystem_faculty=filesystem_faculty,
             process_faculty=process_faculty,
             package_faculty=package_faculty,
+            desktop_faculty=desktop_faculty,
             guardian=guardian,
             guardian_metrics=guardian_metrics,
             nammu_dir=NAMMU_DIR,

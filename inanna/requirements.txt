@@ -4,6 +4,9 @@ requests>=2.31
 python-dotenv>=1.0
 psutil>=5.9
 
+# Desktop Faculty (Windows backend)
+pywinauto>=0.6.8
+
 # Voice Pipeline (Phase 7.5+ - install separately)
 # pip install faster-whisper sounddevice torch
 # faster-whisper>=1.0.0

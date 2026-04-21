@@ -47,6 +47,14 @@ HELP_COMMON = """𒀭 INANNA NYX — Available Commands
     "install firefox" (requires approval)
     "remove firefox" (requires approval)
 
+  DESKTOP (speak naturally)
+    "open firefox"                Open any application
+    "read the whatsapp window"    Read window content
+    "click the Send button"       Click a UI element
+    "type hello world"            Type text
+    "take a screenshot"           Capture screen
+    (consequential send/delete actions always require approval)
+
   SESSION
     whoami                        Show who you are logged in as
     logout                        End your session
@@ -192,12 +200,15 @@ HELP_TOPICS = {
   CROWN      Primary conversational voice. Warm, honest, relational.
   ANALYST    Structured reasoning. Analysis, comparison, logic.
   OPERATOR   Tool execution. web_search, ping, scan_ports, resolve_host,
-             read_file, list_dir, file_info, search_files, write_file,
-             list_processes, system_info, kill_process, run_command,
-             search_packages, list_packages, install_package, remove_package.
+              read_file, list_dir, file_info, search_files, write_file,
+              list_processes, system_info, kill_process, run_command,
+              search_packages, list_packages, install_package, remove_package,
+              launch_app,
+              desktop_open_app, desktop_read_window, desktop_click,
+              desktop_type, desktop_screenshot.
   GUARDIAN   System observation. Health, audit, inspection.
   SENTINEL   Security Faculty. CVE analysis, threat reasoning.
-             Uses qwen2.5-14b-instruct for deeper security reasoning.
+              Uses qwen2.5-14b-instruct for deeper security reasoning.
 
   NAMMU routes your input to the appropriate Faculty automatically.
   Use "faculty-registry" to see the full registry with charters.""",
@@ -208,7 +219,7 @@ HELP_TOPICS = {
   help [topic]       Show details on a specific topic
 
   Topics: my-profile, governance-trust, inanna-reflect,
-          faculties, tools, files, processes, packages, memory, realms, departments""",
+          faculties, tools, files, processes, packages, desktop, memory, realms, departments""",
 
     "tools": """tools — Available tools (all require proposal approval)
 
@@ -216,6 +227,7 @@ HELP_TOPICS = {
   ping [host]          Check if a host is reachable
   resolve_host [host]  Resolve hostname to IP address
   scan_ports [host]    Scan ports 1-100 on a host
+  launch_app [app]     Launch an installed application
 
   Observation tools may run without approval.
   Governance:
@@ -223,7 +235,10 @@ HELP_TOPICS = {
     - list_processes, system_info: no approval required
     - kill_process, run_command: approval required
     - search_packages, list_packages: no approval required
-    - install_package, remove_package: approval required
+    - install_package, remove_package, launch_app: approval required
+    - desktop_read_window, desktop_screenshot: no approval required
+    - desktop_open_app, desktop_type: approval required
+    - desktop_click: approval required for consequential labels
 
   To trust a tool permanently: governance-trust [tool_name]
   To see registered tools: tool-registry""",
@@ -287,7 +302,27 @@ HELP_TOPICS = {
   Package actions are routed through the detected system manager:
   NixOS, apt, brew, or winget.""",
 
-    "memory": """memory — How INANNA remembers
+    "desktop": """desktop - Desktop Faculty operations
+
+  INANNA can bridge into desktop applications through accessibility tools.
+  These are app-agnostic primitives, not app-specific workflows.
+
+  Open an app:      "open firefox"
+  Read a window:    "read the whatsapp window"
+  Click an element: "click the Send button"
+  Type text:        "type hello world"
+  Screenshot:       "take a screenshot"
+
+  Governance:
+    - desktop_read_window, desktop_screenshot: no approval required
+    - desktop_open_app: approval required
+    - desktop_type: approval required
+    - desktop_click: approval required for consequential labels
+
+  Consequential labels include Send, Delete, Submit, Confirm, Buy, and Publish.
+  Linux support is stubbed for the later NixOS phase.""",
+
+    "memory": """memory - How INANNA remembers
 
   Memory is written automatically at session end and every 20 turns.
   No approval is needed for routine conversation recording.

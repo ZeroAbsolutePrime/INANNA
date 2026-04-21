@@ -1638,7 +1638,13 @@ class CommandTests(unittest.TestCase):
             config,
         )
 
-        self.assertIn("tool-registry > Registered tools (18 total):", result)
+        self.assertIn("tool-registry > Registered tools (23 total):", result)
+        self.assertIn("DESKTOP", result)
+        self.assertIn("Open Application [enabled]", result)
+        self.assertIn("Read Window Content [enabled]", result)
+        self.assertIn("Click UI Element [enabled]", result)
+        self.assertIn("Type Text [enabled]", result)
+        self.assertIn("Take Screenshot [enabled]", result)
         self.assertIn("FILESYSTEM", result)
         self.assertIn("Read File [enabled]", result)
         self.assertIn("List Directory [enabled]", result)

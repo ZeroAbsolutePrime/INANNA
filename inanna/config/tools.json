@@ -202,6 +202,64 @@
       "parameters": {
         "app": "Application name (e.g. notepad++, firefox, krita)"
       }
+    },
+    "desktop_open_app": {
+      "display_name": "Open Application",
+      "description": "Open any installed application by name.",
+      "category": "desktop",
+      "requires_approval": true,
+      "requires_privilege": "converse",
+      "parameters": [
+        "app"
+      ],
+      "enabled": true
+    },
+    "desktop_read_window": {
+      "display_name": "Read Window Content",
+      "description": "Read accessible content from any application window.",
+      "category": "desktop",
+      "requires_approval": false,
+      "requires_privilege": "converse",
+      "parameters": [
+        "app_name",
+        "max_depth"
+      ],
+      "enabled": true
+    },
+    "desktop_click": {
+      "display_name": "Click UI Element",
+      "description": "Click a UI element by its accessibility name.",
+      "category": "desktop",
+      "requires_approval": true,
+      "requires_privilege": "converse",
+      "parameters": [
+        "label",
+        "app_name"
+      ],
+      "enabled": true
+    },
+    "desktop_type": {
+      "display_name": "Type Text",
+      "description": "Type text into the focused UI element.",
+      "category": "desktop",
+      "requires_approval": true,
+      "requires_privilege": "converse",
+      "parameters": [
+        "text",
+        "submit"
+      ],
+      "enabled": true
+    },
+    "desktop_screenshot": {
+      "display_name": "Take Screenshot",
+      "description": "Capture the current screen state.",
+      "category": "desktop",
+      "requires_approval": false,
+      "requires_privilege": "converse",
+      "parameters": [
+        "app_name"
+      ],
+      "enabled": true
     }
   }
 }

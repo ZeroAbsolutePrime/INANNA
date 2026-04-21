@@ -125,6 +125,11 @@ class IdentityTests(unittest.TestCase):
         self.assertIn("list_packages", tools)
         self.assertIn("install_package", tools)
         self.assertIn("remove_package", tools)
+        self.assertIn("desktop_open_app", tools)
+        self.assertIn("desktop_read_window", tools)
+        self.assertIn("desktop_click", tools)
+        self.assertIn("desktop_type", tools)
+        self.assertIn("desktop_screenshot", tools)
 
     def test_guardian_codes_list_system_healthy(self) -> None:
         codes = list_guardian_codes()
@@ -135,8 +140,8 @@ class IdentityTests(unittest.TestCase):
     def test_current_phase_constant_matches_phase_banner(self) -> None:
         self.assertEqual(CURRENT_PHASE, phase_banner())
 
-    def test_current_phase_names_the_capability_proof(self) -> None:
-        self.assertIn("Capability Proof", CURRENT_PHASE)
+    def test_current_phase_names_the_desktop_faculty_core(self) -> None:
+        self.assertIn("Desktop Faculty Core", CURRENT_PHASE)
 
     def test_cycle2_summary_describes_completed_kernel(self) -> None:
         self.assertIn("NAMMU Kernel", CYCLE2_SUMMARY)
