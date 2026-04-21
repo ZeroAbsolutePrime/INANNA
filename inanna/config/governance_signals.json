@@ -149,18 +149,35 @@
       "performance"
     ],
     "packages": [
-      "install",
+      "install software",
+      "install package",
+      "install app",
+      "install program",
       "uninstall",
       "remove package",
-      "search package",
+      "remove software",
+      "what packages",
       "list packages",
-      "what is installed",
-      "package manager",
+      "list installed",
+      "search package",
+      "search for software",
+      "search for a program",
+      "search for an app",
       "nix-env",
-      "apt",
-      "brew",
       "winget",
-      "software"
+      "apt install",
+      "package manager",
+      "available software"
+    ],
+    "web": [
+      "search the web",
+      "search online",
+      "look up online",
+      "google",
+      "find information about",
+      "latest news",
+      "what is the current",
+      "search for information"
     ]
   }
 }

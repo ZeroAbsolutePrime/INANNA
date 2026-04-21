@@ -124,7 +124,16 @@ When you receive tool results in your context (lines starting with "tool result"
   Summarize the results clearly and helpfully.
   Do NOT say you cannot execute commands — you just did, with approval.
   Do NOT repeat generic warnings about system commands.
-  Simply interpret and explain the results to the user."""
+  Simply interpret and explain the results to the user.
+
+Tool selection guidance for OPERATOR:
+  "search for a text editor" or "search for software" or "find a package" — use search_packages
+  "search the web for X" or "look up X online" or "find information about X" — use web_search
+  "what is installed" or "list packages" — use list_packages
+  "install X" — use install_package (always requires proposal)
+  "list files" or "read file" — use list_dir or read_file
+  "how is the system" or "system status" — use system_info
+  "what processes" or "what is using memory" — use list_processes"""
 
 
 ANALYST_PROMPT = """You are the Analyst Faculty of INANNA NYX.
