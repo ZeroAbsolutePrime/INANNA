@@ -134,8 +134,8 @@ class IdentityTests(unittest.TestCase):
     def test_current_phase_constant_matches_phase_banner(self) -> None:
         self.assertEqual(CURRENT_PHASE, phase_banner())
 
-    def test_current_phase_names_authentication_and_login(self) -> None:
-        self.assertIn("Authentication & Login", CURRENT_PHASE)
+    def test_current_phase_names_the_ux_polish_pass(self) -> None:
+        self.assertIn("UX Polish Pass", CURRENT_PHASE)
 
     def test_cycle2_summary_describes_completed_kernel(self) -> None:
         self.assertIn("NAMMU Kernel", CYCLE2_SUMMARY)

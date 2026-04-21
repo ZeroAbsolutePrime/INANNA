@@ -320,7 +320,7 @@ def build_help_response(role: str, topic: str = "") -> str:
 
     # Specific topic help
     if topic and topic in HELP_TOPICS:
-        return HELP_TOPICS[topic]
+        return f"INANNA NYX — {topic.upper()}\n\n{HELP_TOPICS[topic]}"
 
     if topic:
         available = ", ".join(sorted(HELP_TOPICS.keys()))

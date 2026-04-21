@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import json
 import os
+import re
 import threading
 import time
 from datetime import datetime, timezone
@@ -418,6 +419,7 @@ class InterfaceServer:
         self.governance_blocks = 0
         self.tool_executions = 0
         self.conversation_state = {"turn_count": 0, "last_auto_memory_turn": 0}
+        self._last_package_context: dict[str, Any] = {}
         self.onboarding_active = False
         self.onboarding_step = 0
         self.onboarding_responses: dict[str, Any] = {}
@@ -658,6 +660,45 @@ class InterfaceServer:
             return None
         token = request_token_from_cookie_header(str(headers.get("Cookie", "")))
         return token or None
+
+    def _current_turn_count(self) -> int:
+        return int(self.conversation_state.get("turn_count", 0))
+
+    def _detect_package_followup(self, text: str) -> bool:
+        stripped = str(text or "").strip()
+        if not stripped:
+            return False
+        patterns = [
+            r"^(yes|ok|okay|do it|install it|go ahead|sure|yep|si|si por favor)$",
+            r"^(option|choice|number|pick|numero)\s*\d*",
+            r"^(the\s+)?(first|second|third|top|1st|2nd|3rd)\s*(one|option|result)?$",
+            r"^(for\s+)?(windows|linux|mac)\s*(version|one)?$",
+            r"^install\s+it$",
+            r"^that\s+one$",
+        ]
+        return any(re.match(pattern, stripped, re.IGNORECASE) for pattern in patterns)
+
+    def _package_followup_action(self, text: str) -> dict[str, Any] | None:
+        if not self._last_package_context:
+            return None
+        last_turn = int(self._last_package_context.get("turn", -99))
+        current_turn = self._current_turn_count()
+        if current_turn - last_turn > 3:
+            self._last_package_context = {}
+            return None
+        if not self._detect_package_followup(text):
+            return None
+        query = str(self._last_package_context.get("query", "")).strip()
+        if not query:
+            self._last_package_context = {}
+            return None
+        return {
+            "tool": "install_package",
+            "query": query,
+            "params": {"package": query},
+            "requires_proposal": True,
+            "reason": "Follow-up to previous package search.",
+        }
 
     def _onboarding_state(self) -> dict[str, Any]:
         return {
@@ -901,10 +942,12 @@ class InterfaceServer:
                 responses.append({"type": "assistant", "text": outcome["assistant_text"]})
             return {"responses": responses}
 
-        package_action = detect_package_tool_action(
-            text,
-            self.package_faculty,
-        )
+        package_action = self._package_followup_action(text)
+        if package_action is None:
+            package_action = detect_package_tool_action(
+                text,
+                self.package_faculty,
+            )
         if package_action is not None:
             self._record_routing_decision("operator", text)
             self._record_governance_decision(
@@ -2952,11 +2995,30 @@ class InterfaceServer:
             # so it summarizes the result instead of disclaiming inability
             tool_result_lines = build_tool_context_lines(result)
             tool_result_summary = "\n".join(tool_result_lines)
+            if result.tool == "search_packages" and result.success:
+                self._last_package_context = {
+                    "tool": "search_packages",
+                    "query": str(result.query or query),
+                    "turn": self._current_turn_count() + 1,
+                }
+            elif result.tool in {"install_package", "remove_package"}:
+                self._last_package_context = {}
+            self.session.add_event(
+                "assistant",
+                f"[OPERATOR] {result.tool} executed. Processing results.",
+            )
             tool_instruction = (
-                f"TOOL EXECUTION COMPLETE. The {result.tool} tool just ran with these results:\n"
-                f"{tool_result_summary}\n"
-                f"Summarize these results clearly to the user. "
-                f"Do NOT say you cannot execute commands. The tool already ran."
+                f"OPERATOR FACULTY COMPLETED: {result.tool} ran.\n"
+                f"Results:\n{tool_result_summary}\n"
+                f"---\n"
+                f"Summarize these results in 1-3 sentences.\n"
+                f"RULES (follow exactly):\n"
+                f"- DO NOT say you cannot execute commands\n"
+                f"- DO NOT say you lack system access\n"
+                f"- DO NOT apologize or disclaim\n"
+                f"- DO present the actual results\n"
+                f"- If error: explain it simply\n"
+                f"- If success: confirm it happened"
             )
             assistant_text = self.engine.respond(
                 context_summary=startup_context_items(self.startup_context)
@@ -3254,7 +3316,10 @@ class InterfaceServer:
             f"Phase: {CURRENT_PHASE}",
             f"Memory: {mem_count} approved record{'s' if mem_count != 1 else ''} loaded into context.",
             "Faculties: CROWN · ANALYST · OPERATOR · SENTINEL · GUARDIAN",
-            "Tools available: web_search · ping · resolve_host · scan_ports (all require proposal approval)",
+            (
+                f"Tools available: {len(self.operator.PERMITTED_TOOLS)} tools registered"
+                " · type 'tool-registry' to see all"
+            ),
             "Commands: my-profile · my-trust · my-departments · inanna-reflect",
             "Console: http://localhost:8080/console (Guardian & Operator access)",
         ]

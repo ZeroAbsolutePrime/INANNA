@@ -13,6 +13,7 @@ from config import Config
 from core.faculty_monitor import FacultyMonitor
 from core.filesystem_faculty import FileSystemFaculty
 from core.governance import GovernanceResult
+from core.help_system import build_help_response
 from core.memory import Memory
 from core.nammu import IntentClassifier
 from core.operator import OperatorFaculty, ToolResult
@@ -567,6 +568,20 @@ class CommandTests(unittest.TestCase):
                 "guardian-clear-events, approve, reject, forget, exit, help, software"
             ),
         )
+
+    def test_help_topic_response_has_detectable_header(self) -> None:
+        result = build_help_response("guardian", "faculties")
+
+        self.assertTrue(result.startswith("INANNA NYX — FACULTIES"))
+        self.assertIn("CROWN", result)
+        self.assertIn("OPERATOR", result)
+
+    def test_help_unknown_topic_lists_available_topics(self) -> None:
+        result = build_help_response("guardian", "unknown-topic")
+
+        self.assertIn("help > Unknown topic: unknown-topic", result)
+        self.assertIn("faculties", result)
+        self.assertIn("tools", result)
 
     def test_my_profile_returns_formatted_profile(self) -> None:
         (

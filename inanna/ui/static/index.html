@@ -764,6 +764,10 @@ html,body{
 }
 .sp-badge.urgent{background:var(--am2);}
 .sp-badge.hidden{display:none;}
+@keyframes proposalPulse{
+  0%,100%{box-shadow:0 0 0 0 rgba(224,112,48,.5);}
+  50%{box-shadow:0 0 0 5px rgba(224,112,48,0);}
+}
 .sp-toggle{font-size:11px;color:var(--dim);transition:transform .2s;flex-shrink:0;}
 .sp-section.expanded .sp-toggle{transform:rotate(90deg);}
 
@@ -971,6 +975,7 @@ html,body{
 #proposal-panel.expanded .sp-head { border-left-color: #e07030; }
 #proposal-panel .sp-badge { background: #8a3e10; }
 #proposal-panel .sp-badge.urgent { background: #cc3820; }
+#proposal-panel .sp-badge:not(.hidden) { animation: proposalPulse 1.5s ease-in-out infinite; }
 
 /* FACULTIES — violet, intelligence */
 #faculty-panel .sp-title { color: #a870d8; }
@@ -1088,6 +1093,8 @@ html,body{
 .help-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px;}
 .help-section{border:1px solid var(--dust);border-radius:3px;overflow:hidden;}
 .help-section.wide{grid-column:1/-1;}
+.help-section.topic .help-section-head,
+.help-topic-head{background:rgba(212,160,48,.10);color:var(--gold3);border-bottom:1px solid rgba(212,160,48,.2);}
 .help-section-head{padding:6px 10px;font-family:var(--serif);font-size:8px;letter-spacing:4px;display:flex;align-items:center;gap:6px;}
 .help-section.conversation .help-section-head{background:rgba(90,170,112,.12);color:var(--jade);border-bottom:1px solid rgba(90,170,112,.2);}
 .help-section.profile      .help-section-head{background:rgba(212,160,48,.10);color:var(--gold3);border-bottom:1px solid rgba(212,160,48,.2);}
@@ -1393,6 +1400,14 @@ function openGate(){
 // ══════════════════════════════════
 //  STATE
 // ══════════════════════════════════
+function loadSectionState(){
+  try{
+    return JSON.parse(sessionStorage.getItem('inanna_sp')||'{"proposal":true}');
+  }catch(e){
+    return {proposal:true};
+  }
+}
+
 const S={
   ws:null,
   proposalRecords:[],
@@ -1400,7 +1415,8 @@ const S={
   memRecords:[],memShowCount:5,
   guardianEvents:[],guardianShowCount:5,
   auditEvents:[],auditShowCount:10,
-  expandedSections:JSON.parse(localStorage.getItem('inanna-sections')||'{"proposal":true}'),
+  expandedSections:loadSectionState(),
+  proposalHydrated:false,
   role:'',actingAs:null,
   // Input history
   inputHistory:[],historyIdx:-1,
@@ -1421,16 +1437,33 @@ function toggleSection(name){
   const was=sec.classList.contains('expanded');
   sec.classList.toggle('expanded',!was);
   S.expandedSections[name]=!was;
-  localStorage.setItem('inanna-sections',JSON.stringify(S.expandedSections));
+  saveSectionState();
   if(!was){
     if(name==='audit')loadAuditLog();
     if(name==='admin')sendCmd('admin-surface');
   }
 }
-function restoreSections(){
-  Object.entries(S.expandedSections).forEach(([n,e])=>{
-    document.getElementById(n+'-panel')?.classList.toggle('expanded',e);
+function saveSectionState(){
+  const state={};
+  document.querySelectorAll('[id$="-panel"]').forEach(el=>{
+    if(el.classList.contains('sp-section')){
+      state[el.id.replace('-panel','')]=el.classList.contains('expanded');
+    }
   });
+  S.expandedSections=state;
+  try{sessionStorage.setItem('inanna_sp',JSON.stringify(state));}catch(e){}
+}
+function restoreSectionState(){
+  const state=loadSectionState();
+  S.expandedSections=state;
+  Object.entries(state).forEach(([n,e])=>{
+    document.getElementById(n+'-panel')?.classList.toggle('expanded',!!e);
+  });
+}
+function restoreSections(){restoreSectionState();}
+function ensureSectionExpanded(name){
+  const sec=document.getElementById(name+'-panel');
+  if(sec&&!sec.classList.contains('expanded'))toggleSection(name);
 }
 
 // ══════════════════════════════════
@@ -1588,7 +1621,7 @@ function addMessage(type,text,meta){
     row.innerHTML=`<div class="msg-bubble">⟁ ${esc(text)}</div>`;
   }else if(type==='operator'){
     row.className='msg-row operator';
-    let swCards = m.tool_result ? buildSoftwareCards(m.tool_result) : '';
+    let swCards = data.tool_result ? buildSoftwareCards(data.tool_result) : '';
     row.innerHTML=`<div class="msg-label">operator</div><div class="msg-bubble">${esc(text)}${swCards}</div>`;
   }else if(type==='governance'){
     row.className='msg-row governance';
@@ -1629,6 +1662,9 @@ function addMessage(type,text,meta){
 
 function handleSystemMsg(text){
   if(!text)return;
+  if(text.includes('[TOOL PROPOSAL]')||text.includes('[PROPOSAL]')){
+    ensureSectionExpanded('proposal');
+  }
   addMessage('system',text);
   // Track approvals for organic governance
   if(text.includes('Approved proposal')||text.includes('approved')){
@@ -1751,8 +1787,22 @@ function onFileSelected(ev){
 // ══════════════════════════════════
 //  PROPOSALS
 // ══════════════════════════════════
-function handleProposalEvent(m){setBadge('proposal',m.pending_count||0,(m.pending_count||0)>0);}
-function handleProposalHistory(m){S.proposalRecords=m.records||[];renderProposals();}
+function handleProposalEvent(m){
+  const prevPending=Array.isArray(S.proposalRecords)?S.proposalRecords.filter(r=>r.status==='pending').length:0;
+  S.proposalRecords=Array.isArray(m.records)?m.records:[];
+  const pending=S.proposalRecords.filter(r=>r.status==='pending').length;
+  setBadge('proposal',pending,pending>0);
+  renderProposals();
+  if(S.proposalHydrated&&pending>prevPending)ensureSectionExpanded('proposal');
+  S.proposalHydrated=true;
+}
+function handleProposalHistory(m){
+  S.proposalRecords=Array.isArray(m.records)?m.records:[];
+  S.proposalHydrated=true;
+  const pending=S.proposalRecords.filter(r=>r.status==='pending').length;
+  setBadge('proposal',pending,pending>0);
+  renderProposals();
+}
 function loadProposalHistory(){sendCmd('proposal-history');}
 function filterProps(filter,btn){
   S.propFilter=filter;
@@ -1943,6 +1993,7 @@ function initApp(){
   connect();
   setTimeout(()=>sendCmd('proposal-history'),900);
 }
+document.addEventListener('DOMContentLoaded',restoreSectionState);
 
 // ══════════════════════════════════
 //  INTERACTIVE PROFILE CARD
@@ -2288,9 +2339,10 @@ const HELP_ICONS = {conversation:'𒁁',profile:'◆',software:'◈',files:'◻'
 const HELP_TOPICS_LIST = ['my-profile','governance-trust','inanna-reflect','faculties','tools','files','processes','packages','memory'];
 
 function buildHelpPanel(text, role) {
-  // Only render as help panel if text is a help command response
-  const isHelpText = text.indexOf('Available Commands') >= 0 || text.indexOf('Command Reference') >= 0 || (text.indexOf('CONVERSATION') >= 0 && text.indexOf('SESSION') >= 0);
-  if (!text || !isHelpText) return null;
+  const isTopicHelp = text.indexOf('INANNA NYX —') === 0 || text.indexOf('INANNA NYX -') === 0;
+  const isFullHelp = text.indexOf('Available Commands') >= 0 || text.indexOf('Command Reference') >= 0 || (text.indexOf('CONVERSATION') >= 0 && text.indexOf('SESSION') >= 0);
+  if (!text || (!isTopicHelp && !isFullHelp)) return null;
+  if (isTopicHelp) return buildTopicHelpPanel(text);
   let secs = [...HELP_DEF.user];
   if (role==='operator'||role==='guardian') secs = secs.concat(HELP_DEF.operator_extra);
   if (role==='guardian') secs = secs.concat(HELP_DEF.guardian_extra);
@@ -2321,6 +2373,42 @@ function buildHelpPanel(text, role) {
   return h;
 }
 
+function splitTopicHelpLine(line) {
+  if (!line) return null;
+  let match = line.match(/^(.+?)\s{2,}(.+)$/);
+  if (match) return {cmd: match[1].trim(), desc: match[2].trim()};
+  match = line.match(/^(.+?)\s+[—-]\s+(.+)$/);
+  if (match) return {cmd: match[1].trim(), desc: match[2].trim()};
+  return null;
+}
+
+function buildTopicHelpPanel(text) {
+  const lines = String(text || '').split('\n');
+  const title = (lines.shift() || '').trim();
+  let h = '<div class="help-panel">';
+  h += `<div class="help-title">${esc(title)}</div>`;
+  h += '<div class="help-grid"><div class="help-section wide topic">';
+  for (const rawLine of lines) {
+    const line = rawLine.trim();
+    if (!line) continue;
+    if (line.endsWith(':')) {
+      h += `<div class="help-section-head help-topic-head">${esc(line.slice(0, -1))}</div>`;
+      continue;
+    }
+    const row = splitTopicHelpLine(line);
+    if (row) {
+      h += '<div class="help-row">';
+      h += `<span class="help-cmd">${esc(row.cmd)}</span>`;
+      h += `<span class="help-desc">${esc(row.desc)}</span>`;
+      h += '</div>';
+      continue;
+    }
+    h += `<div class="help-note">${esc(line)}</div>`;
+  }
+  h += '</div></div></div>';
+  return h;
+}
+
 const _helpCmdLastSent = {};
 function helpRunCmd(cmd, btn) {
   if (!cmd) return;
@@ -2334,7 +2422,7 @@ function helpRunCmd(cmd, btn) {
   }
   // Disable button briefly
   if (btn) { btn.disabled = true; btn.textContent = '...'; setTimeout(() => { btn.disabled = false; btn.textContent = '[ run ]'; }, 3000); }
-  const inp = document.getElementById('input');
+  const inp = document.getElementById('text-input');
   if (!inp) return;
   if (!cmd.endsWith(' ') && S.ws && S.ws.readyState === 1) {
     S.ws.send(JSON.stringify({type:'input', text:cmd}));
