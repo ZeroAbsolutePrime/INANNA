@@ -1,495 +1,342 @@
-# CURRENT PHASE: Cycle 7 - Phase 7.6 - Authentication & Login
+# CURRENT PHASE: Cycle 7 - Phase 7.7 - The UX Polish Pass
 **Status: ACTIVE**
 **Authorized by: ZAERA (Guardian) + Claude (Command Center)**
 **Date opened: 2026-04-21**
-**Replaces: Cycle 7 Phase 7.5 - The Voice Listener (COMPLETE — deferred activation)**
-
-**Note on voice:** Phase 7.5 (Voice Listener) is built and in the repo.
-Voice activation is intentionally deferred until the text experience
-is fully stable and polished. This is the right priority.
+**Replaces: Cycle 7 Phase 7.6 - Authentication & Login (COMPLETE)**
 
 ---
 
 ## Agent Roles for This Phase
 
 ARCHITECT:  Command Center (Claude) — this document
-BUILDER:    Codex — implement auth system and login page
-TESTER:     Codex — unit tests + integration tests
+BUILDER:    Codex — implement all polish items
+TESTER:     Codex — verify each item works end-to-end
 VERIFIER:   Command Center — confirm after push
 
 BUILDER forbidden from:
+  - Adding new capabilities or tools
   - Modifying voice/ directory
-  - Changing the main chat UI (index.html) beyond removing the overlay
-  - Adding dependencies beyond bcrypt/hashlib
+  - Changing auth system
 
 ---
 
 ## What This Phase Is
 
-INANNA NYX needs proper authentication.
-Currently any browser can connect with no credentials.
-The overlay we built is wrong — it sits on top of the existing UI.
+The system works. Authentication works. Tools work.
+But the experience has rough edges observed in real usage sessions.
 
-This phase builds:
-1. A dedicated login HTML page (login.html) served at /
-2. Password authentication with bcrypt hashing
-3. ZAERA seeded as the first user with password ETERNALOVE
-4. Redirect flow: login.html → authenticated → index.html
-
-The login page must feel like INANNA — dark, Sumerian aesthetic,
-minimal and beautiful. Not a modal on top of something else.
-A standalone experience that precedes the system.
+This phase addresses seven specific problems, in order of priority.
 
 ---
 
-## What You Are Building
+## Task 1 — CROWN Tool Result Response (CRITICAL)
 
-### Task 1 - core/auth.py
+**Problem:** After a tool executes, CROWN sometimes still responds
+with "I cannot execute system commands" despite the TOOL EXECUTION
+COMPLETE instruction.
 
-Create: inanna/core/auth.py
+**Root cause:** The conversation history contains previous
+"I cannot execute" responses that train the LLM to repeat the
+pattern. The context_summary injection isn't strong enough.
 
-Password authentication module.
+**Fix in ui/server.py, in complete_tool_resolution:**
 
-```python
-from __future__ import annotations
-import hashlib
-import hmac
-import json
-import os
-import secrets
-from dataclasses import dataclass
-from pathlib import Path
-from typing import Optional
-
-
-def _hash_password(password: str, salt: str) -> str:
-    """Hash a password with PBKDF2-HMAC-SHA256."""
-    dk = hashlib.pbkdf2_hmac(
-        'sha256',
-        password.encode('utf-8'),
-        salt.encode('utf-8'),
-        iterations=260000,
-    )
-    return dk.hex()
-
-
-def hash_password(password: str) -> str:
-    """Hash a password, returning salt:hash."""
-    salt = secrets.token_hex(32)
-    h = _hash_password(password, salt)
-    return f"{salt}:{h}"
-
-
-def verify_password(password: str, stored: str) -> bool:
-    """Verify a password against a stored salt:hash."""
-    try:
-        salt, expected = stored.split(':', 1)
-        actual = _hash_password(password, salt)
-        return hmac.compare_digest(actual, expected)
-    except Exception:
-        return False
-
-
-@dataclass
-class AuthRecord:
-    user_id: str
-    username: str
-    password_hash: str   # salt:hash
-    role: str            # guardian | operator | user
-
-
-class AuthStore:
-    """
-    Stores hashed passwords separately from the user/token system.
-    File: data/{realm}/auth.json
-    """
-
-    def __init__(self, data_dir: Path) -> None:
-        self.path = data_dir / "auth.json"
-        self._records: dict[str, AuthRecord] = {}
-        self._load()
-
-    def _load(self) -> None:
-        if self.path.exists():
-            try:
-                raw = json.loads(self.path.read_text('utf-8'))
-                for uid, rec in raw.items():
-                    self._records[uid] = AuthRecord(
-                        user_id=rec['user_id'],
-                        username=rec['username'],
-                        password_hash=rec['password_hash'],
-                        role=rec['role'],
-                    )
-            except Exception:
-                pass
-
-    def _save(self) -> None:
-        self.path.parent.mkdir(parents=True, exist_ok=True)
-        data = {
-            uid: {
-                'user_id': r.user_id,
-                'username': r.username,
-                'password_hash': r.password_hash,
-                'role': r.role,
-            }
-            for uid, r in self._records.items()
-        }
-        self.path.write_text(json.dumps(data, indent=2), 'utf-8')
-
-    def seed_user(
-        self,
-        user_id: str,
-        username: str,
-        password: str,
-        role: str,
-    ) -> AuthRecord:
-        """Add a user if they don't exist yet. Idempotent."""
-        if user_id not in self._records:
-            rec = AuthRecord(
-                user_id=user_id,
-                username=username,
-                password_hash=hash_password(password),
-                role=role,
-            )
-            self._records[user_id] = rec
-            self._save()
-            return rec
-        return self._records[user_id]
-
-    def create_user(
-        self,
-        username: str,
-        password: str,
-        role: str,
-    ) -> AuthRecord:
-        """Create a new user with a generated ID."""
-        import uuid
-        user_id = str(uuid.uuid4())[:8]
-        return self.seed_user(user_id, username, password, role)
-
-    def authenticate(
-        self, username: str, password: str
-    ) -> Optional[AuthRecord]:
-        """Return AuthRecord if credentials are valid, else None."""
-        for rec in self._records.values():
-            if rec.username.lower() == username.lower():
-                if verify_password(password, rec.password_hash):
-                    return rec
-        return None
-
-    def get_by_username(self, username: str) -> Optional[AuthRecord]:
-        for rec in self._records.values():
-            if rec.username.lower() == username.lower():
-                return rec
-        return None
-
-    def get_by_id(self, user_id: str) -> Optional[AuthRecord]:
-        return self._records.get(user_id)
-
-    def list_users(self) -> list[AuthRecord]:
-        return list(self._records.values())
-
-    def change_password(
-        self, user_id: str, new_password: str
-    ) -> bool:
-        if user_id not in self._records:
-            return False
-        self._records[user_id].password_hash = hash_password(new_password)
-        self._save()
-        return True
-
-    def delete_user(self, user_id: str) -> bool:
-        if user_id in self._records:
-            del self._records[user_id]
-            self._save()
-            return True
-        return False
-```
-
-### Task 2 - Seed ZAERA on startup
-
-In server.py __init__, after creating auth store:
+Step 1: Before engine.respond(), inject a synthetic assistant
+acknowledgment to break the repetition pattern:
 
 ```python
-from core.auth import AuthStore
-
-self.auth_store = AuthStore(
-    Path(self.config.DATA_DIR) / self.active_realm.name
-    if hasattr(self.config, 'DATA_DIR')
-    else Path('data') / 'default'
-)
-
-# Seed ZAERA as the first guardian
-self.auth_store.seed_user(
-    user_id='zaera',
-    username='ZAERA',
-    password='ETERNALOVE',
-    role='guardian',
+self.session.add_event(
+    "assistant",
+    f"[OPERATOR] {result.tool} executed. Processing results."
 )
 ```
 
-### Task 3 - Login HTTP endpoint in server.py
-
-Add POST /login endpoint to the HTTP server:
+Step 2: Strengthen the tool_instruction:
 
 ```python
-async def handle_login(self, request):
-    """Handle POST /login with username + password."""
-    try:
-        body = await request.read()
-        data = json.loads(body)
-        username = str(data.get('username', '')).strip()
-        password = str(data.get('password', ''))
-    except Exception:
-        return web.Response(
-            status=400,
-            content_type='application/json',
-            text=json.dumps({'error': 'Invalid request'}),
-        )
+tool_instruction = (
+    f"OPERATOR FACULTY COMPLETED: {result.tool} ran.\n"
+    f"Results:\n{tool_result_summary}\n"
+    f"---\n"
+    f"Summarize these results in 1-3 sentences.\n"
+    f"RULES (follow exactly):\n"
+    f"- DO NOT say you cannot execute commands\n"
+    f"- DO NOT say you lack system access\n"
+    f"- DO NOT apologize or disclaim\n"
+    f"- DO present the actual results\n"
+    f"- If error: explain it simply\n"
+    f"- If success: confirm it happened"
+)
+```
 
-    record = self.auth_store.authenticate(username, password)
-    if not record:
-        return web.Response(
-            status=401,
-            content_type='application/json',
-            text=json.dumps({'error': 'Invalid credentials'}),
-        )
+---
 
-    # Issue a session token
-    token_str = secrets.token_hex(32)
-    # Store token in session (simple in-memory for now)
-    self._auth_sessions[token_str] = {
-        'user_id': record.user_id,
-        'username': record.username,
-        'role': record.role,
+## Task 2 — Conversational Follow-up Context
+
+**Problem:** After "install notepad++" → search results appear,
+then "for windows, option 1" or "yes, install it" loses context
+and routes to web_search.
+
+**Fix in ui/server.py:** Add context tracker to InterfaceServer:
+
+```python
+self._last_package_context: dict = {}
+```
+
+After search_packages executes successfully, store:
+```python
+if result.tool == "search_packages" and result.success:
+    self._last_package_context = {
+        "tool": "search_packages",
+        "query": result.query,
+        "turn": getattr(self.session, "turn_count", 0),
     }
-    return web.Response(
-        status=200,
-        content_type='application/json',
-        text=json.dumps({
-            'token': token_str,
-            'username': record.username,
-            'role': record.role,
-        }),
+```
+
+In the dispatch_message routing, before normal routing, add:
+```python
+# Check for follow-up to previous package search
+if self._last_package_context:
+    last_turn = self._last_package_context.get("turn", -99)
+    current_turn = getattr(self.session, "turn_count", 0)
+    if current_turn - last_turn <= 3:
+        followup = self._detect_package_followup(lowered_text)
+        if followup:
+            # Route to install with last searched query
+            package_action = {
+                "tool": "install_package",
+                "query": self._last_package_context["query"],
+                "params": {"package": self._last_package_context["query"]},
+                "requires_proposal": True,
+                "reason": "Follow-up to previous package search.",
+            }
+```
+
+Add helper method:
+```python
+def _detect_package_followup(self, text: str) -> bool:
+    patterns = [
+        r"^(yes|ok|okay|do it|install it|go ahead|sure|yep|si|si por favor)$",
+        r"^(option|choice|number|pick|numero)\s*\d*",
+        r"^(the\s+)?(first|second|third|top|1st|2nd|3rd)\s*(one|option|result)?$",
+        r"^(for\s+)?(windows|linux|mac)\s*(version|one)?",
+        r"^install\s+it",
+        r"^that\s+one",
+    ]
+    import re
+    return any(re.match(p, text.strip(), re.IGNORECASE) for p in patterns)
+```
+
+---
+
+## Task 3 — help [topic] Card Treatment
+
+**Problem:** help my-profile, help faculties, help tools etc.
+return plain text — no card rendering.
+
+**Fix in core/help_system.py:**
+
+Prefix every topic response with a detectable header:
+
+```python
+def build_help_response(role: str, topic: str = "") -> str:
+    topic = topic.strip().lower()
+    if topic and topic in HELP_TOPICS:
+        content = HELP_TOPICS[topic]
+        # Add header so buildHelpPanel detects it
+        return f"INANNA NYX — {topic.upper()}\n\n{content}"
+    # ... rest unchanged
+```
+
+Then in index.html, in buildHelpPanel, detect topic responses:
+```javascript
+const isTopicHelp = text.indexOf('INANNA NYX —') === 0;
+const isFullHelp = text.indexOf('Available Commands') >= 0
+    || text.indexOf('Command Reference') >= 0
+    || (text.indexOf('CONVERSATION') >= 0 && text.indexOf('SESSION') >= 0);
+if (!text || (!isTopicHelp && !isFullHelp)) return null;
+```
+
+For topic responses, render as a single wide card with the
+content formatted as rows, extracting commands from the text.
+
+---
+
+## Task 4 — Proposal Pulse Animation
+
+**Problem:** Pending proposals don't attract enough attention.
+
+**Fix in index.html:**
+
+Add CSS:
+```css
+@keyframes proposalPulse {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(224,112,48,.5); }
+  50% { box-shadow: 0 0 0 5px rgba(224,112,48,0); }
+}
+#proposal-panel .sp-badge:not(.hidden) {
+  animation: proposalPulse 1.5s ease-in-out infinite;
+}
+```
+
+Auto-expand PROPOSALS when a new proposal arrives:
+In the WebSocket message handler, when operator message
+contains '[TOOL PROPOSAL]':
+```javascript
+if (text && text.includes('[TOOL PROPOSAL]')) {
+  const panel = document.getElementById('proposal-panel');
+  if (panel && !panel.classList.contains('expanded')) {
+    toggleSection('proposal');
+  }
+}
+```
+
+---
+
+## Task 5 — login.html Phase Label
+
+**Problem:** login.html shows "__CURRENT_PHASE__" as literal text.
+
+**Fix in ui/server.py:**
+
+Verify _serve_html applies the __CURRENT_PHASE__ substitution
+to login.html. If not, add:
+
+```python
+def _serve_html(self, file_path: Path) -> None:
+    from identity import phase_banner
+    content = (
+        file_path.read_text(encoding="utf-8")
+        .replace("__WS_PORT__", str(WS_PORT))
+        .replace("__CURRENT_PHASE__", phase_banner())
     )
+    # ... rest of method
 ```
 
-Also add GET /login to serve login.html:
+This should already be working from the base _serve_html method.
+If login.html still shows the literal string, check that LOGIN_PATH
+is served through _serve_html and not directly.
 
-```python
-async def handle_login_page(self, request):
-    login_path = Path(__file__).parent / 'static' / 'login.html'
-    return web.FileResponse(login_path)
-```
+---
 
-Register these routes in the HTTP app setup:
-```python
-app.router.add_get('/login', self.handle_login_page)
-app.router.add_post('/login', self.handle_login)
-app.router.add_get('/', self.handle_login_redirect)
-```
+## Task 6 — Side Panel State Memory
 
-```python
-async def handle_login_redirect(self, request):
-    """Redirect / to /login if not authenticated, else to /app."""
-    raise web.HTTPFound('/login')
-```
+**Problem:** Panel sections reset to collapsed on every reconnect.
 
-Also change the main app route:
-```python
-app.router.add_get('/app', self.handle_index)  # was '/'
-app.router.add_get('/index.html', self.handle_index)
-```
+**Fix in index.html:**
 
-### Task 4 - ui/static/login.html
+Add to toggleSection():
+```javascript
+function toggleSection(name) {
+  // existing code...
+  // Save state after toggling
+  saveSectionState();
+}
 
-Create a beautiful standalone login page.
+function saveSectionState() {
+  const state = {};
+  document.querySelectorAll('[id$="-panel"]').forEach(el => {
+    if (el.classList.contains('sp-section')) {
+      state[el.id] = el.classList.contains('expanded');
+    }
+  });
+  try { sessionStorage.setItem('inanna_sp', JSON.stringify(state)); } catch(e) {}
+}
 
-Design principles:
-- Full black background, same CSS variables as index.html
-- Large INANNA NYX title with Sumerian glyph
-- Clean minimal form: username field, password field, [ ENTER ] button
-- No overlay — this IS the page, full screen
-- On successful POST /login: store token in sessionStorage, redirect to /app
-- On failure: shake animation on the form, error message
-
-Key elements:
-```html
-<!DOCTYPE html>
-<html lang="en">
-<head>
-  <meta charset="UTF-8">
-  <title>INANNA NYX</title>
-  <!-- same fonts and CSS variables as index.html -->
-  <style>
-    /* full-page login — same dark aesthetic */
-    /* centered vertically and horizontally */
-    /* no scrollbars */
-  </style>
-</head>
-<body>
-  <div class="login-container">
-    <div class="login-glyph">𒀭</div>
-    <div class="login-title">INANNA NYX</div>
-    <div class="login-subtitle">SOVEREIGN INTELLIGENCE</div>
-    <div class="login-tagline">THE LIVING INTELLIGENCE · GATES OF URUK · ABZU CODEX</div>
-
-    <form class="login-form" id="login-form">
-      <div class="login-field">
-        <label class="login-label">IDENTITY</label>
-        <input type="text" id="username" class="login-input"
-               placeholder="your name" autocomplete="off" />
-      </div>
-      <div class="login-field">
-        <label class="login-label">ACCESS CODE</label>
-        <input type="password" id="password" class="login-input"
-               placeholder="••••••••••" autocomplete="off" />
-      </div>
-      <button type="submit" class="login-btn">[ ENTER ]</button>
-      <div class="login-error" id="login-error"></div>
-    </form>
-
-    <div class="login-phase" id="login-phase"></div>
-  </div>
-
-  <script>
-    // POST to /login, store token, redirect to /app
-    document.getElementById('login-form').addEventListener('submit', async (e) => {
-      e.preventDefault();
-      const username = document.getElementById('username').value.trim();
-      const password = document.getElementById('password').value;
-      const errEl = document.getElementById('login-error');
-      errEl.textContent = '';
-
-      try {
-        const resp = await fetch('/login', {
-          method: 'POST',
-          headers: {'Content-Type': 'application/json'},
-          body: JSON.stringify({username, password}),
-        });
-        if (resp.ok) {
-          const data = await resp.json();
-          sessionStorage.setItem('inanna_token', data.token);
-          sessionStorage.setItem('inanna_user', data.username);
-          sessionStorage.setItem('inanna_role', data.role);
-          window.location.href = '/app';
-        } else {
-          errEl.textContent = 'invalid credentials';
-          document.getElementById('login-form').classList.add('shake');
-          setTimeout(() => document.getElementById('login-form')
-            .classList.remove('shake'), 500);
-        }
-      } catch (err) {
-        errEl.textContent = 'connection error';
+function restoreSectionState() {
+  try {
+    const state = JSON.parse(sessionStorage.getItem('inanna_sp') || '{}');
+    for (const [id, expanded] of Object.entries(state)) {
+      const panel = document.getElementById(id);
+      if (panel && expanded && !panel.classList.contains('expanded')) {
+        panel.classList.add('expanded');
+        const bodyId = id.replace('-panel', '-body');
+        const body = document.getElementById(bodyId);
+        if (body) body.style.display = '';
+        const toggle = panel.querySelector('.sp-toggle');
+        if (toggle) toggle.textContent = '▾';
       }
-    });
-  </script>
-</body>
-</html>
+    }
+  } catch(e) {}
+}
+// Call on DOMContentLoaded
+document.addEventListener('DOMContentLoaded', restoreSectionState);
 ```
 
-### Task 5 - Remove login overlay from index.html
+---
 
-Remove the `<div id="login-overlay">` block and all associated
-JS that was added in the previous session. The login is now a
-separate page — the overlay is no longer needed.
+## Task 7 — Welcome Message: Dynamic Tool Count
 
-### Task 6 - Update identity.py
+**Problem:** Welcome message says "web_search · ping · resolve_host
+· scan_ports" which is outdated (18 tools now registered).
 
-CURRENT_PHASE = "Cycle 7 - Phase 7.6 - Authentication & Login"
+**Fix in ui/server.py, in send_initial_state:**
 
-### Task 7 - Tests
+Replace:
+```python
+"Tools available: web_search · ping · resolve_host · scan_ports (all require proposal approval)",
+```
 
-Create inanna/tests/test_auth.py:
-  - AuthStore instantiates
-  - hash_password returns salt:hash format
-  - verify_password returns True for correct password
-  - verify_password returns False for wrong password
-  - seed_user creates a user
-  - seed_user is idempotent (second call doesn't overwrite)
-  - authenticate returns AuthRecord for correct credentials
-  - authenticate returns None for wrong password
-  - authenticate returns None for unknown username
-  - authenticate is case-insensitive for username
-  - create_user creates a new user with generated ID
-  - list_users returns all users
-  - change_password changes the hash
-  - change_password verifies with new password
-  - ZAERA seed: authenticate('ZAERA', 'ETERNALOVE') returns record
-  - ZAERA seed: authenticate('ZAERA', 'wrong') returns None
-  - password stored as hash, never plaintext
-
-Update test_identity.py: update CURRENT_PHASE assertion.
+With:
+```python
+f"Tools available: {len(self.operator.PERMITTED_TOOLS)} tools registered"
+f" · type 'tool-registry' to see all",
+```
 
 ---
 
 ## Permitted file changes
 
-inanna/core/auth.py                   <- NEW
-inanna/ui/server.py                   <- MODIFY: add auth store, login endpoints
-inanna/ui/static/login.html           <- NEW
-inanna/ui/static/index.html           <- MODIFY: remove login overlay only
-inanna/identity.py                    <- MODIFY: update CURRENT_PHASE
-inanna/tests/test_auth.py             <- NEW
-inanna/tests/test_identity.py         <- MODIFY
+inanna/main.py                      <- MODIFY if needed for follow-up routing
+inanna/ui/server.py                 <- MODIFY: Tasks 1, 2, 5, 7
+inanna/ui/static/index.html         <- MODIFY: Tasks 3, 4, 6
+inanna/core/help_system.py          <- MODIFY: Task 3
+inanna/identity.py                  <- MODIFY: CURRENT_PHASE
+inanna/tests/test_commands.py       <- MODIFY: update tools line assertion
+inanna/tests/test_identity.py       <- MODIFY: update phase assertion
 
 ---
 
 ## What You Are NOT Building
 
-- No session expiry / JWT (simple in-memory tokens for now)
-- No password reset flow (future phase)
-- No multi-factor authentication (future phase)
-- No user registration from the login page (guardian creates users)
-- No changes to the main chat UI beyond removing the overlay
+- No new tools or capabilities
 - No voice changes
-
----
-
-## Login Page Design Notes
-
-The login page must match the INANNA aesthetic exactly:
-- Background: #0a0704 (same as index.html)
-- Font: same Google Fonts (Cinzel Decorative for title, etc.)
-- Gold palette: same CSS variables
-- The 𒀭 glyph prominently above the title
-- Tagline: "THE LIVING INTELLIGENCE · GATES OF URUK · ABZU CODEX"
-- Form: minimal, centered, no borders except bottom underlines
-- Error state: gentle shake animation, red text
-- Success state: brief "entering..." message, then redirect
-
-Do NOT copy the current overlay design (white boxes, dark modal).
-Design it as a full-page experience, not a dialog.
+- No database schema changes
+- No new HTML pages
+- No auth changes
+- No changes to the login page design
 
 ---
 
 ## Definition of Done
 
-- [ ] core/auth.py with AuthStore and password hashing
-- [ ] ZAERA seeded with ETERNALOVE on server startup
-- [ ] POST /login endpoint authenticates and returns token
-- [ ] GET / redirects to /login
-- [ ] GET /app serves the main chat interface
-- [ ] login.html is a beautiful standalone page
-- [ ] Login overlay removed from index.html
-- [ ] All tests pass: py -3 -m unittest discover -s tests
-- [ ] Pushed as cycle7-phase6-complete
+- [ ] CROWN no longer says "I cannot execute" after tool runs
+- [ ] Follow-up commands route correctly within 3 turns
+- [ ] help [topic] responses render with detectable header
+- [ ] Pending proposals auto-expand and pulse
+- [ ] login.html shows correct phase
+- [ ] Side panel collapse state persists across reconnect
+- [ ] Welcome message shows dynamic tool count
+- [ ] All 429+ tests pass: py -3 -m unittest discover -s tests
+- [ ] Pushed as cycle7-phase7-complete
 
 ---
 
 ## Handoff
 
-Commit: cycle7-phase6-complete
+Commit: cycle7-phase7-complete
 Push immediately to origin/main.
-Report: docs/implementation/CYCLE7_PHASE6_REPORT.md
-Stop. Do not begin Phase 7.7 without new CURRENT_PHASE.md.
+Report: docs/implementation/CYCLE7_PHASE7_REPORT.md
+Stop. Do not begin Phase 7.8 without new CURRENT_PHASE.md.
 
 ---
 
 *Written by: Claude (Command Center)*
 *Guardian approval: ZAERA*
 *Date: 2026-04-21*
-*The gate has a key now.*
-*ZAERA holds it.*
-*ETERNALOVE opens it.*
-*Others enter only when ZAERA allows.*
+*Polish is not cosmetic.*
+*It is the difference between a system that works*
+*and a system that feels sovereign.*
+*INANNA does not disclaim. She acts.*
+*INANNA does not repeat herself. She listens.*
+*INANNA does not forget. She remembers.*
