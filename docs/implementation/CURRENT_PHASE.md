@@ -1,459 +1,423 @@
-# CURRENT PHASE: Cycle 7 - Phase 7.5 - The Voice Listener
+# CURRENT PHASE: Cycle 7 - Phase 7.6 - Authentication & Login
 **Status: ACTIVE**
 **Authorized by: ZAERA (Guardian) + Claude (Command Center)**
 **Date opened: 2026-04-21**
-**Cycle: 7 - NYXOS: The Sovereign Intelligence Operating System**
-**Replaces: Cycle 7 Phase 7.4 - The Package Faculty (COMPLETE)**
+**Replaces: Cycle 7 Phase 7.5 - The Voice Listener (COMPLETE — deferred activation)**
+
+**Note on voice:** Phase 7.5 (Voice Listener) is built and in the repo.
+Voice activation is intentionally deferred until the text experience
+is fully stable and polished. This is the right priority.
 
 ---
 
 ## Agent Roles for This Phase
 
 ARCHITECT:  Command Center (Claude) — this document
-BUILDER:    Codex — implement voice listener service
-TESTER:     Codex — unit tests (no microphone required)
+BUILDER:    Codex — implement auth system and login page
+TESTER:     Codex — unit tests + integration tests
 VERIFIER:   Command Center — confirm after push
 
 BUILDER forbidden from:
-  - Modifying any existing faculty files
-  - Changing web UI (index.html, console.html)
-  - Implementing TTS output (Phase 7.6)
+  - Modifying voice/ directory
+  - Changing the main chat UI (index.html) beyond removing the overlay
+  - Adding dependencies beyond bcrypt/hashlib
 
 ---
 
 ## What This Phase Is
 
-Phases 7.1-7.4 gave INANNA hands and eyes — file system, processes,
-packages.
-Phase 7.5 gives INANNA ears.
+INANNA NYX needs proper authentication.
+Currently any browser can connect with no credentials.
+The overlay we built is wrong — it sits on top of the existing UI.
 
-The Voice Listener is a standalone Python process that:
-1. Listens to the microphone continuously
-2. Uses Silero VAD to detect when someone is speaking
-3. When speech ends, passes the audio to faster-whisper
-4. Sends the transcribed text to INANNA via WebSocket
-5. INANNA receives it as if the user had typed it
+This phase builds:
+1. A dedicated login HTML page (login.html) served at /
+2. Password authentication with bcrypt hashing
+3. ZAERA seeded as the first user with password ETERNALOVE
+4. Redirect flow: login.html → authenticated → index.html
 
-The result: you speak, INANNA hears, INANNA responds.
-Phase 7.6 will add the voice output (INANNA speaks back).
-Phase 7.7 will close the loop completely.
-
-This phase is a SEPARATE PROCESS — not part of the INANNA server.
-You run it alongside the server.
-It communicates via the existing WebSocket on port 8081.
-
----
-
-## Technology Stack
-
-faster-whisper: 4x faster than openai-whisper, no FFmpeg needed,
-  runs on CPU, excellent multilingual support (es/en/pt).
-  Model: base (145MB) for low latency, small (244MB) for accuracy.
-
-sounddevice: cross-platform microphone access via Python.
-  Works on Windows, Linux, macOS.
-
-silero-vad: lightweight Voice Activity Detection.
-  Detects when speech starts and stops.
-  Prevents sending silence to Whisper.
-  Runs on CPU, very fast (~1ms per frame).
+The login page must feel like INANNA — dark, Sumerian aesthetic,
+minimal and beautiful. Not a modal on top of something else.
+A standalone experience that precedes the system.
 
 ---
 
 ## What You Are Building
 
-### Task 1 - inanna/voice/listener.py
+### Task 1 - core/auth.py
 
-Create directory: inanna/voice/
-Create: inanna/voice/__init__.py (empty)
-Create: inanna/voice/listener.py
+Create: inanna/core/auth.py
+
+Password authentication module.
 
 ```python
-"""
-INANNA NYX Voice Listener
-Microphone → VAD → faster-whisper → WebSocket → INANNA
-
-Run standalone:
-  python -m voice.listener [--model base] [--lang es] [--ws ws://localhost:8081]
-"""
 from __future__ import annotations
-
-import argparse
-import asyncio
+import hashlib
+import hmac
 import json
-import logging
-import queue
-import sys
-import time
+import os
+import secrets
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Optional
 
-import numpy as np
 
-log = logging.getLogger("inanna.voice")
-
-# Sample rate required by Whisper and Silero VAD
-SAMPLE_RATE = 16000
-CHANNELS = 1
-DTYPE = "float32"
-# VAD chunk size: 512 samples = 32ms at 16kHz
-VAD_CHUNK = 512
-# Silence threshold: stop recording after this many seconds of silence
-SILENCE_TIMEOUT = 1.2
-# Minimum speech duration to send to Whisper
-MIN_SPEECH_SECONDS = 0.5
-
-
-class VoiceListener:
-    """
-    Listens to the microphone, detects speech with Silero VAD,
-    transcribes with faster-whisper, sends to INANNA via WebSocket.
-    """
-
-    def __init__(
-        self,
-        model_size: str = "base",
-        language: Optional[str] = None,
-        ws_url: str = "ws://localhost:8081",
-        device: str = "cpu",
-    ) -> None:
-        self.model_size = model_size
-        self.language = language  # None = auto-detect
-        self.ws_url = ws_url
-        self.device = device
-        self._audio_queue: queue.Queue = queue.Queue()
-        self._whisper = None
-        self._vad_model = None
-        self._vad_utils = None
-
-    def _load_whisper(self) -> None:
-        log.info("Loading faster-whisper model: %s", self.model_size)
-        from faster_whisper import WhisperModel
-        self._whisper = WhisperModel(
-            self.model_size,
-            device=self.device,
-            compute_type="int8" if self.device == "cpu" else "float16",
-        )
-        log.info("Whisper model loaded.")
-
-    def _load_vad(self) -> None:
-        log.info("Loading Silero VAD...")
-        import torch
-        model, utils = torch.hub.load(
-            repo_or_dir="snakers4/silero-vad",
-            model="silero_vad",
-            force_reload=False,
-            onnx=False,
-        )
-        self._vad_model = model
-        self._vad_utils = utils
-        log.info("Silero VAD loaded.")
-
-    def transcribe(self, audio_data: np.ndarray) -> str:
-        """Transcribe audio array (float32, 16kHz) to text."""
-        if self._whisper is None:
-            self._load_whisper()
-        segments, _info = self._whisper.transcribe(
-            audio_data,
-            language=self.language,
-            beam_size=3,
-            vad_filter=True,
-            vad_parameters={"min_silence_duration_ms": 300},
-        )
-        text = " ".join(seg.text.strip() for seg in segments).strip()
-        return text
-
-    def _is_speech(self, chunk: np.ndarray) -> float:
-        """Returns speech probability for an audio chunk (0.0-1.0)."""
-        import torch
-        tensor = torch.from_numpy(chunk).float()
-        return float(self._vad_model(tensor, SAMPLE_RATE).item())
-
-    def _audio_callback(
-        self,
-        indata: np.ndarray,
-        frames: int,
-        time_info,
-        status,
-    ) -> None:
-        """Called by sounddevice for each audio block."""
-        self._audio_queue.put(indata.copy().flatten())
-
-    def _collect_speech(self) -> Optional[np.ndarray]:
-        """
-        Reads from the audio queue, uses VAD to detect speech start/end.
-        Returns a numpy array of speech audio, or None if timed out.
-        """
-        if self._vad_model is None:
-            self._load_vad()
-
-        speech_frames = []
-        in_speech = False
-        silence_start = None
-        SPEECH_THRESHOLD = 0.5
-        SILENCE_THRESHOLD = 0.3
-
-        while True:
-            try:
-                chunk = self._audio_queue.get(timeout=0.1)
-            except queue.Empty:
-                if in_speech and silence_start:
-                    elapsed = time.time() - silence_start
-                    if elapsed > SILENCE_TIMEOUT:
-                        break
-                continue
-
-            prob = self._is_speech(chunk)
-
-            if prob >= SPEECH_THRESHOLD:
-                if not in_speech:
-                    in_speech = True
-                    log.debug("Speech detected (prob=%.2f)", prob)
-                silence_start = None
-                speech_frames.append(chunk)
-            elif in_speech:
-                speech_frames.append(chunk)
-                if prob < SILENCE_THRESHOLD:
-                    if silence_start is None:
-                        silence_start = time.time()
-                    elif time.time() - silence_start > SILENCE_TIMEOUT:
-                        break
-
-        if not speech_frames:
-            return None
-
-        audio = np.concatenate(speech_frames)
-        duration = len(audio) / SAMPLE_RATE
-        if duration < MIN_SPEECH_SECONDS:
-            log.debug("Audio too short (%.2fs), skipping.", duration)
-            return None
-
-        return audio
-
-    async def run(self) -> None:
-        """Main loop: listen, transcribe, send to INANNA."""
-        import sounddevice as sd
-        import websockets
-
-        self._load_whisper()
-        self._load_vad()
-
-        print("𒀭 INANNA Voice Listener active.")
-        print(f"   Model:    {self.model_size}")
-        print(f"   Language: {self.language or 'auto'}")
-        print(f"   Server:   {self.ws_url}")
-        print("   Listening... Speak to INANNA. Press Ctrl+C to stop.")
-        print()
-
-        ws_conn = None
-
-        async def get_ws():
-            nonlocal ws_conn
-            try:
-                if ws_conn is None or ws_conn.closed:
-                    ws_conn = await websockets.connect(self.ws_url)
-                return ws_conn
-            except Exception as e:
-                log.warning("WebSocket reconnect failed: %s", e)
-                ws_conn = None
-                return None
-
-        with sd.InputStream(
-            samplerate=SAMPLE_RATE,
-            channels=CHANNELS,
-            dtype=DTYPE,
-            blocksize=VAD_CHUNK,
-            callback=self._audio_callback,
-        ):
-            while True:
-                audio = await asyncio.to_thread(self._collect_speech)
-                if audio is None:
-                    continue
-
-                log.debug("Transcribing %.2fs of audio...", len(audio)/SAMPLE_RATE)
-                t0 = time.time()
-                text = await asyncio.to_thread(self.transcribe, audio)
-                elapsed = time.time() - t0
-
-                if not text:
-                    continue
-
-                print(f"  🎤 [{elapsed:.1f}s] {text}")
-
-                ws = await get_ws()
-                if ws:
-                    try:
-                        await ws.send(json.dumps({
-                            "type": "input",
-                            "text": text,
-                            "source": "voice",
-                        }))
-                    except Exception as e:
-                        log.warning("Failed to send to INANNA: %s", e)
-                        ws_conn = None
-                else:
-                    log.warning("No WebSocket connection — text not sent.")
-
-
-def main() -> None:
-    parser = argparse.ArgumentParser(
-        description="INANNA NYX Voice Listener"
+def _hash_password(password: str, salt: str) -> str:
+    """Hash a password with PBKDF2-HMAC-SHA256."""
+    dk = hashlib.pbkdf2_hmac(
+        'sha256',
+        password.encode('utf-8'),
+        salt.encode('utf-8'),
+        iterations=260000,
     )
-    parser.add_argument(
-        "--model",
-        default="base",
-        choices=["tiny", "base", "small", "medium", "large-v3"],
-        help="Whisper model size (default: base)",
-    )
-    parser.add_argument(
-        "--lang",
-        default=None,
-        help="Language code: es, en, pt, or None for auto-detect",
-    )
-    parser.add_argument(
-        "--ws",
-        default="ws://localhost:8081",
-        help="INANNA WebSocket URL",
-    )
-    parser.add_argument(
-        "--device",
-        default="cpu",
-        choices=["cpu", "cuda"],
-        help="Inference device (default: cpu)",
-    )
-    parser.add_argument(
-        "--debug",
-        action="store_true",
-        help="Enable debug logging",
-    )
-    args = parser.parse_args()
+    return dk.hex()
 
-    logging.basicConfig(
-        level=logging.DEBUG if args.debug else logging.INFO,
-        format="%(asctime)s %(name)s %(levelname)s %(message)s",
-    )
 
-    listener = VoiceListener(
-        model_size=args.model,
-        language=args.lang,
-        ws_url=args.ws,
-        device=args.device,
-    )
+def hash_password(password: str) -> str:
+    """Hash a password, returning salt:hash."""
+    salt = secrets.token_hex(32)
+    h = _hash_password(password, salt)
+    return f"{salt}:{h}"
 
+
+def verify_password(password: str, stored: str) -> bool:
+    """Verify a password against a stored salt:hash."""
     try:
-        asyncio.run(listener.run())
-    except KeyboardInterrupt:
-        print("\n𒀭 Voice Listener stopped.")
+        salt, expected = stored.split(':', 1)
+        actual = _hash_password(password, salt)
+        return hmac.compare_digest(actual, expected)
+    except Exception:
+        return False
 
 
-if __name__ == "__main__":
-    main()
+@dataclass
+class AuthRecord:
+    user_id: str
+    username: str
+    password_hash: str   # salt:hash
+    role: str            # guardian | operator | user
+
+
+class AuthStore:
+    """
+    Stores hashed passwords separately from the user/token system.
+    File: data/{realm}/auth.json
+    """
+
+    def __init__(self, data_dir: Path) -> None:
+        self.path = data_dir / "auth.json"
+        self._records: dict[str, AuthRecord] = {}
+        self._load()
+
+    def _load(self) -> None:
+        if self.path.exists():
+            try:
+                raw = json.loads(self.path.read_text('utf-8'))
+                for uid, rec in raw.items():
+                    self._records[uid] = AuthRecord(
+                        user_id=rec['user_id'],
+                        username=rec['username'],
+                        password_hash=rec['password_hash'],
+                        role=rec['role'],
+                    )
+            except Exception:
+                pass
+
+    def _save(self) -> None:
+        self.path.parent.mkdir(parents=True, exist_ok=True)
+        data = {
+            uid: {
+                'user_id': r.user_id,
+                'username': r.username,
+                'password_hash': r.password_hash,
+                'role': r.role,
+            }
+            for uid, r in self._records.items()
+        }
+        self.path.write_text(json.dumps(data, indent=2), 'utf-8')
+
+    def seed_user(
+        self,
+        user_id: str,
+        username: str,
+        password: str,
+        role: str,
+    ) -> AuthRecord:
+        """Add a user if they don't exist yet. Idempotent."""
+        if user_id not in self._records:
+            rec = AuthRecord(
+                user_id=user_id,
+                username=username,
+                password_hash=hash_password(password),
+                role=role,
+            )
+            self._records[user_id] = rec
+            self._save()
+            return rec
+        return self._records[user_id]
+
+    def create_user(
+        self,
+        username: str,
+        password: str,
+        role: str,
+    ) -> AuthRecord:
+        """Create a new user with a generated ID."""
+        import uuid
+        user_id = str(uuid.uuid4())[:8]
+        return self.seed_user(user_id, username, password, role)
+
+    def authenticate(
+        self, username: str, password: str
+    ) -> Optional[AuthRecord]:
+        """Return AuthRecord if credentials are valid, else None."""
+        for rec in self._records.values():
+            if rec.username.lower() == username.lower():
+                if verify_password(password, rec.password_hash):
+                    return rec
+        return None
+
+    def get_by_username(self, username: str) -> Optional[AuthRecord]:
+        for rec in self._records.values():
+            if rec.username.lower() == username.lower():
+                return rec
+        return None
+
+    def get_by_id(self, user_id: str) -> Optional[AuthRecord]:
+        return self._records.get(user_id)
+
+    def list_users(self) -> list[AuthRecord]:
+        return list(self._records.values())
+
+    def change_password(
+        self, user_id: str, new_password: str
+    ) -> bool:
+        if user_id not in self._records:
+            return False
+        self._records[user_id].password_hash = hash_password(new_password)
+        self._save()
+        return True
+
+    def delete_user(self, user_id: str) -> bool:
+        if user_id in self._records:
+            del self._records[user_id]
+            self._save()
+            return True
+        return False
 ```
 
-### Task 2 - inanna/voice/README.md
+### Task 2 - Seed ZAERA on startup
 
-Create: inanna/voice/README.md
+In server.py __init__, after creating auth store:
 
-```markdown
-# INANNA NYX Voice Listener
+```python
+from core.auth import AuthStore
 
-Speak to INANNA. She hears you.
+self.auth_store = AuthStore(
+    Path(self.config.DATA_DIR) / self.active_realm.name
+    if hasattr(self.config, 'DATA_DIR')
+    else Path('data') / 'default'
+)
 
-## Requirements
-
-Install voice dependencies:
-
-  pip install faster-whisper sounddevice torch
-
-On Windows, sounddevice requires:
-  pip install sounddevice
-  (PortAudio is bundled)
-
-On NixOS:
-  nix-env -iA nixpkgs.portaudio
-  pip install sounddevice
-
-## Usage
-
-Start the INANNA server first (port 8081 must be open), then:
-
-  # Auto-detect language, base model
-  python -m voice.listener
-
-  # Spanish, small model (more accurate)
-  python -m voice.listener --lang es --model small
-
-  # English, with debug output
-  python -m voice.listener --lang en --debug
-
-  # Connect to a remote INANNA instance
-  python -m voice.listener --ws ws://192.168.1.100:8081
-
-## Models
-
-  tiny   (75MB)   fastest, less accurate
-  base   (145MB)  good balance — recommended for CPU
-  small  (244MB)  better accuracy, ~2x slower on CPU
-  medium (769MB)  high accuracy, needs decent CPU or GPU
-  large-v3 (1.5GB) best quality, GPU recommended
-
-## Languages
-
-ZAERA's languages:
-  --lang es    Spanish
-  --lang en    English
-  --lang pt    Portuguese
-  (omit for automatic detection)
-
-## How It Works
-
-1. Microphone captures audio at 16kHz
-2. Silero VAD detects when you start and stop speaking
-3. The speech chunk is sent to faster-whisper
-4. The text is sent to INANNA via WebSocket as if you typed it
-5. INANNA responds in the conversation
-
-## Latency Budget (CPU, base model)
-
-  VAD detection:        ~30ms
-  Whisper transcription: 1-3s (5s speech on CPU)
-  Network to INANNA:    ~5ms
-  INANNA processing:    2-10s
-  Total:                3-13s
+# Seed ZAERA as the first guardian
+self.auth_store.seed_user(
+    user_id='zaera',
+    username='ZAERA',
+    password='ETERNALOVE',
+    role='guardian',
+)
 ```
 
-### Task 3 - Add voice dependencies to requirements.txt
+### Task 3 - Login HTTP endpoint in server.py
 
-Add to inanna/requirements.txt:
+Add POST /login endpoint to the HTTP server:
+
+```python
+async def handle_login(self, request):
+    """Handle POST /login with username + password."""
+    try:
+        body = await request.read()
+        data = json.loads(body)
+        username = str(data.get('username', '')).strip()
+        password = str(data.get('password', ''))
+    except Exception:
+        return web.Response(
+            status=400,
+            content_type='application/json',
+            text=json.dumps({'error': 'Invalid request'}),
+        )
+
+    record = self.auth_store.authenticate(username, password)
+    if not record:
+        return web.Response(
+            status=401,
+            content_type='application/json',
+            text=json.dumps({'error': 'Invalid credentials'}),
+        )
+
+    # Issue a session token
+    token_str = secrets.token_hex(32)
+    # Store token in session (simple in-memory for now)
+    self._auth_sessions[token_str] = {
+        'user_id': record.user_id,
+        'username': record.username,
+        'role': record.role,
+    }
+    return web.Response(
+        status=200,
+        content_type='application/json',
+        text=json.dumps({
+            'token': token_str,
+            'username': record.username,
+            'role': record.role,
+        }),
+    )
 ```
-# Voice (Phase 7.5 — install separately when using voice)
-# faster-whisper>=1.0.0
-# sounddevice>=0.4.6
-# torch>=2.0.0
+
+Also add GET /login to serve login.html:
+
+```python
+async def handle_login_page(self, request):
+    login_path = Path(__file__).parent / 'static' / 'login.html'
+    return web.FileResponse(login_path)
 ```
 
-These are commented out by default because they are large
-dependencies not needed for text-only operation.
-The voice README explains how to install them.
+Register these routes in the HTTP app setup:
+```python
+app.router.add_get('/login', self.handle_login_page)
+app.router.add_post('/login', self.handle_login)
+app.router.add_get('/', self.handle_login_redirect)
+```
 
-### Task 4 - Update identity.py
+```python
+async def handle_login_redirect(self, request):
+    """Redirect / to /login if not authenticated, else to /app."""
+    raise web.HTTPFound('/login')
+```
 
-CURRENT_PHASE = "Cycle 7 - Phase 7.5 - The Voice Listener"
+Also change the main app route:
+```python
+app.router.add_get('/app', self.handle_index)  # was '/'
+app.router.add_get('/index.html', self.handle_index)
+```
 
-### Task 5 - Tests (no microphone required)
+### Task 4 - ui/static/login.html
 
-Create inanna/tests/test_voice_listener.py:
-  - voice/listener.py exists
-  - voice/__init__.py exists
-  - voice/README.md exists
-  - VoiceListener can be instantiated
-  - VoiceListener has correct default model_size ("base")
-  - VoiceListener has correct default ws_url
-  - MIN_SPEECH_SECONDS is 0.5
-  - SAMPLE_RATE is 16000
-  - VoiceListener.transcribe raises ImportError
-    when faster-whisper not installed (graceful)
-  - main() argument parser accepts --model, --lang, --ws, --device
+Create a beautiful standalone login page.
+
+Design principles:
+- Full black background, same CSS variables as index.html
+- Large INANNA NYX title with Sumerian glyph
+- Clean minimal form: username field, password field, [ ENTER ] button
+- No overlay — this IS the page, full screen
+- On successful POST /login: store token in sessionStorage, redirect to /app
+- On failure: shake animation on the form, error message
+
+Key elements:
+```html
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>INANNA NYX</title>
+  <!-- same fonts and CSS variables as index.html -->
+  <style>
+    /* full-page login — same dark aesthetic */
+    /* centered vertically and horizontally */
+    /* no scrollbars */
+  </style>
+</head>
+<body>
+  <div class="login-container">
+    <div class="login-glyph">𒀭</div>
+    <div class="login-title">INANNA NYX</div>
+    <div class="login-subtitle">SOVEREIGN INTELLIGENCE</div>
+    <div class="login-tagline">THE LIVING INTELLIGENCE · GATES OF URUK · ABZU CODEX</div>
+
+    <form class="login-form" id="login-form">
+      <div class="login-field">
+        <label class="login-label">IDENTITY</label>
+        <input type="text" id="username" class="login-input"
+               placeholder="your name" autocomplete="off" />
+      </div>
+      <div class="login-field">
+        <label class="login-label">ACCESS CODE</label>
+        <input type="password" id="password" class="login-input"
+               placeholder="••••••••••" autocomplete="off" />
+      </div>
+      <button type="submit" class="login-btn">[ ENTER ]</button>
+      <div class="login-error" id="login-error"></div>
+    </form>
+
+    <div class="login-phase" id="login-phase"></div>
+  </div>
+
+  <script>
+    // POST to /login, store token, redirect to /app
+    document.getElementById('login-form').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const username = document.getElementById('username').value.trim();
+      const password = document.getElementById('password').value;
+      const errEl = document.getElementById('login-error');
+      errEl.textContent = '';
+
+      try {
+        const resp = await fetch('/login', {
+          method: 'POST',
+          headers: {'Content-Type': 'application/json'},
+          body: JSON.stringify({username, password}),
+        });
+        if (resp.ok) {
+          const data = await resp.json();
+          sessionStorage.setItem('inanna_token', data.token);
+          sessionStorage.setItem('inanna_user', data.username);
+          sessionStorage.setItem('inanna_role', data.role);
+          window.location.href = '/app';
+        } else {
+          errEl.textContent = 'invalid credentials';
+          document.getElementById('login-form').classList.add('shake');
+          setTimeout(() => document.getElementById('login-form')
+            .classList.remove('shake'), 500);
+        }
+      } catch (err) {
+        errEl.textContent = 'connection error';
+      }
+    });
+  </script>
+</body>
+</html>
+```
+
+### Task 5 - Remove login overlay from index.html
+
+Remove the `<div id="login-overlay">` block and all associated
+JS that was added in the previous session. The login is now a
+separate page — the overlay is no longer needed.
+
+### Task 6 - Update identity.py
+
+CURRENT_PHASE = "Cycle 7 - Phase 7.6 - Authentication & Login"
+
+### Task 7 - Tests
+
+Create inanna/tests/test_auth.py:
+  - AuthStore instantiates
+  - hash_password returns salt:hash format
+  - verify_password returns True for correct password
+  - verify_password returns False for wrong password
+  - seed_user creates a user
+  - seed_user is idempotent (second call doesn't overwrite)
+  - authenticate returns AuthRecord for correct credentials
+  - authenticate returns None for wrong password
+  - authenticate returns None for unknown username
+  - authenticate is case-insensitive for username
+  - create_user creates a new user with generated ID
+  - list_users returns all users
+  - change_password changes the hash
+  - change_password verifies with new password
+  - ZAERA seed: authenticate('ZAERA', 'ETERNALOVE') returns record
+  - ZAERA seed: authenticate('ZAERA', 'wrong') returns None
+  - password stored as hash, never plaintext
 
 Update test_identity.py: update CURRENT_PHASE assertion.
 
@@ -461,70 +425,71 @@ Update test_identity.py: update CURRENT_PHASE assertion.
 
 ## Permitted file changes
 
-inanna/identity.py
-inanna/requirements.txt
-inanna/voice/__init__.py        <- NEW (empty)
-inanna/voice/listener.py        <- NEW
-inanna/voice/README.md          <- NEW
-inanna/tests/test_voice_listener.py  <- NEW
-inanna/tests/test_identity.py
+inanna/core/auth.py                   <- NEW
+inanna/ui/server.py                   <- MODIFY: add auth store, login endpoints
+inanna/ui/static/login.html           <- NEW
+inanna/ui/static/index.html           <- MODIFY: remove login overlay only
+inanna/identity.py                    <- MODIFY: update CURRENT_PHASE
+inanna/tests/test_auth.py             <- NEW
+inanna/tests/test_identity.py         <- MODIFY
 
 ---
 
 ## What You Are NOT Building
 
-- No TTS output (Phase 7.6)
-- No voice UI button in index.html (Phase 7.7)
-- No changes to server.py or main.py
-  (the listener connects as a WebSocket client — no server changes)
-- No GPU-specific configuration
-- No wake word detection
+- No session expiry / JWT (simple in-memory tokens for now)
+- No password reset flow (future phase)
+- No multi-factor authentication (future phase)
+- No user registration from the login page (guardian creates users)
+- No changes to the main chat UI beyond removing the overlay
+- No voice changes
+
+---
+
+## Login Page Design Notes
+
+The login page must match the INANNA aesthetic exactly:
+- Background: #0a0704 (same as index.html)
+- Font: same Google Fonts (Cinzel Decorative for title, etc.)
+- Gold palette: same CSS variables
+- The 𒀭 glyph prominently above the title
+- Tagline: "THE LIVING INTELLIGENCE · GATES OF URUK · ABZU CODEX"
+- Form: minimal, centered, no borders except bottom underlines
+- Error state: gentle shake animation, red text
+- Success state: brief "entering..." message, then redirect
+
+Do NOT copy the current overlay design (white boxes, dark modal).
+Design it as a full-page experience, not a dialog.
 
 ---
 
 ## Definition of Done
 
-- [ ] inanna/voice/ directory with 3 files
-- [ ] VoiceListener class with run(), transcribe(), _collect_speech()
-- [ ] Voice README documents installation and usage clearly
-- [ ] requirements.txt updated with commented voice deps
-- [ ] CURRENT_PHASE updated
+- [ ] core/auth.py with AuthStore and password hashing
+- [ ] ZAERA seeded with ETERNALOVE on server startup
+- [ ] POST /login endpoint authenticates and returns token
+- [ ] GET / redirects to /login
+- [ ] GET /app serves the main chat interface
+- [ ] login.html is a beautiful standalone page
+- [ ] Login overlay removed from index.html
 - [ ] All tests pass: py -3 -m unittest discover -s tests
-- [ ] Pushed to origin/main immediately
-
----
-
-## How To Test After Phase 7.5
-
-Install voice dependencies:
-  py -3 -m pip install faster-whisper sounddevice torch
-
-Start INANNA server in one terminal:
-  cd inanna && py -3 ui_main.py
-
-Start voice listener in another terminal:
-  cd inanna && py -3 -m voice.listener --lang es
-
-Speak to INANNA in Spanish or English.
-Watch the text appear in the browser interface.
+- [ ] Pushed as cycle7-phase6-complete
 
 ---
 
 ## Handoff
 
-Commit: cycle7-phase5-complete
+Commit: cycle7-phase6-complete
 Push immediately to origin/main.
-Report: docs/implementation/CYCLE7_PHASE5_REPORT.md
-Stop. Do not begin Phase 7.6 without new CURRENT_PHASE.md.
+Report: docs/implementation/CYCLE7_PHASE6_REPORT.md
+Stop. Do not begin Phase 7.7 without new CURRENT_PHASE.md.
 
 ---
 
 *Written by: Claude (Command Center)*
 *Guardian approval: ZAERA*
 *Date: 2026-04-21*
-*INANNA gains ears.*
-*You speak. She hears. She responds.*
-*The keyboard becomes optional.*
-*Phase 7.5 is the threshold.*
-*Everything before this was preparation.*
-*Everything after this is presence.*
+*The gate has a key now.*
+*ZAERA holds it.*
+*ETERNALOVE opens it.*
+*Others enter only when ZAERA allows.*
