@@ -1,303 +1,633 @@
-# CURRENT PHASE: Cycle 7 - Phase 7.1 - The NixOS Configuration
+# CURRENT PHASE: Cycle 7 - Phase 7.2 - The File System Faculty
 **Status: ACTIVE**
 **Authorized by: ZAERA (Guardian) + Claude (Command Center)**
 **Date opened: 2026-04-21**
 **Cycle: 7 - NYXOS: The Sovereign Intelligence Operating System**
-**Master plan: docs/cycle7_master_plan.md**
-**Prerequisite: Cycles 1-6 complete + integration tests verified**
+**Replaces: Cycle 7 Phase 7.1 - The NixOS Configuration (COMPLETE)**
 
 ---
 
 ## Agent Roles for This Phase
 
-ARCHITECT: Command Center (Claude) — this document
-BUILDER:   Codex — build configuration.nix and service files
-TESTER:    Codex — verify NixOS config syntax, test service files
-VERIFIER:  Command Center — confirm structure before declaring done
+ARCHITECT:  Command Center (Claude) — this document
+BUILDER:    Codex — implement file system tools and Faculty
+TESTER:     Codex — unit tests + integration verification
+VERIFIER:   Command Center — confirm after push
 
-BUILDER is forbidden from:
-  - Modifying any file in inanna/ except the ones listed below
-  - Adding new Python capabilities
-  - Changing the web interface
+BUILDER forbidden from:
+  - Modifying web UI (index.html, console.html)
+  - Changing governance architecture
+  - Adding tools not listed here
 
 ---
 
 ## What This Phase Is
 
-Phase 7.1 gives INANNA NYX a body.
+Phase 7.1 gave INANNA a NixOS body.
+Phase 7.2 gives INANNA hands.
 
-Not a Python process running inside Windows.
-A proper, declared, reproducible NixOS system
-where INANNA is a first-class systemd service
-that starts at boot and is always ready.
+The File System Faculty is the first OS-level capability:
+INANNA can read files, list directories, search for files,
+get file metadata, and write files — all governed by proposals.
 
-The NixOS ISO is already on ZAERA's machine:
-  C:\Users\Zohar\Dropbox\Windows11\REPOS\ABZU\OGG\NixOS\
-  nixos-graphical-25.11.8919.d96b37bbeb98-x86_64-linux.iso
+After this phase, you can say:
+  "INANNA, read the file at ~/documents/notes.txt"
+  "INANNA, list the files in my Downloads folder"
+  "INANNA, find all Python files in ~/code"
+  "INANNA, what is the size of ~/data/report.pdf?"
 
-This phase produces the NixOS configuration files that,
-when applied to a machine booted from that ISO,
-install INANNA NYX as a running system service.
+Every file write requires proposal approval.
+Every file read outside safe paths requires proposal approval.
+File deletes are FORBIDDEN — not implemented, not proposed.
+
+This is the principle: capability with governance.
+Power does not come before law.
 
 ---
 
 ## What You Are Building
 
-### Task 1 - nixos/configuration.nix
+### Task 1 - inanna/core/filesystem_faculty.py
 
-Create: nixos/configuration.nix
+Create: inanna/core/filesystem_faculty.py
 
-This is the declarative NixOS system configuration.
-It must:
-  - Enable basic NixOS system settings
-  - Install Python 3.11+ and required Python packages
-  - Install system dependencies (git, curl, ffmpeg for future voice)
-  - Define the INANNA NYX service (see Task 2)
-  - Open firewall ports 8080 and 8081
-  - Enable automatic login for the inanna user
+```python
+from __future__ import annotations
+import os
+import stat
+from dataclasses import dataclass, field
+from datetime import datetime
+from pathlib import Path
+from typing import Optional
 
-```nix
-{ config, pkgs, lib, ... }:
 
+# Paths that are always readable without proposal
+# (safe, non-sensitive locations)
+SAFE_READ_PATHS = [
+    Path.home(),                     # user's home directory
+    Path("/tmp"),                    # temp directory
+    Path.cwd(),                      # current working directory
+]
+
+# Paths that are NEVER accessible regardless of approval
+FORBIDDEN_PATHS = [
+    Path("/etc/shadow"),
+    Path("/etc/passwd"),
+    Path("/root"),
+]
+
+MAX_READ_BYTES = 512 * 1024  # 512KB max file read
+MAX_SEARCH_RESULTS = 50
+MAX_LIST_ENTRIES = 100
+
+
+@dataclass
+class FileInfo:
+    path: str
+    name: str
+    size_bytes: int
+    size_human: str
+    is_dir: bool
+    is_file: bool
+    modified_at: str
+    created_at: str
+    permissions: str
+    extension: str
+
+
+@dataclass
+class FileSystemResult:
+    success: bool
+    operation: str      # read | list | search | info | write
+    path: str
+    content: Optional[str] = None
+    entries: list[FileInfo] = field(default_factory=list)
+    info: Optional[FileInfo] = None
+    error: Optional[str] = None
+    truncated: bool = False
+    bytes_read: int = 0
+
+
+class FileSystemFaculty:
+    """
+    Governed file system operations for INANNA NYX.
+    All write operations require proposal approval.
+    Read operations from safe paths are allowed directly.
+    Read operations from non-safe paths require proposal approval.
+    Delete operations are not implemented.
+    """
+
+    def is_safe_read(self, path: Path) -> bool:
+        """Returns True if path is within a safe read zone."""
+        try:
+            resolved = path.resolve()
+            for safe in SAFE_READ_PATHS:
+                try:
+                    resolved.relative_to(safe.resolve())
+                    return True
+                except ValueError:
+                    continue
+            return False
+        except Exception:
+            return False
+
+    def is_forbidden(self, path: Path) -> bool:
+        """Returns True if path is forbidden regardless of approval."""
+        try:
+            resolved = path.resolve()
+            for forbidden in FORBIDDEN_PATHS:
+                try:
+                    resolved.relative_to(forbidden.resolve())
+                    return True
+                except ValueError:
+                    if resolved == forbidden.resolve():
+                        return True
+            return False
+        except Exception:
+            return True  # fail safe
+
+    def _human_size(self, size_bytes: int) -> str:
+        for unit in ("B", "KB", "MB", "GB"):
+            if size_bytes < 1024:
+                return f"{size_bytes:.1f} {unit}"
+            size_bytes /= 1024
+        return f"{size_bytes:.1f} TB"
+
+    def _file_info(self, path: Path) -> FileInfo:
+        st = path.stat()
+        return FileInfo(
+            path=str(path),
+            name=path.name,
+            size_bytes=st.st_size,
+            size_human=self._human_size(st.st_size),
+            is_dir=path.is_dir(),
+            is_file=path.is_file(),
+            modified_at=datetime.fromtimestamp(st.st_mtime).strftime(
+                "%Y-%m-%d %H:%M"
+            ),
+            created_at=datetime.fromtimestamp(st.st_ctime).strftime(
+                "%Y-%m-%d %H:%M"
+            ),
+            permissions=oct(stat.S_IMODE(st.st_mode)),
+            extension=path.suffix.lower(),
+        )
+
+    def read_file(self, path_str: str) -> FileSystemResult:
+        path = Path(path_str).expanduser().resolve()
+        if self.is_forbidden(path):
+            return FileSystemResult(
+                False, "read", path_str,
+                error="Access denied: forbidden path."
+            )
+        if not path.exists():
+            return FileSystemResult(
+                False, "read", path_str,
+                error=f"File not found: {path}"
+            )
+        if not path.is_file():
+            return FileSystemResult(
+                False, "read", path_str,
+                error=f"Not a file: {path}"
+            )
+        try:
+            raw = path.read_bytes()
+            truncated = len(raw) > MAX_READ_BYTES
+            if truncated:
+                raw = raw[:MAX_READ_BYTES]
+            try:
+                content = raw.decode("utf-8")
+            except UnicodeDecodeError:
+                content = raw.decode("latin-1", errors="replace")
+            return FileSystemResult(
+                True, "read", path_str,
+                content=content,
+                truncated=truncated,
+                bytes_read=len(raw),
+            )
+        except PermissionError:
+            return FileSystemResult(
+                False, "read", path_str,
+                error="Permission denied."
+            )
+        except Exception as e:
+            return FileSystemResult(
+                False, "read", path_str,
+                error=str(e)
+            )
+
+    def list_dir(self, path_str: str) -> FileSystemResult:
+        path = Path(path_str).expanduser().resolve()
+        if self.is_forbidden(path):
+            return FileSystemResult(
+                False, "list", path_str,
+                error="Access denied: forbidden path."
+            )
+        if not path.exists():
+            return FileSystemResult(
+                False, "list", path_str,
+                error=f"Directory not found: {path}"
+            )
+        if not path.is_dir():
+            return FileSystemResult(
+                False, "list", path_str,
+                error=f"Not a directory: {path}"
+            )
+        try:
+            entries = []
+            for item in sorted(path.iterdir()):
+                if len(entries) >= MAX_LIST_ENTRIES:
+                    break
+                try:
+                    entries.append(self._file_info(item))
+                except (PermissionError, OSError):
+                    continue
+            return FileSystemResult(
+                True, "list", path_str,
+                entries=entries,
+                truncated=len(entries) == MAX_LIST_ENTRIES,
+            )
+        except PermissionError:
+            return FileSystemResult(
+                False, "list", path_str,
+                error="Permission denied."
+            )
+        except Exception as e:
+            return FileSystemResult(
+                False, "list", path_str,
+                error=str(e)
+            )
+
+    def file_info(self, path_str: str) -> FileSystemResult:
+        path = Path(path_str).expanduser().resolve()
+        if self.is_forbidden(path):
+            return FileSystemResult(
+                False, "info", path_str,
+                error="Access denied: forbidden path."
+            )
+        if not path.exists():
+            return FileSystemResult(
+                False, "info", path_str,
+                error=f"Path not found: {path}"
+            )
+        try:
+            return FileSystemResult(
+                True, "info", path_str,
+                info=self._file_info(path),
+            )
+        except Exception as e:
+            return FileSystemResult(
+                False, "info", path_str,
+                error=str(e)
+            )
+
+    def search_files(
+        self, directory: str, pattern: str
+    ) -> FileSystemResult:
+        base = Path(directory).expanduser().resolve()
+        if self.is_forbidden(base):
+            return FileSystemResult(
+                False, "search", directory,
+                error="Access denied: forbidden path."
+            )
+        if not base.exists():
+            return FileSystemResult(
+                False, "search", directory,
+                error=f"Directory not found: {base}"
+            )
+        try:
+            entries = []
+            for match in base.rglob(pattern):
+                if len(entries) >= MAX_SEARCH_RESULTS:
+                    break
+                try:
+                    entries.append(self._file_info(match))
+                except (PermissionError, OSError):
+                    continue
+            return FileSystemResult(
+                True, "search", directory,
+                entries=entries,
+                truncated=len(entries) == MAX_SEARCH_RESULTS,
+            )
+        except Exception as e:
+            return FileSystemResult(
+                False, "search", directory,
+                error=str(e)
+            )
+
+    def write_file(
+        self, path_str: str, content: str, overwrite: bool = False
+    ) -> FileSystemResult:
+        """
+        Write a file. ALWAYS requires proposal approval before calling.
+        This method is called ONLY after the proposal has been approved.
+        """
+        path = Path(path_str).expanduser().resolve()
+        if self.is_forbidden(path):
+            return FileSystemResult(
+                False, "write", path_str,
+                error="Access denied: forbidden path."
+            )
+        if path.exists() and not overwrite:
+            return FileSystemResult(
+                False, "write", path_str,
+                error=f"File already exists: {path}. Use overwrite=True to replace."
+            )
+        try:
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_text(content, encoding="utf-8")
+            return FileSystemResult(
+                True, "write", path_str,
+                bytes_read=len(content.encode("utf-8")),
+            )
+        except PermissionError:
+            return FileSystemResult(
+                False, "write", path_str,
+                error="Permission denied."
+            )
+        except Exception as e:
+            return FileSystemResult(
+                False, "write", path_str,
+                error=str(e)
+            )
+
+    def format_result(self, result: FileSystemResult) -> str:
+        """Format a FileSystemResult for display in the conversation."""
+        if not result.success:
+            return f"fs > error: {result.error}"
+
+        if result.operation == "read":
+            lines = [
+                f"fs > read: {result.path}",
+                f"     size: {result.bytes_read} bytes",
+            ]
+            if result.truncated:
+                lines.append("     (truncated to 512KB)")
+            lines.append("")
+            lines.append(result.content or "")
+            return "\n".join(lines)
+
+        if result.operation == "list":
+            lines = [f"fs > list: {result.path}",
+                     f"     {len(result.entries)} entries"
+                     + (" (showing first 100)" if result.truncated else ""),
+                     ""]
+            for e in result.entries:
+                icon = "📁" if e.is_dir else "📄"
+                lines.append(
+                    f"  {icon}  {e.name:<40} {e.size_human:>8}  {e.modified_at}"
+                )
+            return "\n".join(lines)
+
+        if result.operation == "search":
+            lines = [
+                f"fs > search results in {result.path}",
+                f"     {len(result.entries)} matches"
+                + (" (showing first 50)" if result.truncated else ""),
+                ""
+            ]
+            for e in result.entries:
+                lines.append(f"  {e.path}")
+            return "\n".join(lines)
+
+        if result.operation == "info":
+            e = result.info
+            if not e:
+                return "fs > no info available"
+            kind = "directory" if e.is_dir else "file"
+            return (
+                f"fs > info: {result.path}\n"
+                f"     type: {kind}\n"
+                f"     size: {e.size_human} ({e.size_bytes} bytes)\n"
+                f"     modified: {e.modified_at}\n"
+                f"     created: {e.created_at}\n"
+                f"     permissions: {e.permissions}"
+            )
+
+        if result.operation == "write":
+            return (
+                f"fs > written: {result.path}\n"
+                f"     {result.bytes_read} bytes written"
+            )
+
+        return f"fs > {result.operation}: {result.path}"
+```
+
+### Task 2 - Register file system tools in tools.json
+
+Add to inanna/config/tools.json:
+
+```json
 {
-  # ── System ──────────────────────────────────────────────────────
-  system.stateVersion = "25.11";
-  networking.hostName = "nyxos";
-  time.timeZone = "Europe/Madrid";
-
-  # ── Boot ────────────────────────────────────────────────────────
-  boot.loader.systemd-boot.enable = true;
-  boot.loader.efi.canTouchEfiVariables = true;
-
-  # ── Users ───────────────────────────────────────────────────────
-  users.users.inanna = {
-    isNormalUser = true;
-    description = "INANNA NYX";
-    extraGroups = [ "networkmanager" "wheel" "audio" "video" ];
-    home = "/home/inanna";
-  };
-
-  # Auto-login at console
-  services.getty.autologinUser = "inanna";
-
-  # ── Packages ────────────────────────────────────────────────────
-  environment.systemPackages = with pkgs; [
-    git
-    curl
-    wget
-    python311
-    python311Packages.websockets
-    python311Packages.aiohttp
-    python311Packages.requests
-    ffmpeg         # future: voice pipeline
-    # openai-whisper  # Phase 7.5: uncomment when adding voice
-  ];
-
-  # ── INANNA Service ──────────────────────────────────────────────
-  systemd.services.inanna-nyx = {
-    description = "INANNA NYX — Sovereign Intelligence";
-    after = [ "network.target" ];
-    wantedBy = [ "multi-user.target" ];
-    serviceConfig = {
-      User = "inanna";
-      WorkingDirectory = "/home/inanna/INANNA/inanna";
-      ExecStart = "${pkgs.python311}/bin/python3 ui_main.py";
-      Restart = "always";
-      RestartSec = "5s";
-      Environment = [
-        "INANNA_MODEL_URL=http://localhost:1234/v1"
-        "INANNA_MODEL_NAME=qwen2.5-7b-instruct-1m"
-      ];
-    };
-  };
-
-  # ── Firewall ────────────────────────────────────────────────────
-  networking.firewall.allowedTCPPorts = [ 8080 8081 1234 ];
-
-  # ── Networking ──────────────────────────────────────────────────
-  networking.networkmanager.enable = true;
+  "name": "read_file",
+  "description": "Read the contents of a file",
+  "requires_approval": true,
+  "enabled": true,
+  "safe_paths_skip_approval": true,
+  "parameters": {
+    "path": "File path to read (supports ~ for home directory)"
+  }
+},
+{
+  "name": "list_dir",
+  "description": "List files and directories in a folder",
+  "requires_approval": false,
+  "enabled": true,
+  "parameters": {
+    "path": "Directory path to list"
+  }
+},
+{
+  "name": "file_info",
+  "description": "Get metadata about a file or directory",
+  "requires_approval": false,
+  "enabled": true,
+  "parameters": {
+    "path": "Path to inspect"
+  }
+},
+{
+  "name": "search_files",
+  "description": "Search for files matching a pattern",
+  "requires_approval": false,
+  "enabled": true,
+  "parameters": {
+    "directory": "Directory to search in",
+    "pattern": "Glob pattern (e.g. *.py, *.txt, report*)"
+  }
+},
+{
+  "name": "write_file",
+  "description": "Write content to a file",
+  "requires_approval": true,
+  "enabled": true,
+  "parameters": {
+    "path": "File path to write",
+    "content": "Content to write",
+    "overwrite": "Whether to overwrite existing file (default: false)"
+  }
 }
 ```
 
-### Task 2 - nixos/README.md
+Note on `safe_paths_skip_approval`:
+  - list_dir, file_info, search_files: never require approval
+  - read_file: approval required unless path is within SAFE_READ_PATHS
+  - write_file: ALWAYS requires approval regardless of path
 
-Create: nixos/README.md
+### Task 3 - Wire FileSystemFaculty into server.py and main.py
 
-Document how to use the NixOS configuration:
-
-1. Boot from the NixOS ISO
-2. Clone the INANNA repository to /home/inanna/INANNA
-3. Install Python dependencies: pip install -r requirements.txt
-4. Copy nixos/configuration.nix to /etc/nixos/configuration.nix
-5. Run: nixos-rebuild switch
-6. INANNA starts automatically and is available at
-   http://localhost:8080 and ws://localhost:8081
-
-Also document:
-  - How to check INANNA service status: systemctl status inanna-nyx
-  - How to view INANNA logs: journalctl -u inanna-nyx -f
-  - How to restart INANNA: systemctl restart inanna-nyx
-  - How to update INANNA: git pull + systemctl restart inanna-nyx
-
-### Task 3 - nixos/inanna-nyx.service
-
-Create: nixos/inanna-nyx.service
-
-A standalone systemd unit file (for non-NixOS systems):
-
-```ini
-[Unit]
-Description=INANNA NYX — Sovereign Intelligence
-After=network.target
-Wants=network.target
-
-[Service]
-Type=simple
-User=inanna
-WorkingDirectory=/home/inanna/INANNA/inanna
-ExecStart=/usr/bin/python3 ui_main.py
-Restart=always
-RestartSec=5
-Environment=INANNA_MODEL_URL=http://localhost:1234/v1
-Environment=INANNA_MODEL_NAME=qwen2.5-7b-instruct-1m
-StandardOutput=journal
-StandardError=journal
-SyslogIdentifier=inanna-nyx
-
-[Install]
-WantedBy=multi-user.target
+Instantiate FileSystemFaculty at startup:
+```python
+from core.filesystem_faculty import FileSystemFaculty
+fs_faculty = FileSystemFaculty()
 ```
 
-### Task 4 - nixos/install.sh
+Handle file system tool results in _run_tool():
 
-Create: nixos/install.sh
+```python
+if tool_name == "read_file":
+    result = fs_faculty.read_file(args.get("path", ""))
+    return ToolResult(
+        tool="read_file",
+        query=args.get("path", ""),
+        success=result.success,
+        data={"content": result.content, "truncated": result.truncated},
+        error=result.error,
+        formatted=fs_faculty.format_result(result),
+    )
 
-A shell script for setting up INANNA on a fresh NixOS machine:
-
-```bash
-#!/usr/bin/env bash
-set -euo pipefail
-
-echo "𒀭 INANNA NYX — Installation Script"
-echo ""
-
-# Verify we're on NixOS
-if [ ! -f /etc/nixos/configuration.nix ]; then
-  echo "Error: /etc/nixos/configuration.nix not found."
-  echo "This script is for NixOS only."
-  exit 1
-fi
-
-INANNA_HOME="/home/inanna/INANNA"
-
-# Clone if not present
-if [ ! -d "$INANNA_HOME" ]; then
-  echo "Cloning INANNA NYX repository..."
-  sudo -u inanna git clone https://github.com/ZeroAbsolutePrime/INANNA \
-    "$INANNA_HOME"
-fi
-
-# Install Python deps
-echo "Installing Python dependencies..."
-cd "$INANNA_HOME/inanna"
-python3 -m pip install --user websockets aiohttp requests
-
-# Install NixOS configuration
-echo "Installing NixOS configuration..."
-sudo cp "$(dirname "$0")/configuration.nix" /etc/nixos/configuration.nix
-
-# Rebuild
-echo "Rebuilding NixOS..."
-sudo nixos-rebuild switch
-
-echo ""
-echo "𒀭 INANNA NYX installed."
-echo "Service status: systemctl status inanna-nyx"
-echo "Access at: http://localhost:8080"
+# Same pattern for list_dir, file_info, search_files, write_file
 ```
 
-### Task 5 - requirements.txt
+### Task 4 - Natural language parsing in NAMMU / OperatorFaculty
 
-Create: inanna/requirements.txt
+When INANNA receives "read the file at ~/notes.txt" or
+"list my Downloads folder", the OPERATOR Faculty must
+extract the path and call the appropriate tool.
 
-List all Python dependencies INANNA needs:
-
+Add to governance_signals.json domain_hints:
+```json
+"filesystem": [
+  "read file", "open file", "show file", "list directory",
+  "list folder", "what files", "search files", "find files",
+  "file size", "file info", "write file", "save file",
+  "create file", "what is in", "show me"
+]
 ```
-websockets>=12.0
-aiohttp>=3.9
-requests>=2.31
+
+The OperatorFaculty uses these hints to route filesystem
+requests to the correct tool.
+
+### Task 5 - Update help_system.py
+
+Add filesystem commands to the help system:
+
+Add to HELP_COMMON (all users):
+```
+  FILES (speak naturally or use commands)
+    "read the file at ~/notes.txt"
+    "list my Documents folder"
+    "find all .py files in ~/code"
+    "what is the size of ~/report.pdf"
+    "write a file called ideas.txt with this content..."
+    (all file writes require approval)
 ```
 
-Check what is actually imported in main.py, server.py, and core/
-and add any additional dependencies found.
-Do NOT include packages that are part of the Python standard library.
+Add topic "files" to HELP_TOPICS:
+```
+files — File system operations
+
+  INANNA can read, list, search, and write files.
+  Speak naturally or use direct commands.
+
+  Read a file:    "read the file at ~/path/to/file.txt"
+  List a folder:  "list the files in ~/Documents"
+  Find files:     "find all .txt files in ~/notes"
+  File info:      "what is the size of ~/report.pdf"
+  Write a file:   "write a file called todo.txt with..."
+
+  Governance:
+    - list, info, search: no approval required
+    - read: approval required for paths outside home directory
+    - write: ALWAYS requires approval
+    - delete: not available (by design)
+
+  Max file read: 512 KB
+  Max search results: 50 files
+  Max directory listing: 100 entries
+```
 
 ### Task 6 - Update identity.py
 
-CURRENT_PHASE = "Cycle 7 - Phase 7.1 - The NixOS Configuration"
-
-Add CYCLE7_PREVIEW:
-```python
-CYCLE7_PREVIEW = (
-    "Cycle 7 builds NYXOS: INANNA as a NixOS system service, "
-    "file system tools, process management, package installation, "
-    "and the voice pipeline (Whisper + Piper TTS)."
-)
-```
+CURRENT_PHASE = "Cycle 7 - Phase 7.2 - The File System Faculty"
 
 ### Task 7 - Tests
 
-Create inanna/tests/test_nixos_config.py:
-  - nixos/configuration.nix exists
-  - nixos/README.md exists
-  - nixos/inanna-nyx.service exists
-  - nixos/install.sh exists
-  - inanna/requirements.txt exists
-  - configuration.nix contains inanna-nyx service definition
-  - configuration.nix contains port 8080
-  - configuration.nix contains port 8081
-  - requirements.txt contains websockets
-  - inanna-nyx.service contains ExecStart
+Create inanna/tests/test_filesystem_faculty.py:
+  - FileSystemFaculty instantiates
+  - is_safe_read() returns True for home directory
+  - is_safe_read() returns True for subdirs of home
+  - is_safe_read() returns False for /etc
+  - is_forbidden() returns True for /etc/shadow
+  - is_forbidden() returns False for ~/notes.txt
+  - read_file() returns error for nonexistent file
+  - read_file() reads a temp file correctly
+  - read_file() truncates files over 512KB
+  - list_dir() lists a temp directory
+  - list_dir() returns error for nonexistent directory
+  - file_info() returns info for existing file
+  - file_info() returns error for nonexistent path
+  - search_files() finds files matching pattern
+  - write_file() writes content to temp file
+  - write_file() refuses to overwrite without flag
+  - write_file() returns error for forbidden path
+  - format_result() formats read result correctly
+  - format_result() formats list result correctly
+  - format_result() formats error correctly
 
 Update test_identity.py: update CURRENT_PHASE assertion.
+Update test_commands.py: add read_file, list_dir, etc.
 
 ---
 
 ## Permitted file changes
 
-inanna/identity.py                   <- MODIFY: CURRENT_PHASE, CYCLE7_PREVIEW
-inanna/requirements.txt              <- NEW
-inanna/tests/test_nixos_config.py    <- NEW
-inanna/tests/test_identity.py        <- MODIFY: update phase assertion
-nixos/                               <- NEW DIRECTORY
-  nixos/configuration.nix            <- NEW
-  nixos/README.md                    <- NEW
-  nixos/inanna-nyx.service           <- NEW
-  nixos/install.sh                   <- NEW
+inanna/identity.py                      <- MODIFY: CURRENT_PHASE
+inanna/main.py                          <- MODIFY: wire FileSystemFaculty
+inanna/config/tools.json                <- MODIFY: add 5 fs tools
+inanna/config/governance_signals.json   <- MODIFY: add filesystem hints
+inanna/core/
+  filesystem_faculty.py                 <- NEW
+  help_system.py                        <- MODIFY: add files section
+  state.py                              <- MODIFY: update phase
+inanna/ui/
+  server.py                             <- MODIFY: wire FileSystemFaculty
+inanna/tests/
+  test_filesystem_faculty.py            <- NEW
+  test_identity.py                      <- MODIFY: update phase
+  test_commands.py                      <- MODIFY: add fs tools
 
 ---
 
 ## What You Are NOT Building
 
-- No actual NixOS installation or deployment
-- No voice pipeline (Phase 7.5)
-- No file system tools (Phase 7.2)
-- No process management tools (Phase 7.3)
-- No package management tools (Phase 7.4)
-- Do not modify any .py files in inanna/ except identity.py
-- Do not modify the web interface
+- No file deletion (by design — permanent data safety)
+- No file move or rename (Phase 7.3 via process tools)
+- No binary file handling beyond truncated read
+- No directory creation as a standalone command
+  (directories are created implicitly by write_file)
+- No changes to index.html or console.html
+- No voice integration (Phase 7.5)
 
 ---
 
 ## Definition of Done
 
-- [ ] nixos/ directory created with 4 files
-- [ ] inanna/requirements.txt created
-- [ ] configuration.nix defines inanna-nyx systemd service
-- [ ] configuration.nix opens ports 8080, 8081
-- [ ] install.sh is executable and documented
-- [ ] CURRENT_PHASE updated to Cycle 7 Phase 7.1
-- [ ] CYCLE7_PREVIEW in identity.py
+- [ ] core/filesystem_faculty.py with all 5 operations
+- [ ] FileSystemFaculty wired into server.py and main.py
+- [ ] 5 new tools in tools.json
+- [ ] filesystem hints in governance_signals.json
+- [ ] help_system.py updated with files section
+- [ ] CURRENT_PHASE updated
 - [ ] All tests pass: py -3 -m unittest discover -s tests
 - [ ] Pushed to origin/main immediately
 
@@ -305,18 +635,19 @@ nixos/                               <- NEW DIRECTORY
 
 ## Handoff
 
-Commit: cycle7-phase1-complete
+Commit: cycle7-phase2-complete
 Push immediately to origin/main.
-Report: docs/implementation/CYCLE7_PHASE1_REPORT.md
-Stop. Do not begin Phase 7.2 without new CURRENT_PHASE.md.
+Report: docs/implementation/CYCLE7_PHASE2_REPORT.md
+Stop. Do not begin Phase 7.3 without new CURRENT_PHASE.md.
 
 ---
 
 *Written by: Claude (Command Center)*
 *Guardian approval: ZAERA*
 *Date: 2026-04-21*
-*INANNA gets a body.*
-*Not a process. A service.*
-*Not inside Windows. Inside NixOS.*
-*The ISO is already there.*
-*The configuration is the key.*
+*INANNA gains hands.*
+*She can read. She can list. She can search. She can write.*
+*Not blindly — with your word.*
+*Every file write is a proposal.*
+*Every file delete is impossible.*
+*That is the law.*
