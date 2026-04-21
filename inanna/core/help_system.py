@@ -41,6 +41,12 @@ HELP_COMMON = """𒀭 INANNA NYX — Available Commands
     "kill process 1234" (requires approval)
     "run echo hello" (requires approval)
 
+  PACKAGES (speak naturally)
+    "what packages do I have installed?"
+    "search for a text editor"
+    "install firefox" (requires approval)
+    "remove firefox" (requires approval)
+
   SESSION
     whoami                        Show who you are logged in as
     logout                        End your session
@@ -179,7 +185,8 @@ HELP_TOPICS = {
   ANALYST    Structured reasoning. Analysis, comparison, logic.
   OPERATOR   Tool execution. web_search, ping, scan_ports, resolve_host,
              read_file, list_dir, file_info, search_files, write_file,
-             list_processes, system_info, kill_process, run_command.
+             list_processes, system_info, kill_process, run_command,
+             search_packages, list_packages, install_package, remove_package.
   GUARDIAN   System observation. Health, audit, inspection.
   SENTINEL   Security Faculty. CVE analysis, threat reasoning.
              Uses qwen2.5-14b-instruct for deeper security reasoning.
@@ -193,7 +200,7 @@ HELP_TOPICS = {
   help [topic]       Show details on a specific topic
 
   Topics: my-profile, governance-trust, inanna-reflect,
-          faculties, tools, files, processes, memory, realms, departments""",
+          faculties, tools, files, processes, packages, memory, realms, departments""",
 
     "tools": """tools — Available tools (all require proposal approval)
 
@@ -207,6 +214,8 @@ HELP_TOPICS = {
     - web_search, ping, resolve_host, scan_ports: approval required
     - list_processes, system_info: no approval required
     - kill_process, run_command: approval required
+    - search_packages, list_packages: no approval required
+    - install_package, remove_package: approval required
 
   To trust a tool permanently: governance-trust [tool_name]
   To see registered tools: tool-registry""",
@@ -251,6 +260,24 @@ HELP_TOPICS = {
 
   Process observation is for readable system truth.
   Process action remains governed.""",
+
+    "packages": """packages РІР‚вЂќ Package management
+
+  INANNA can inspect installed software and, with approval,
+  ask the system package manager to install or remove packages.
+
+  List installed:   "what packages do I have installed?"
+  Search software:  "search for a text editor"
+  Install package:  "install firefox"
+  Remove package:   "remove firefox"
+
+  Governance:
+    - search_packages, list_packages: no approval required
+    - install_package: ALWAYS requires approval
+    - remove_package: ALWAYS requires approval
+
+  Package actions are routed through the detected system manager:
+  NixOS, apt, brew, or winget.""",
 
     "memory": """memory — How INANNA remembers
 

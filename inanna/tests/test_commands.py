@@ -16,6 +16,7 @@ from core.governance import GovernanceResult
 from core.memory import Memory
 from core.nammu import IntentClassifier
 from core.operator import OperatorFaculty, ToolResult
+from core.package_faculty import PackageFaculty, PackageRecord, PackageResult
 from core.profile import NotificationStore, ProfileManager
 from core.process_faculty import ProcessFaculty, ProcessRecord, ProcessResult, SystemInfo
 from core.process_monitor import ProcessMonitor
@@ -1233,6 +1234,119 @@ class CommandTests(unittest.TestCase):
         self.assertIn('operator > tool proposed: kill_process - "1234"', result)
         self.assertEqual(proposal.pending_count(), 1)
 
+    def test_package_search_executes_without_proposal(self) -> None:
+        (
+            session,
+            memory,
+            proposal,
+            state_report,
+            _engine,
+            analyst,
+            classifier,
+            routing_log,
+            startup_context,
+            config,
+        ) = self.make_runtime()
+        engine = FlakySummaryEngine()
+        package_faculty = PackageFaculty()
+        fake_result = PackageResult(
+            success=True,
+            operation="search",
+            query="text editor",
+            records=[
+                PackageRecord(
+                    name="micro",
+                    version="2.0.0",
+                    description="terminal editor",
+                    installed=False,
+                )
+            ],
+            package_manager="apt",
+        )
+
+        with patch.object(package_faculty, "search", return_value=fake_result):
+            result = handle_command(
+                "search for a text editor",
+                session,
+                memory,
+                proposal,
+                state_report,
+                engine,
+                analyst,
+                classifier,
+                routing_log,
+                startup_context,
+                config,
+                package_faculty=package_faculty,
+            )
+
+        self.assertIn("pkg [apt] > search: text editor", result)
+        self.assertIn("micro 2.0.0", result)
+        self.assertIn("model unavailable to summarize", result)
+        self.assertEqual(proposal.pending_count(), 0)
+
+    def test_install_package_request_creates_governed_tool_proposal(self) -> None:
+        (
+            session,
+            memory,
+            proposal,
+            state_report,
+            engine,
+            analyst,
+            classifier,
+            routing_log,
+            startup_context,
+            config,
+        ) = self.make_runtime()
+
+        result = handle_command(
+            "install firefox",
+            session,
+            memory,
+            proposal,
+            state_report,
+            engine,
+            analyst,
+            classifier,
+            routing_log,
+            startup_context,
+            config,
+        )
+
+        self.assertIn('operator > tool proposed: install_package - "firefox"', result)
+        self.assertEqual(proposal.pending_count(), 1)
+
+    def test_remove_package_request_creates_governed_tool_proposal(self) -> None:
+        (
+            session,
+            memory,
+            proposal,
+            state_report,
+            engine,
+            analyst,
+            classifier,
+            routing_log,
+            startup_context,
+            config,
+        ) = self.make_runtime()
+
+        result = handle_command(
+            "remove firefox",
+            session,
+            memory,
+            proposal,
+            state_report,
+            engine,
+            analyst,
+            classifier,
+            routing_log,
+            startup_context,
+            config,
+        )
+
+        self.assertIn('operator > tool proposed: remove_package - "firefox"', result)
+        self.assertEqual(proposal.pending_count(), 1)
+
     def test_crown_response_with_reflect_tag_creates_reflection_proposal(self) -> None:
         (
             session,
@@ -1508,7 +1622,7 @@ class CommandTests(unittest.TestCase):
             config,
         )
 
-        self.assertIn("tool-registry > Registered tools (13 total):", result)
+        self.assertIn("tool-registry > Registered tools (17 total):", result)
         self.assertIn("FILESYSTEM", result)
         self.assertIn("Read File [enabled]", result)
         self.assertIn("List Directory [enabled]", result)
@@ -1520,6 +1634,11 @@ class CommandTests(unittest.TestCase):
         self.assertIn("System Info [enabled]", result)
         self.assertIn("Kill Process [enabled]", result)
         self.assertIn("Run Command [enabled]", result)
+        self.assertIn("PACKAGE", result)
+        self.assertIn("Search Packages [enabled]", result)
+        self.assertIn("List Packages [enabled]", result)
+        self.assertIn("Install Package [enabled]", result)
+        self.assertIn("Remove Package [enabled]", result)
         self.assertIn("INFORMATION", result)
         self.assertIn("Web Search [enabled]", result)
         self.assertIn("Privilege: converse", result)

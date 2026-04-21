@@ -147,6 +147,20 @@
       "disk space",
       "how is the system",
       "performance"
+    ],
+    "packages": [
+      "install",
+      "uninstall",
+      "remove package",
+      "search package",
+      "list packages",
+      "what is installed",
+      "package manager",
+      "nix-env",
+      "apt",
+      "brew",
+      "winget",
+      "software"
     ]
   }
 }

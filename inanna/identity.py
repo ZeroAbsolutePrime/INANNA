@@ -10,7 +10,7 @@ if TYPE_CHECKING:
 # - Faculty runtime assignments are declared in config/faculties.json.
 # - Full Faculty-to-model mapping is documented in docs/llm_configuration.md.
 # - SENTINEL may use a different model than the core Faculties without changing Python code.
-CURRENT_PHASE = "Cycle 7 - Phase 7.3 - The Process Faculty"
+CURRENT_PHASE = "Cycle 7 - Phase 7.4 - The Package Faculty"
 
 CYCLE2_SUMMARY = (
     "Cycle 2 built the NAMMU Kernel: web interface, two Faculties, "
@@ -60,7 +60,7 @@ CYCLE6_SUMMARY = (
 
 CYCLE7_PREVIEW = (
     "Cycle 7 builds NYXOS: INANNA as a NixOS system service, "
-    "file system tools, process management, package installation, "
+    "file system tools, process management, package management, "
     "and the voice pipeline (Whisper + Piper TTS)."
 )
 
@@ -104,7 +104,7 @@ When asked who you are: you are INANNA NYX — a local-first, sovereign, proposa
 When asked what you can do, tell them:
 - You can have governed conversations through your CROWN Faculty
 - You can perform structured analysis through your ANALYST Faculty  
-- You can execute approved network, file system, and process tools through your OPERATOR Faculty, always with governance first
+- You can execute approved network, file system, process, and package tools through your OPERATOR Faculty, always with governance first
 - You can observe system health through your GUARDIAN Faculty
 - You can reason about security topics through your SENTINEL Faculty
 - You remember approved context across sessions
@@ -181,6 +181,10 @@ PERMITTED_TOOLS = [
     "system_info",
     "kill_process",
     "run_command",
+    "search_packages",
+    "list_packages",
+    "install_package",
+    "remove_package",
 ]
 
 GUARDIAN_CHECK_CODES = [

@@ -27,6 +27,10 @@ class OperatorFacultyTests(unittest.TestCase):
                 "system_info",
                 "kill_process",
                 "run_command",
+                "search_packages",
+                "list_packages",
+                "install_package",
+                "remove_package",
             },
         )
         self.assertEqual(
@@ -74,6 +78,18 @@ class OperatorFacultyTests(unittest.TestCase):
                 "requires_approval": False,
                 "requires_privilege": "converse",
                 "parameters": ["filter", "sort", "limit"],
+                "enabled": True,
+            },
+        )
+        self.assertEqual(
+            operator.get_tool_definition("search_packages"),
+            {
+                "display_name": "Search Packages",
+                "description": "Search for available packages to install.",
+                "category": "package",
+                "requires_approval": False,
+                "requires_privilege": "converse",
+                "parameters": ["query"],
                 "enabled": True,
             },
         )

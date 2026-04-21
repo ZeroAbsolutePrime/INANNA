@@ -148,6 +148,50 @@
         "timeout"
       ],
       "enabled": true
+    },
+    "search_packages": {
+      "display_name": "Search Packages",
+      "description": "Search for available packages to install.",
+      "category": "package",
+      "requires_approval": false,
+      "requires_privilege": "converse",
+      "parameters": [
+        "query"
+      ],
+      "enabled": true
+    },
+    "list_packages": {
+      "display_name": "List Packages",
+      "description": "List installed packages, optionally filtered by name.",
+      "category": "package",
+      "requires_approval": false,
+      "requires_privilege": "converse",
+      "parameters": [
+        "filter"
+      ],
+      "enabled": true
+    },
+    "install_package": {
+      "display_name": "Install Package",
+      "description": "Install a package using the system package manager.",
+      "category": "package",
+      "requires_approval": true,
+      "requires_privilege": "converse",
+      "parameters": [
+        "package"
+      ],
+      "enabled": true
+    },
+    "remove_package": {
+      "display_name": "Remove Package",
+      "description": "Remove an installed package.",
+      "category": "package",
+      "requires_approval": true,
+      "requires_privilege": "converse",
+      "parameters": [
+        "package"
+      ],
+      "enabled": true
     }
   }
 }

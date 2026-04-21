@@ -29,6 +29,11 @@ from core.nammu_memory import (
 )
 from core.orchestration import OrchestrationEngine, OrchestrationPlan
 from core.operator import OperatorFaculty, ToolResult
+from core.package_faculty import (
+    PackageFaculty,
+    PackageRecord as FacultyPackageRecord,
+    PackageResult as FacultyPackageResult,
+)
 from core.profile import (
     CommunicationObserver,
     NotificationStore,
@@ -248,6 +253,12 @@ PROCESS_TOOL_NAMES = {
     "kill_process",
     "run_command",
 }
+PACKAGE_TOOL_NAMES = {
+    "search_packages",
+    "list_packages",
+    "install_package",
+    "remove_package",
+}
 PROCESS_HINT_FALLBACKS = (
     "process",
     "processes",
@@ -264,6 +275,36 @@ PROCESS_HINT_FALLBACKS = (
     "disk space",
     "how is the system",
     "performance",
+)
+PACKAGE_HINT_FALLBACKS = (
+    "install",
+    "uninstall",
+    "remove package",
+    "search package",
+    "list packages",
+    "what is installed",
+    "package manager",
+    "nix-env",
+    "apt",
+    "brew",
+    "winget",
+    "software",
+)
+PACKAGE_SEARCH_TERMS = (
+    "app",
+    "application",
+    "browser",
+    "client",
+    "compiler",
+    "editor",
+    "ide",
+    "package",
+    "packages",
+    "player",
+    "software",
+    "terminal",
+    "tool",
+    "tools",
 )
 
 
@@ -308,6 +349,25 @@ def load_process_domain_hints(
 
     cleaned = [str(item).strip().lower() for item in hints if str(item).strip()]
     return cleaned or list(PROCESS_HINT_FALLBACKS)
+
+
+def load_package_domain_hints(
+    signals_path: Path = FILESYSTEM_SIGNAL_PATH,
+) -> list[str]:
+    try:
+        payload = json.loads(signals_path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return list(PACKAGE_HINT_FALLBACKS)
+
+    domain_hints = payload.get("domain_hints", {})
+    if not isinstance(domain_hints, dict):
+        return list(PACKAGE_HINT_FALLBACKS)
+    hints = domain_hints.get("packages", [])
+    if not isinstance(hints, list):
+        return list(PACKAGE_HINT_FALLBACKS)
+
+    cleaned = [str(item).strip().lower() for item in hints if str(item).strip()]
+    return cleaned or list(PACKAGE_HINT_FALLBACKS)
 
 
 def normalize_request_fragment(value: str) -> str:
@@ -371,6 +431,10 @@ def build_tool_request_query(tool_name: str, params: dict[str, Any]) -> str:
         return str(params.get("pid", "")).strip()
     if tool_name == "run_command":
         return str(params.get("command", "")).strip()
+    if tool_name == "list_packages":
+        return str(params.get("filter", "")).strip() or "installed"
+    if tool_name in {"search_packages", "install_package", "remove_package"}:
+        return str(params.get("package", "") or params.get("query", "")).strip()
     if tool_name in FILESYSTEM_TOOL_NAMES:
         return str(params.get("path", "")).strip()
     return str(params.get("query", "")).strip()
@@ -651,6 +715,119 @@ def detect_process_tool_action(
     return {
         **request,
         "requires_proposal": process_request_requires_proposal(request),
+    }
+
+
+def extract_package_tool_request(
+    text: str,
+    hints: list[str] | None = None,
+) -> dict[str, Any] | None:
+    normalized = str(text or "").strip()
+    lowered = normalized.lower()
+    active_hints = hints or load_package_domain_hints()
+    hint_match = any(hint in lowered for hint in active_hints)
+    search_term_match = any(term in lowered for term in PACKAGE_SEARCH_TERMS)
+
+    if not hint_match and not search_term_match and not re.match(
+        r"^(?:install|remove|uninstall|search|find|list|show|what packages|what software)\b",
+        lowered,
+    ):
+        return None
+
+    install_match = re.match(
+        r"^(?:install|add)(?:\s+package)?\s+(?P<package>.+)$",
+        normalized,
+        flags=re.IGNORECASE,
+    )
+    if install_match:
+        params = {"package": normalize_request_fragment(install_match.group("package"))}
+        return {
+            "tool": "install_package",
+            "params": params,
+            "query": build_tool_request_query("install_package", params),
+            "reason": "Package installation requires governed tool use.",
+        }
+
+    remove_match = re.match(
+        r"^(?:remove|uninstall)(?:\s+package)?\s+(?P<package>.+)$",
+        normalized,
+        flags=re.IGNORECASE,
+    )
+    if remove_match:
+        params = {"package": normalize_request_fragment(remove_match.group("package"))}
+        return {
+            "tool": "remove_package",
+            "params": params,
+            "query": build_tool_request_query("remove_package", params),
+            "reason": "Package removal requires governed tool use.",
+        }
+
+    if lowered in {
+        "what packages do i have installed",
+        "what is installed",
+        "what software is installed",
+        "list packages",
+        "show packages",
+        "show me packages",
+    }:
+        params = {"filter": ""}
+        return {
+            "tool": "list_packages",
+            "params": params,
+            "query": build_tool_request_query("list_packages", params),
+            "reason": "Installed package inspection routed to OPERATOR tool use.",
+        }
+
+    list_match = re.match(
+        r"^(?:list|show)(?:\s+me)?(?:\s+the)?\s+(?:installed\s+)?packages(?:\s+(?P<filter>.+))?$",
+        normalized,
+        flags=re.IGNORECASE,
+    )
+    if list_match:
+        params = {"filter": normalize_request_fragment(list_match.group("filter") or "")}
+        return {
+            "tool": "list_packages",
+            "params": params,
+            "query": build_tool_request_query("list_packages", params),
+            "reason": "Installed package inspection routed to OPERATOR tool use.",
+        }
+
+    search_match = re.match(
+        r"^(?:search(?:\s+for)?|find)(?:\s+(?:a|an|package|packages|software|app|application))?\s+(?P<query>.+)$",
+        normalized,
+        flags=re.IGNORECASE,
+    )
+    if search_match:
+        query = normalize_request_fragment(search_match.group("query"))
+        query_lower = query.lower()
+        if hint_match or any(term in query_lower for term in PACKAGE_SEARCH_TERMS):
+            params = {"query": query, "package": query}
+            return {
+                "tool": "search_packages",
+                "params": params,
+                "query": build_tool_request_query("search_packages", params),
+                "reason": "Package search routed to OPERATOR tool use.",
+            }
+
+    return None
+
+
+def package_request_requires_proposal(package_request: dict[str, Any]) -> bool:
+    tool_name = str(package_request.get("tool", "")).strip().lower()
+    return tool_name in {"install_package", "remove_package"}
+
+
+def detect_package_tool_action(
+    text: str,
+    package_faculty: PackageFaculty | None = None,
+) -> dict[str, Any] | None:
+    del package_faculty
+    request = extract_package_tool_request(text)
+    if request is None:
+        return None
+    return {
+        **request,
+        "requires_proposal": package_request_requires_proposal(request),
     }
 
 
@@ -2951,6 +3128,15 @@ def serialize_process_record(record: FacultyProcessRecord) -> dict[str, object]:
     }
 
 
+def serialize_package_record(record: FacultyPackageRecord) -> dict[str, object]:
+    return {
+        "name": record.name,
+        "version": record.version,
+        "description": record.description,
+        "installed": record.installed,
+    }
+
+
 def serialize_system_info(info: FacultySystemInfo) -> dict[str, object]:
     return {
         "platform": info.platform,
@@ -3022,6 +3208,28 @@ def build_process_tool_result(
     )
 
 
+def build_package_tool_result(
+    tool_name: str,
+    package_result: FacultyPackageResult,
+    package_faculty: PackageFaculty,
+) -> ToolResult:
+    data: dict[str, Any] = {
+        "formatted": package_faculty.format_result(package_result),
+        "operation": package_result.operation,
+        "output": package_result.output,
+        "package_manager": package_result.package_manager,
+    }
+    if package_result.records:
+        data["records"] = [serialize_package_record(record) for record in package_result.records]
+    return ToolResult(
+        tool=tool_name,
+        query=package_result.query,
+        success=package_result.success,
+        data=data,
+        error=str(package_result.error or ""),
+    )
+
+
 def run_filesystem_tool(
     filesystem_faculty: FileSystemFaculty,
     tool_name: str,
@@ -3084,17 +3292,44 @@ def run_process_tool(
     return build_process_tool_result(tool_name, result, process_faculty)
 
 
+def run_package_tool(
+    package_faculty: PackageFaculty,
+    tool_name: str,
+    params: dict[str, Any],
+) -> ToolResult:
+    if tool_name == "search_packages":
+        result = package_faculty.search(str(params.get("query", "") or params.get("package", "")))
+    elif tool_name == "list_packages":
+        result = package_faculty.list_installed(str(params.get("filter", "")))
+    elif tool_name == "install_package":
+        result = package_faculty.install(str(params.get("package", "") or params.get("query", "")))
+    elif tool_name == "remove_package":
+        result = package_faculty.remove(str(params.get("package", "") or params.get("query", "")))
+    else:
+        result = FacultyPackageResult(
+            success=False,
+            operation=tool_name,
+            query=str(params.get("query", "") or params.get("package", "") or params.get("filter", "")),
+            error=f"Unknown package tool: {tool_name}",
+            package_manager=package_faculty.pm,
+        )
+    return build_package_tool_result(tool_name, result, package_faculty)
+
+
 def execute_tool_request(
     tool_name: str,
     params: dict[str, Any],
     operator: OperatorFaculty,
     filesystem_faculty: FileSystemFaculty | None = None,
     process_faculty: ProcessFaculty | None = None,
+    package_faculty: PackageFaculty | None = None,
 ) -> ToolResult:
     if tool_name in FILESYSTEM_TOOL_NAMES:
         return run_filesystem_tool(filesystem_faculty or FileSystemFaculty(), tool_name, params)
     if tool_name in PROCESS_TOOL_NAMES:
         return run_process_tool(process_faculty or ProcessFaculty(), tool_name, params)
+    if tool_name in PACKAGE_TOOL_NAMES:
+        return run_package_tool(package_faculty or PackageFaculty(), tool_name, params)
     return operator.execute(tool_name, params)
 
 
@@ -3232,7 +3467,59 @@ def build_process_context_lines(result: ToolResult) -> list[str]:
     ]
 
 
+def build_package_context_lines(result: ToolResult) -> list[str]:
+    package_manager = str(result.data.get("package_manager", "") or "unknown")
+    if not result.success:
+        return [
+            f"tool result ({result.tool}) package_manager: {package_manager}",
+            f"query: {result.query}",
+            f"error: {result.error or 'unknown package error'}",
+        ]
+
+    if result.tool in {"search_packages", "list_packages"}:
+        records = list(result.data.get("records", []))
+        preview = []
+        for item in records[:10]:
+            if isinstance(item, dict):
+                fragment = str(item.get("name", "?"))
+                version = str(item.get("version", "")).strip()
+                if version:
+                    fragment += f" {version}"
+                preview.append(fragment)
+        lines = [
+            f"tool result ({result.tool}) package_manager: {package_manager}",
+            f"query: {result.query}",
+            f"count: {len(records)}",
+        ]
+        if preview:
+            lines.append("package_preview: " + "; ".join(preview))
+        elif result.data.get("output"):
+            lines.append(f"output_excerpt: {str(result.data.get('output', ''))[:1000]}")
+        return lines
+
+    if result.tool in {"install_package", "remove_package"}:
+        lines = [
+            f"tool result ({result.tool}) package_manager: {package_manager}",
+            f"query: {result.query}",
+        ]
+        output = str(result.data.get("output", "")).strip()
+        if output:
+            lines.append(f"output_excerpt: {output[:1000]}")
+        return lines
+
+    return [
+        f"tool result ({result.tool}) query: {result.query}",
+        str(result.data.get("formatted", "")),
+    ]
+
+
 def build_tool_result_text(result: ToolResult) -> str:
+    if result.tool in PACKAGE_TOOL_NAMES:
+        return str(
+            result.data.get("formatted")
+            or f"pkg > error: {result.error or 'Unknown package error.'}"
+        )
+
     if result.tool in PROCESS_TOOL_NAMES:
         return str(
             result.data.get("formatted")
@@ -3303,6 +3590,9 @@ def build_tool_result_text(result: ToolResult) -> str:
 
 
 def build_tool_context_lines(result: ToolResult) -> list[str]:
+    if result.tool in PACKAGE_TOOL_NAMES:
+        return build_package_context_lines(result)
+
     if result.tool in PROCESS_TOOL_NAMES:
         return build_process_context_lines(result)
 
@@ -3506,6 +3796,35 @@ def build_process_audit_entry(result: ToolResult) -> dict[str, object] | None:
     return details
 
 
+def build_package_audit_entry(result: ToolResult) -> dict[str, object] | None:
+    if result.tool not in PACKAGE_TOOL_NAMES:
+        return None
+
+    query = str(result.query).strip()
+    package_manager = str(result.data.get("package_manager", "") or "unknown")
+    result_text = result.error or "unknown"
+    details: dict[str, object] = {
+        "tool": result.tool,
+        "query": query,
+        "package_manager": package_manager,
+    }
+
+    if not result.success:
+        result_text = result.error or "failed"
+    elif result.tool in {"search_packages", "list_packages"}:
+        records = list(result.data.get("records", []))
+        result_text = f"{len(records)} packages"
+        details["count"] = len(records)
+    elif result.tool == "install_package":
+        result_text = f"installed via {package_manager}"
+    elif result.tool == "remove_package":
+        result_text = f"removed via {package_manager}"
+
+    details["result"] = result_text
+    details["summary"] = f"{result.tool} {query} -> {result_text}"
+    return details
+
+
 def build_tool_registry_report(payload: dict[str, object]) -> str:
     tools = list(payload.get("tools", []))
     total = int(payload.get("total", len(tools)))
@@ -3624,6 +3943,7 @@ def complete_tool_resolution(
     faculty_monitor: FacultyMonitor | None = None,
     filesystem_faculty: FileSystemFaculty | None = None,
     process_faculty: ProcessFaculty | None = None,
+    package_faculty: PackageFaculty | None = None,
     session_audit: list[dict[str, object]] | None = None,
     active_realm_name: str = "",
     conversation_state: dict[str, int] | None = None,
@@ -3650,6 +3970,7 @@ def complete_tool_resolution(
             operator,
             filesystem_faculty=filesystem_faculty,
             process_faculty=process_faculty,
+            package_faculty=package_faculty,
         )
         if faculty_monitor is not None:
             faculty_monitor.record_call("operator", (time.monotonic() - t0) * 1000, result.success)
@@ -3657,6 +3978,7 @@ def complete_tool_resolution(
             build_network_audit_entry(result)
             or build_filesystem_audit_entry(result)
             or build_process_audit_entry(result)
+            or build_package_audit_entry(result)
         )
         if audit_entry is not None:
             append_audit_event(
@@ -3795,6 +4117,7 @@ def handle_command(
     operator: OperatorFaculty | None = None,
     filesystem_faculty: FileSystemFaculty | None = None,
     process_faculty: ProcessFaculty | None = None,
+    package_faculty: PackageFaculty | None = None,
     guardian: GuardianFaculty | None = None,
     guardian_metrics: dict[str, int] | None = None,
     nammu_dir: Path | None = None,
@@ -3816,6 +4139,7 @@ def handle_command(
     guardian_metrics = ensure_guardian_metrics(guardian_metrics)
     filesystem_faculty = filesystem_faculty or FileSystemFaculty()
     process_faculty = process_faculty or ProcessFaculty()
+    package_faculty = package_faculty or PackageFaculty()
     current_user = session_state.get("active_user") if session_state else None
     original_user = session_state.get("original_user") if session_state else None
     guardian_user = session_state.get("guardian_user") if session_state else None
@@ -4857,6 +5181,7 @@ def handle_command(
                 faculty_monitor=faculty_monitor,
                 filesystem_faculty=filesystem_faculty,
                 process_faculty=process_faculty,
+                package_faculty=package_faculty,
                 session_audit=session_audit,
                 active_realm_name=active_realm_name,
                 conversation_state=conversation_state,
@@ -5114,6 +5439,7 @@ def handle_command(
             faculty_monitor=faculty_monitor,
             filesystem_faculty=filesystem_faculty,
             process_faculty=process_faculty,
+            package_faculty=package_faculty,
             session_audit=session_audit,
             active_realm_name=active_realm_name,
             conversation_state=conversation_state,
@@ -5175,6 +5501,69 @@ def handle_command(
             faculty_monitor=faculty_monitor,
             filesystem_faculty=filesystem_faculty,
             process_faculty=process_faculty,
+            package_faculty=package_faculty,
+            session_audit=session_audit,
+            active_realm_name=active_realm_name,
+            conversation_state=conversation_state,
+            reflective_memory=reflective_memory,
+        )
+
+    package_action = detect_package_tool_action(
+        normalized,
+        package_faculty,
+    )
+    if package_action is not None:
+        append_routing_decision(
+            routing_log,
+            session,
+            "operator",
+            normalized,
+            nammu_dir=nammu_dir,
+        )
+        append_governance_event(
+            resolve_nammu_dir(session, nammu_dir),
+            session.session_id,
+            "tool",
+            str(package_action.get("reason", "Governed package tool use.")),
+            normalized[:60],
+        )
+        if bool(package_action.get("requires_proposal", False)):
+            created = create_tool_use_proposal(
+                proposal=proposal,
+                session=session,
+                user_input=normalized,
+                tool=str(package_action["tool"]),
+                query=str(package_action["query"]),
+                params=dict(package_action.get("params", {})),
+            )
+            return (
+                f'operator > tool proposed: {package_action["tool"]} - "{package_action["query"]}"\n'
+                'Type "approve" to execute or "reject" to cancel.\n'
+                f"{created['tool_line']}"
+            )
+        return complete_tool_resolution(
+            {
+                "payload": {
+                    "original_input": normalized,
+                    "query": str(package_action["query"]),
+                    "tool": str(package_action["tool"]),
+                    "params": dict(package_action.get("params", {})),
+                }
+            },
+            "approve",
+            session,
+            proposal,
+            memory,
+            engine,
+            startup_context,
+            operator or OperatorFaculty(),
+            guardian_metrics,
+                active_token=active_token,
+                user_log=user_log,
+                faculty_monitor=faculty_monitor,
+                filesystem_faculty=filesystem_faculty,
+                process_faculty=process_faculty,
+                package_faculty=package_faculty,
             session_audit=session_audit,
             active_realm_name=active_realm_name,
             conversation_state=conversation_state,
@@ -5268,6 +5657,7 @@ def handle_command(
                 faculty_monitor=faculty_monitor,
                 filesystem_faculty=filesystem_faculty,
                 process_faculty=process_faculty,
+                package_faculty=package_faculty,
                 session_audit=session_audit,
                 active_realm_name=active_realm_name,
                 conversation_state=conversation_state,
@@ -5449,6 +5839,7 @@ def main() -> None:
     operator = OperatorFaculty()
     filesystem_faculty = FileSystemFaculty()
     process_faculty = ProcessFaculty()
+    package_faculty = PackageFaculty()
     governance = GovernanceLayer(engine=engine)
     sync_profile_grounding(engine, profile_manager, guardian_user, guardian_token, reflective_memory)
     classifier = IntentClassifier(
@@ -5559,6 +5950,7 @@ def main() -> None:
             operator=operator,
             filesystem_faculty=filesystem_faculty,
             process_faculty=process_faculty,
+            package_faculty=package_faculty,
             guardian=guardian,
             guardian_metrics=guardian_metrics,
             nammu_dir=NAMMU_DIR,

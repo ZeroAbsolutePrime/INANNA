@@ -28,6 +28,7 @@ from core.nammu_memory import (
 )
 from core.orchestration import OrchestrationEngine
 from core.operator import OperatorFaculty
+from core.package_faculty import PackageFaculty
 from core.profile import NotificationStore, ProfileManager
 from core.process_faculty import ProcessFaculty
 from core.process_monitor import ProcessMonitor
@@ -59,6 +60,7 @@ from main import (
     build_body_report,
     build_body_summary,
     build_faculty_registry_payload,
+    build_package_audit_entry,
     build_filesystem_audit_entry,
     build_process_audit_entry,
     build_grounding_prefix,
@@ -99,6 +101,7 @@ from main import (
     complete_orchestration_resolution as complete_orchestration_backend_resolution,
     default_profile_field_value,
     detect_filesystem_tool_action,
+    detect_package_tool_action,
     detect_process_tool_action,
     deliver_pending_notifications,
     execute_tool_request,
@@ -273,6 +276,7 @@ class InterfaceServer:
         self.operator = OperatorFaculty()
         self.filesystem_faculty = FileSystemFaculty()
         self.process_faculty = ProcessFaculty()
+        self.package_faculty = PackageFaculty()
         self.process_monitor = ProcessMonitor(self.server_start_time)
         self.governance = GovernanceLayer(engine=self.engine)
         self.classifier = IntentClassifier(
@@ -689,6 +693,52 @@ class InterfaceServer:
                         "query": str(process_action["query"]),
                         "tool": str(process_action["tool"]),
                         "params": dict(process_action.get("params", {})),
+                    }
+                },
+                "approve",
+            )
+            responses = list(outcome["operator_payloads"])
+            if outcome["assistant_text"]:
+                responses.append({"type": "assistant", "text": outcome["assistant_text"]})
+            return {"responses": responses}
+
+        package_action = detect_package_tool_action(
+            text,
+            self.package_faculty,
+        )
+        if package_action is not None:
+            self._record_routing_decision("operator", text)
+            self._record_governance_decision(
+                "tool",
+                str(package_action.get("reason", "Governed package tool use.")),
+                text,
+            )
+            if bool(package_action.get("requires_proposal", False)):
+                created = create_tool_use_proposal(
+                    proposal=self.proposal,
+                    session=self.session,
+                    user_input=text,
+                    tool=str(package_action["tool"]),
+                    query=str(package_action["query"]),
+                    params=dict(package_action.get("params", {})),
+                )
+                return {
+                    "response": {
+                        "type": "operator",
+                        "text": (
+                            f'tool proposed: {package_action["tool"]} - '
+                            f'"{package_action["query"]}"'
+                        ),
+                    },
+                    "proposal": {**created, "line": created["tool_line"]},
+                }
+            outcome = self.complete_tool_resolution(
+                {
+                    "payload": {
+                        "original_input": text,
+                        "query": str(package_action["query"]),
+                        "tool": str(package_action["tool"]),
+                        "params": dict(package_action.get("params", {})),
                     }
                 },
                 "approve",
@@ -2635,6 +2685,7 @@ class InterfaceServer:
                 self.operator,
                 filesystem_faculty=self.filesystem_faculty,
                 process_faculty=self.process_faculty,
+                package_faculty=self.package_faculty,
             )
             self.faculty_monitor.record_call(
                 "operator",
@@ -2645,6 +2696,7 @@ class InterfaceServer:
                 build_network_audit_entry(result)
                 or build_filesystem_audit_entry(result)
                 or build_process_audit_entry(result)
+                or build_package_audit_entry(result)
             )
             if audit_entry is not None:
                 append_audit_event(
