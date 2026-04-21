@@ -135,7 +135,7 @@ class IdentityTests(unittest.TestCase):
         self.assertEqual(CURRENT_PHASE, phase_banner())
 
     def test_current_phase_names_package_faculty(self) -> None:
-        self.assertIn("Package Faculty", CURRENT_PHASE)
+        self.assertIn("Voice Listener", CURRENT_PHASE)
 
     def test_cycle2_summary_describes_completed_kernel(self) -> None:
         self.assertIn("NAMMU Kernel", CYCLE2_SUMMARY)

@@ -3,3 +3,9 @@ aiohttp>=3.9
 requests>=2.31
 python-dotenv>=1.0
 psutil>=5.9
+
+# Voice Pipeline (Phase 7.5+ — install separately)
+# pip install faster-whisper sounddevice torch
+# faster-whisper>=1.0.0
+# sounddevice>=0.4.6
+# torch>=2.0.0
