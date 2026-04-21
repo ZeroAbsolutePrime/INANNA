@@ -359,3 +359,30 @@ convenience.
 *Date: 2026-04-19*
 *Grounded in: Phases 1-9 of INANNA NYX implementation*
 *This document grows. It does not shrink.*
+
+
+---
+
+## Rule 7 — Know Your Role
+
+Before beginning any phase, the implementing agent (Codex or any future
+agent) must identify which Agent Role it is operating in:
+
+  ARCHITECT — design and specification only, no production code
+  BUILDER   — implement exactly what the phase document specifies
+  TESTER    — run tests, find failures, report honestly
+  VERIFIER  — confirm completion, write report, final push
+
+Each role has strict permitted and forbidden actions defined in:
+  docs/agent_role_system.md
+
+Operating outside your declared role without Command Center authorization
+is a protocol violation. The most common failure mode in Cycles 5-6 was
+Codex operating in BUILDER mode when it should have been in VERIFIER mode
+— adding code during what should have been a verification-only phase.
+
+Phase documents must now include an "Agent Roles for This Phase" section
+that declares which roles are active and what each role is permitted to do.
+
+A phase with BUILDER output but no TESTER or VERIFIER output is incomplete.
+
