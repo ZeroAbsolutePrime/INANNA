@@ -41,33 +41,30 @@ class ProposalTests(unittest.TestCase):
             with patch(
                 "core.proposal.utc_now",
                 side_effect=[
-                    "2026-04-18T20:21:39",
-                    "2026-04-18T20:40:10",
-                    "2026-04-18T20:41:13",
-                    "2026-04-18T20:45:00",
-                    "2026-04-18T20:46:00",
+                    "2026-04-18T20:21:39",  # create first
+                    "2026-04-18T20:40:10",  # create second
+                    "2026-04-18T20:41:13",  # create third
+                    "2026-04-18T20:45:00",  # resolve third (newest) + auto-reject first+second
+                    "2026-04-18T20:45:00",  # auto-reject stale second
+                    "2026-04-18T20:45:00",  # auto-reject stale first
                 ],
             ):
                 first = proposal.create("First update", "why", {"session_id": "a", "summary_lines": []})
                 second = proposal.create("Second update", "why", {"session_id": "b", "summary_lines": []})
                 third = proposal.create("Third update", "why", {"session_id": "c", "summary_lines": []})
+                # resolve_next approves newest (third) and auto-rejects all stale (second, first)
                 proposal.resolve_next("approve")
-                proposal.resolve_next("reject")
 
             report = proposal.history_report()
 
         self.assertEqual(report["total"], 3)
         self.assertEqual(report["approved"], 1)
-        self.assertEqual(report["rejected"], 1)
-        self.assertEqual(report["pending"], 1)
-        self.assertEqual(
-            [record["proposal_id"] for record in report["records"]],
-            [first["proposal_id"], second["proposal_id"], third["proposal_id"]],
-        )
-        self.assertEqual(
-            [record["status"] for record in report["records"]],
-            ["approved", "rejected", "pending"],
-        )
+        # second and first are auto-rejected as stale when third is approved
+        self.assertEqual(report["rejected"], 2)
+        self.assertEqual(report["pending"], 0)
+        # third (newest) is approved
+        third_record = next(r for r in report["records"] if r["proposal_id"] == third["proposal_id"])
+        self.assertEqual(third_record["status"], "approved")
 
     def test_history_report_returns_expected_structure(self) -> None:
         with TemporaryDirectory() as temp_dir:

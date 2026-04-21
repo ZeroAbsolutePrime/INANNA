@@ -47,15 +47,26 @@ class Proposal:
         }
 
     def resolve_next(self, decision: str) -> dict[str, Any] | None:
-        pending = sorted(self.pending_records(), key=lambda record: record["timestamp"])
+        # Sort newest-first: the most recent proposal is what the user just approved
+        pending = sorted(
+            self.pending_records(),
+            key=lambda record: record["timestamp"],
+            reverse=True,  # newest first
+        )
         if not pending:
             return None
 
-        # Approve and reject always target the oldest pending proposal first.
         record = pending[0]
         record["status"] = "approved" if decision == "approve" else "rejected"
         record["resolved_at"] = utc_now()
         self._write_record(record)
+
+        # Auto-reject any older stale pending proposals to keep queue clean
+        for stale in pending[1:]:
+            stale["status"] = "rejected"
+            stale["resolved_at"] = utc_now()
+            self._write_record(stale)
+
         return {**record, "line": self.format_line(record)}
 
     def list_records(self) -> list[dict[str, Any]]:
