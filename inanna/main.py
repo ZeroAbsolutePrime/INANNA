@@ -724,19 +724,35 @@ def extract_package_tool_request(
 ) -> dict[str, Any] | None:
     normalized = str(text or "").strip()
     lowered = normalized.lower()
+
+    # Strip common INANNA prefixes so "INANNA, install X" works
+    prefix_stripped = re.sub(
+        r"^(?:inanna[,\s]+|hey inanna[,\s]+|please[,\s]+|can you[,\s]+)",
+        "",
+        lowered,
+        flags=re.IGNORECASE,
+    ).strip()
+    normalized_stripped = re.sub(
+        r"^(?:inanna[,\s]+|hey inanna[,\s]+|please[,\s]+|can you[,\s]+)",
+        "",
+        normalized,
+        flags=re.IGNORECASE,
+    ).strip()
+
     active_hints = hints or load_package_domain_hints()
     hint_match = any(hint in lowered for hint in active_hints)
     search_term_match = any(term in lowered for term in PACKAGE_SEARCH_TERMS)
 
     if not hint_match and not search_term_match and not re.match(
         r"^(?:install|remove|uninstall|search|find|list|show|what packages|what software)\b",
-        lowered,
+        prefix_stripped,
     ):
         return None
 
+    # install / add package
     install_match = re.match(
         r"^(?:install|add)(?:\s+package)?\s+(?P<package>.+)$",
-        normalized,
+        normalized_stripped,
         flags=re.IGNORECASE,
     )
     if install_match:
@@ -748,9 +764,10 @@ def extract_package_tool_request(
             "reason": "Package installation requires governed tool use.",
         }
 
+    # remove / uninstall package
     remove_match = re.match(
         r"^(?:remove|uninstall)(?:\s+package)?\s+(?P<package>.+)$",
-        normalized,
+        normalized_stripped,
         flags=re.IGNORECASE,
     )
     if remove_match:
@@ -762,7 +779,30 @@ def extract_package_tool_request(
             "reason": "Package removal requires governed tool use.",
         }
 
-    if lowered in {
+    # search for a package / software
+    search_pkg_match = re.match(
+        r"^(?:search|find|look for|search for)(?:\s+a)?(?:\s+package)?(?:\s+for)?\s+(?P<query>.+)$",
+        prefix_stripped,
+        flags=re.IGNORECASE,
+    )
+    if search_pkg_match:
+        query = search_pkg_match.group("query").strip()
+        # If query looks like software/app context, use search_packages
+        app_signals = [
+            "editor", "browser", "player", "viewer", "client", "tool",
+            "software", "program", "app", "application", "manager",
+            "notepad", "firefox", "chrome", "vlc", "gimp", "code",
+        ]
+        if any(sig in query.lower() for sig in app_signals):
+            params = {"query": query}
+            return {
+                "tool": "search_packages",
+                "params": params,
+                "query": build_tool_request_query("search_packages", params),
+                "reason": "Package search routed to OPERATOR tool use.",
+            }
+
+    if prefix_stripped in {
         "what packages do i have installed",
         "what is installed",
         "what software is installed",

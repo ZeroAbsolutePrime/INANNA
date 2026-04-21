@@ -2419,29 +2419,32 @@ class InterfaceServer:
             if not resolved:
                 await self.broadcast({"type": "system", "text": "No pending proposals."})
             else:
-                if resolved.get("payload", {}).get("action") == "tool_use":
-                    outcome = await asyncio.to_thread(
-                        self.complete_tool_resolution, resolved, command_name
-                    )
-                    for operator_payload in outcome["operator_payloads"]:
-                        await self.broadcast(operator_payload)
-                    if outcome["assistant_text"]:
-                        await self.broadcast({"type": "assistant", "text": outcome["assistant_text"]})
-                    if outcome.get("proposal"):
-                        await self.broadcast({"type": "system", "text": outcome["proposal"]["line"]})
-                elif resolved.get("payload", {}).get("action") == "orchestration":
-                    outcome = await asyncio.to_thread(
-                        self.complete_orchestration_resolution,
-                        resolved,
-                        command_name,
-                    )
-                    if outcome["response"] is not None:
-                        await self.broadcast(outcome["response"])
+                try:
+                    if resolved.get("payload", {}).get("action") == "tool_use":
+                        outcome = await asyncio.to_thread(
+                            self.complete_tool_resolution, resolved, command_name
+                        )
+                        for operator_payload in outcome["operator_payloads"]:
+                            await self.broadcast(operator_payload)
+                        if outcome["assistant_text"]:
+                            await self.broadcast({"type": "assistant", "text": outcome["assistant_text"]})
+                        if outcome.get("proposal"):
+                            await self.broadcast({"type": "system", "text": outcome["proposal"]["line"]})
+                    elif resolved.get("payload", {}).get("action") == "orchestration":
+                        outcome = await asyncio.to_thread(
+                            self.complete_orchestration_resolution,
+                            resolved,
+                            command_name,
+                        )
+                        if outcome["response"] is not None:
+                            await self.broadcast(outcome["response"])
+                        else:
+                            await self.broadcast({"type": "system", "text": outcome["display_text"]})
                     else:
-                        await self.broadcast({"type": "system", "text": outcome["display_text"]})
-                else:
-                    result = await asyncio.to_thread(self.apply_resolution, resolved)
-                    await self.broadcast({"type": "system", "text": result})
+                        result = await asyncio.to_thread(self.apply_resolution, resolved)
+                        await self.broadcast({"type": "system", "text": result})
+                except Exception as _approve_err:
+                    await self.broadcast({"type": "system", "text": f"proposal > error applying resolution: {_approve_err}"})
             await self.broadcast_state()
         elif command_name == "forget":
             mid = str(payload.get("memory_id", "")).strip()
