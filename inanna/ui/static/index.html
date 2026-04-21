@@ -1028,6 +1028,59 @@ html,body{
 
 /* Guardian alerts text */
 .gr-alerts { color: #cc6060; }
+
+/* ── SOFTWARE ACTION CARDS ── */
+.sw-cards { display: flex; flex-direction: column; gap: 6px; margin-top: 8px; }
+.sw-card {
+  display: flex; align-items: center; gap: 10px;
+  padding: 7px 10px;
+  border: 1px solid var(--dust);
+  border-left: 2px solid var(--gold2);
+  border-radius: 2px;
+  background: rgba(212,160,48,.03);
+  transition: background .15s;
+}
+.sw-card:hover { background: rgba(212,160,48,.07); }
+.sw-card.installed { border-left-color: var(--jade); }
+.sw-card.installed { background: rgba(90,170,112,.03); }
+.sw-card-name {
+  flex: 1; font-size: 11px; color: var(--cream);
+  font-family: var(--mono); letter-spacing: 1px;
+}
+.sw-card-version {
+  font-size: 9px; color: var(--dim); letter-spacing: 1px;
+  min-width: 60px;
+}
+.sw-card-badge {
+  font-size: 8px; letter-spacing: 2px; padding: 2px 6px;
+  border-radius: 1px;
+}
+.sw-card-badge.installed {
+  background: rgba(90,170,112,.15); color: var(--jade);
+  border: 1px solid rgba(90,170,112,.3);
+}
+.sw-card-badge.available {
+  background: rgba(212,160,48,.1); color: var(--gold3);
+  border: 1px solid rgba(212,160,48,.2);
+}
+.sw-card-btn {
+  font-size: 8px; letter-spacing: 2px; padding: 3px 8px;
+  background: transparent; cursor: pointer;
+  transition: all .15s; white-space: nowrap;
+  font-family: var(--mono);
+}
+.sw-card-btn.install {
+  border: 1px solid var(--gold2); color: var(--gold3);
+}
+.sw-card-btn.install:hover {
+  background: rgba(212,160,48,.12); color: var(--gold4);
+}
+.sw-card-btn.launch {
+  border: 1px solid var(--jade); color: var(--jade);
+}
+.sw-card-btn.launch:hover {
+  background: rgba(90,170,112,.12);
+}
 </style>
 </head>
 <body>
@@ -1496,7 +1549,8 @@ function addMessage(type,text,meta){
     row.innerHTML=`<div class="msg-bubble">⟁ ${esc(text)}</div>`;
   }else if(type==='operator'){
     row.className='msg-row operator';
-    row.innerHTML=`<div class="msg-label">operator</div><div class="msg-bubble">${esc(text)}</div>`;
+    let swCards = m.tool_result ? buildSoftwareCards(m.tool_result) : '';
+    row.innerHTML=`<div class="msg-label">operator</div><div class="msg-bubble">${esc(text)}${swCards}</div>`;
   }else if(type==='governance'){
     row.className='msg-row governance';
     row.innerHTML=`<div class="msg-label">blocked</div><div class="msg-bubble">${esc(text)}</div>`;
@@ -2098,6 +2152,68 @@ function renderSysStatus(sys) {
     }
   }
 }
+
+// ══════════════════════════════════
+//  SOFTWARE ACTION CARDS
+// ══════════════════════════════════
+
+function buildSoftwareCards(toolResult) {
+  // Parse operator tool_result payload for software entries
+  if (!toolResult) return '';
+  const tool = toolResult.tool || '';
+  const data = toolResult.data || {};
+  const records = data.records || [];
+  const output = data.output || data.formatted || '';
+
+  // For search/list results: build card for each result
+  if ((tool === 'search_packages' || tool === 'list_packages') && records.length > 0) {
+    let html = '<div class="sw-cards">';
+    for (const rec of records.slice(0, 10)) {
+      const name = rec.name || '';
+      const ver = rec.version || '';
+      const pkgId = rec.pkg_id || rec.name || '';
+      const isInstalled = rec.installed || false;
+      html += `<div class="sw-card ${isInstalled ? 'installed' : ''}">`;
+      html += `<span class="sw-card-name">${esc(name)}</span>`;
+      if (ver) html += `<span class="sw-card-version">${esc(ver)}</span>`;
+      if (isInstalled) {
+        html += `<span class="sw-card-badge installed">installed</span>`;
+        html += `<button class="sw-card-btn launch" onclick="sendSoftwareAction('launch','${esc(name)}')">[ launch ]</button>`;
+      } else {
+        html += `<span class="sw-card-badge available">available</span>`;
+        html += `<button class="sw-card-btn install" onclick="sendSoftwareAction('install','${esc(pkgId)}')">[ install ]</button>`;
+      }
+      html += '</div>';
+    }
+    html += '</div>';
+    return html;
+  }
+
+  // For already_installed result: show launch card
+  if (tool === 'install_package' && output && output.includes('already installed')) {
+    const nameMatch = output.match(/^([^(]+)/);
+    const appName = nameMatch ? nameMatch[1].trim() : 'app';
+    return `<div class="sw-cards"><div class="sw-card installed">
+      <span class="sw-card-name">${esc(appName)}</span>
+      <span class="sw-card-badge installed">already installed</span>
+      <button class="sw-card-btn launch" onclick="sendSoftwareAction('launch','${esc(appName)}')">[ launch ]</button>
+    </div></div>`;
+  }
+
+  return '';
+}
+
+function sendSoftwareAction(action, appName) {
+  if (!S.ws || S.ws.readyState !== 1) return;
+  const text = action === 'install'
+    ? `install ${appName}`
+    : `launch ${appName}`;
+  S.ws.send(JSON.stringify({type: 'input', text}));
+}
+
+// Hook into operator message rendering to append software cards
+const _origAddMsg = addMessage;
+// We patch at the operator rendering level
 </script>
 </body>
 </html>

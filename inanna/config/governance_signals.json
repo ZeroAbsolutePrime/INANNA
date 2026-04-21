@@ -167,7 +167,12 @@
       "winget",
       "apt install",
       "package manager",
-      "available software"
+      "available software",
+      "launch app",
+      "open app",
+      "start app",
+      "open software",
+      "run application"
     ],
     "web": [
       "search the web",

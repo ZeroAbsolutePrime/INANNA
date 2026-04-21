@@ -31,6 +31,7 @@ class OperatorFacultyTests(unittest.TestCase):
                 "list_packages",
                 "install_package",
                 "remove_package",
+                "launch_app",
             },
         )
         self.assertEqual(

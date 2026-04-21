@@ -29,6 +29,7 @@ from core.nammu_memory import (
 from core.orchestration import OrchestrationEngine
 from core.operator import OperatorFaculty
 from core.package_faculty import PackageFaculty
+from core.software_registry import SoftwareRegistry
 from core.profile import NotificationStore, ProfileManager
 from core.process_faculty import ProcessFaculty
 from core.process_monitor import ProcessMonitor
@@ -277,6 +278,7 @@ class InterfaceServer:
         self.filesystem_faculty = FileSystemFaculty()
         self.process_faculty = ProcessFaculty()
         self.package_faculty = PackageFaculty()
+        self.software_registry = SoftwareRegistry()
         self.process_monitor = ProcessMonitor(self.server_start_time)
         self.governance = GovernanceLayer(engine=self.engine)
         self.classifier = IntentClassifier(
@@ -713,6 +715,20 @@ class InterfaceServer:
                 str(package_action.get("reason", "Governed package tool use.")),
                 text,
             )
+            # Deduplication: if install requested but already installed → redirect to launch
+            if package_action.get("tool") == "install_package":
+                pkg_name = str(package_action.get("params", {}).get("package", "") or package_action.get("query", ""))
+                existing = self.software_registry.is_installed(pkg_name)
+                if existing:
+                    package_action = {
+                        "tool": "launch_app",
+                        "query": existing.name,
+                        "params": {"app": existing.name},
+                        "requires_proposal": True,
+                        "reason": f"{existing.name} is already installed. Proposing launch instead.",
+                        "already_installed": True,
+                        "installed_version": existing.version,
+                    }
             if bool(package_action.get("requires_proposal", False)):
                 created = create_tool_use_proposal(
                     proposal=self.proposal,
@@ -2689,6 +2705,7 @@ class InterfaceServer:
                 filesystem_faculty=self.filesystem_faculty,
                 process_faculty=self.process_faculty,
                 package_faculty=self.package_faculty,
+                software_registry=self.software_registry,
             )
             self.faculty_monitor.record_call(
                 "operator",

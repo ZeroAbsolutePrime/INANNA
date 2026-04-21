@@ -34,6 +34,7 @@ from core.package_faculty import (
     PackageRecord as FacultyPackageRecord,
     PackageResult as FacultyPackageResult,
 )
+from core.software_registry import SoftwareRegistry
 from core.profile import (
     CommunicationObserver,
     NotificationStore,
@@ -258,6 +259,7 @@ PACKAGE_TOOL_NAMES = {
     "list_packages",
     "install_package",
     "remove_package",
+    "launch_app",
 }
 PROCESS_HINT_FALLBACKS = (
     "process",
@@ -744,7 +746,7 @@ def extract_package_tool_request(
     search_term_match = any(term in lowered for term in PACKAGE_SEARCH_TERMS)
 
     if not hint_match and not search_term_match and not re.match(
-        r"^(?:install|remove|uninstall|search|find|list|show|what packages|what software)\b",
+        r"^(?:install|remove|uninstall|search|find|list|show|what packages|what software|what is installed|launch|open|start|run)\b",
         prefix_stripped,
     ):
         return None
@@ -849,12 +851,28 @@ def extract_package_tool_request(
                 "reason": "Package search routed to OPERATOR tool use.",
             }
 
+    # launch / open application
+    launch_match = re.match(
+        r"^(?:launch|open|start|run)(?:\s+(?:app|application|program|software))?\s+(?P<app>.+)$",
+        prefix_stripped,
+        flags=re.IGNORECASE,
+    )
+    if launch_match:
+        app = normalize_request_fragment(launch_match.group("app"))
+        params = {"app": app}
+        return {
+            "tool": "launch_app",
+            "params": params,
+            "query": app,
+            "reason": "Application launch routed to OPERATOR tool use.",
+        }
+
     return None
 
 
 def package_request_requires_proposal(package_request: dict[str, Any]) -> bool:
     tool_name = str(package_request.get("tool", "")).strip().lower()
-    return tool_name in {"install_package", "remove_package"}
+    return tool_name in {"install_package", "remove_package", "launch_app"}
 
 
 def detect_package_tool_action(
@@ -3336,15 +3354,50 @@ def run_package_tool(
     package_faculty: PackageFaculty,
     tool_name: str,
     params: dict[str, Any],
+    software_registry: SoftwareRegistry | None = None,
 ) -> ToolResult:
     if tool_name == "search_packages":
         result = package_faculty.search(str(params.get("query", "") or params.get("package", "")))
     elif tool_name == "list_packages":
         result = package_faculty.list_installed(str(params.get("filter", "")))
     elif tool_name == "install_package":
-        result = package_faculty.install(str(params.get("package", "") or params.get("query", "")))
+        pkg_name = str(params.get("package", "") or params.get("query", ""))
+        # Deduplication: check if already installed before proceeding
+        if software_registry is not None:
+            existing = software_registry.is_installed(pkg_name)
+            if existing:
+                # Return a special result indicating already installed
+                from core.package_faculty import PackageResult as FPR
+                already = FPR(
+                    success=True,
+                    operation="already_installed",
+                    query=pkg_name,
+                    output=f"{existing.name} (version {existing.version}) is already installed.",
+                    package_manager=package_faculty.pm,
+                )
+                return build_package_tool_result(tool_name, already, package_faculty)
+        result = package_faculty.install(pkg_name)
     elif tool_name == "remove_package":
         result = package_faculty.remove(str(params.get("package", "") or params.get("query", "")))
+    elif tool_name == "launch_app":
+        app_name = str(params.get("app", "") or params.get("query", "") or params.get("package", ""))
+        reg = software_registry or SoftwareRegistry()
+        launch_result = reg.launch(app_name)
+        # Build a ToolResult directly from LaunchResult
+        from core.package_faculty import PackageResult as FPR
+        pr = FPR(
+            success=launch_result.success,
+            operation="launch",
+            query=app_name,
+            output=(
+                f"Launched {launch_result.app_name}."
+                if launch_result.success
+                else f"Could not launch {app_name}: {launch_result.error}"
+            ),
+            package_manager="system",
+            error=launch_result.error,
+        )
+        return build_package_tool_result(tool_name, pr, package_faculty)
     else:
         result = FacultyPackageResult(
             success=False,
@@ -3363,13 +3416,19 @@ def execute_tool_request(
     filesystem_faculty: FileSystemFaculty | None = None,
     process_faculty: ProcessFaculty | None = None,
     package_faculty: PackageFaculty | None = None,
+    software_registry: SoftwareRegistry | None = None,
 ) -> ToolResult:
     if tool_name in FILESYSTEM_TOOL_NAMES:
         return run_filesystem_tool(filesystem_faculty or FileSystemFaculty(), tool_name, params)
     if tool_name in PROCESS_TOOL_NAMES:
         return run_process_tool(process_faculty or ProcessFaculty(), tool_name, params)
     if tool_name in PACKAGE_TOOL_NAMES:
-        return run_package_tool(package_faculty or PackageFaculty(), tool_name, params)
+        return run_package_tool(
+            package_faculty or PackageFaculty(),
+            tool_name,
+            params,
+            software_registry=software_registry,
+        )
     return operator.execute(tool_name, params)
 
 

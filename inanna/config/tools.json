@@ -192,6 +192,16 @@
         "package"
       ],
       "enabled": true
+    },
+    "launch_app": {
+      "display_name": "Launch Application",
+      "description": "Launch an installed application by name",
+      "category": "package",
+      "requires_approval": true,
+      "enabled": true,
+      "parameters": {
+        "app": "Application name (e.g. notepad++, firefox, krita)"
+      }
     }
   }
 }

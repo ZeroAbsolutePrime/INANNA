@@ -1622,7 +1622,7 @@ class CommandTests(unittest.TestCase):
             config,
         )
 
-        self.assertIn("tool-registry > Registered tools (17 total):", result)
+        self.assertIn("tool-registry > Registered tools (18 total):", result)
         self.assertIn("FILESYSTEM", result)
         self.assertIn("Read File [enabled]", result)
         self.assertIn("List Directory [enabled]", result)
@@ -1639,6 +1639,7 @@ class CommandTests(unittest.TestCase):
         self.assertIn("List Packages [enabled]", result)
         self.assertIn("Install Package [enabled]", result)
         self.assertIn("Remove Package [enabled]", result)
+        self.assertIn("Launch Application [enabled]", result)
         self.assertIn("INFORMATION", result)
         self.assertIn("Web Search [enabled]", result)
         self.assertIn("Privilege: converse", result)
