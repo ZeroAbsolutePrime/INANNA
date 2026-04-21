@@ -10,7 +10,7 @@ if TYPE_CHECKING:
 # - Faculty runtime assignments are declared in config/faculties.json.
 # - Full Faculty-to-model mapping is documented in docs/llm_configuration.md.
 # - SENTINEL may use a different model than the core Faculties without changing Python code.
-CURRENT_PHASE = "Cycle 6 - Phase 6.8 - The Reflective Memory"
+CURRENT_PHASE = "Cycle 6 - Phase 6.9 - The Relational Proof"
 
 CYCLE2_SUMMARY = (
     "Cycle 2 built the NAMMU Kernel: web interface, two Faculties, "
@@ -43,6 +43,19 @@ CYCLE5_SUMMARY = (
     "conversation-turn proposals. The Gates of Uruk UI redesign "
     "unified both interfaces. The LLM configuration is documented "
     "in code and in docs/llm_configuration.md."
+)
+
+CYCLE6_SUMMARY = (
+    "Cycle 6 built the Relational Memory: UserProfile with full "
+    "identity fields (pronouns, preferred name, location, sex, gender), "
+    "the Onboarding Survey for first-session meetings, profile commands "
+    "(my-profile, view-profile, edit, clear), the CommunicationObserver "
+    "for silent style learning, the Organizational Layer with departments "
+    "and groups and notification routing, the IdentityFormatter giving "
+    "INANNA correct pronouns and preferred names in grounding, Trust "
+    "Persistence allowing permanent tool trust grants, and the Reflective "
+    "Memory - INANNA's governed self-knowledge at "
+    "inanna/data/self/reflection.jsonl."
 )
 
 

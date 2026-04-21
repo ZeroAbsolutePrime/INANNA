@@ -551,8 +551,8 @@ def main() -> int:
         "# LLM configuration:" in identity_source,
     )
     runner.check(
-        "Identity: CURRENT_PHASE names Cycle 5 Phase 5.9",
-        CURRENT_PHASE == "Cycle 5 - Phase 5.9 - The Operator Proof",
+        "Identity: CURRENT_PHASE remains defined under later phases",
+        CURRENT_PHASE.startswith("Cycle "),
         detail=CURRENT_PHASE,
     )
     runner.check(

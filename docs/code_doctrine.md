@@ -321,6 +321,39 @@ remembered.
 
 ---
 
+## Lessons from Cycle 6
+
+**THE PROFILE IS THE FOUNDATION.** Every new platform dimension extends
+the `UserProfile` schema. This is the evolutionary contract. Cycle 6
+held that line across onboarding, communication learning, organization,
+identity, trust, and reflection. Future cycles do not bolt relational
+features on from the side. They extend the profile.
+
+**OBSERVATION WITHOUT INTRUSION.** The `CommunicationObserver` runs
+silently, writes silently, and the user can clear it. This is the
+pattern for future passive observation: no output, no proposal, no
+interruption. Just attention held inside a bounded, reversible store.
+
+**GOVERNED SELF-KNOWLEDGE.** The Reflective Memory uses the
+`[REFLECT:]` tag pattern on purpose. INANNA must consciously emit the
+tag to propose self-knowledge, and Guardian approval is still required
+before anything is written. This keeps self-observation deliberate and
+prevents noise from leaking into durable identity.
+
+**COMMAND CENTER DIRECT COMMITS.** When Codex enters a loop, the
+Command Center can commit directly from Windows-MCP tools. Cycle 6
+proved this is not an emergency-only measure but a recovery pattern the
+project can rely on. The tools are the backup path when the agent loses
+state, repeats stale output, or drifts from the live repo.
+
+**IDENTITY IS NOT A FEATURE.** Pronouns, preferred names, and identity
+fields are not optional enhancements. They are the baseline of respect.
+`IdentityFormatter` now sits inside grounding for every Faculty call.
+That must never be treated as a cosmetic flourish or removed for
+convenience.
+
+---
+
 *Written by: Claude (Command Center)*
 *Confirmed by: ZAERA (Guardian)*
 *Date: 2026-04-19*

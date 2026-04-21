@@ -8,6 +8,7 @@ from identity import (
     CYCLE4_PREVIEW,
     CYCLE4_SUMMARY,
     CYCLE5_SUMMARY,
+    CYCLE6_SUMMARY,
     build_analyst_prompt,
     build_nammu_prompt,
     build_system_prompt,
@@ -112,8 +113,8 @@ class IdentityTests(unittest.TestCase):
     def test_current_phase_constant_matches_phase_banner(self) -> None:
         self.assertEqual(CURRENT_PHASE, phase_banner())
 
-    def test_current_phase_names_reflective_memory(self) -> None:
-        self.assertIn("Reflective Memory", CURRENT_PHASE)
+    def test_current_phase_names_relational_proof(self) -> None:
+        self.assertIn("Relational Proof", CURRENT_PHASE)
 
     def test_cycle2_summary_describes_completed_kernel(self) -> None:
         self.assertIn("NAMMU Kernel", CYCLE2_SUMMARY)
@@ -134,6 +135,12 @@ class IdentityTests(unittest.TestCase):
         self.assertIn("Operator Console", CYCLE5_SUMMARY)
         self.assertIn("SENTINEL", CYCLE5_SUMMARY)
         self.assertIn("docs/llm_configuration.md", CYCLE5_SUMMARY)
+
+    def test_cycle6_summary_describes_relational_memory(self) -> None:
+        self.assertIn("Relational Memory", CYCLE6_SUMMARY)
+        self.assertIn("UserProfile", CYCLE6_SUMMARY)
+        self.assertIn("IdentityFormatter", CYCLE6_SUMMARY)
+        self.assertIn("reflection.jsonl", CYCLE6_SUMMARY)
 
 
 if __name__ == "__main__":
