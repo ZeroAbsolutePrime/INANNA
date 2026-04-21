@@ -2717,9 +2717,20 @@ class InterfaceServer:
             ]
             model_connected = self.engine._connected
             t0 = time.monotonic()
+            # Inject tool result as a direct instruction to CROWN
+            # so it summarizes the result instead of disclaiming inability
+            tool_result_lines = build_tool_context_lines(result)
+            tool_result_summary = "\n".join(tool_result_lines)
+            tool_instruction = (
+                f"TOOL EXECUTION COMPLETE. The {result.tool} tool just ran with these results:\n"
+                f"{tool_result_summary}\n"
+                f"Summarize these results clearly to the user. "
+                f"Do NOT say you cannot execute commands. The tool already ran."
+            )
             assistant_text = self.engine.respond(
                 context_summary=startup_context_items(self.startup_context)
-                + build_tool_context_lines(result),
+                + tool_result_lines
+                + [tool_instruction],
                 conversation=self.session.events,
             )
             self.faculty_monitor.record_call("crown", (time.monotonic() - t0) * 1000, True)

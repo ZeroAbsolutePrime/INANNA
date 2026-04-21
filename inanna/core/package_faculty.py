@@ -14,6 +14,7 @@ class PackageRecord:
     version: str
     description: str
     installed: bool
+    pkg_id: str = ""  # winget package ID e.g. Notepad++.Notepad++
 
 
 @dataclass
@@ -142,12 +143,18 @@ class PackageFaculty:
                 timeout=120,
             )
         if self.pm == "winget":
-            return self._run(
-                ["winget", "install", "--id", cleaned_name, "-e"],
+            # First resolve the exact winget package ID
+            resolved_id = self._winget_resolve_id(cleaned_name)
+            install_id = resolved_id or cleaned_name
+            result = self._run(
+                ["winget", "install", "--id", install_id, "-e",
+                 "--accept-package-agreements", "--accept-source-agreements"],
                 "install",
                 cleaned_name,
                 timeout=120,
             )
+            result.resolved_id = install_id
+            return result
         return PackageResult(
             False,
             "install",
@@ -287,6 +294,43 @@ class PackageFaculty:
         result = self._run(["brew", "list", "--versions"], "list", filter_name or "installed")
         result.records = self._parse_brew_list(result.output, filter_name)
         return result
+
+    def _winget_resolve_id(self, query: str) -> str | None:
+        """
+        Search winget for the exact package ID matching the query.
+        Returns the best matching ID (e.g. 'Notepad++.Notepad++' for 'notepad++')
+        or None if not found. Prefers Publisher.AppName IDs over Store IDs.
+        """
+        try:
+            import subprocess
+            result = subprocess.run(
+                ["winget", "search", query, "--accept-source-agreements"],
+                capture_output=True, text=True, timeout=20,
+            )
+            if result.returncode != 0:
+                return None
+            records = self._parse_winget_table(result.stdout, installed=False)
+            if not records:
+                return None
+            query_lower = query.lower().replace("+", "").replace("-", "").replace(" ", "")
+
+            # Score each record: prefer Publisher.AppName format, prefer name match
+            def score(rec) -> int:
+                s = 0
+                name_clean = rec.name.lower().replace("+", "").replace("-", "").replace(" ", "")
+                if query_lower in name_clean or name_clean in query_lower:
+                    s += 10
+                # Prefer dotted IDs (Publisher.AppName) over pure alphanumeric Store IDs
+                if rec.pkg_id and "." in rec.pkg_id:
+                    s += 5
+                return s
+
+            best = max(records, key=score)
+            if best.pkg_id:
+                return best.pkg_id
+        except Exception:
+            pass
+        return None
 
     def _winget_search(self, query: str) -> PackageResult:
         result = self._run(
@@ -435,7 +479,26 @@ class PackageFaculty:
 
     def _parse_winget_table(self, output: str, installed: bool) -> list[PackageRecord]:
         records: list[PackageRecord] = []
-        for line in output.splitlines():
+        # Find header line to determine column positions
+        header_line = ""
+        header_idx = -1
+        lines = output.splitlines()
+        for i, line in enumerate(lines):
+            if "Name" in line and "Id" in line and "Version" in line:
+                header_line = line
+                header_idx = i
+                break
+
+        # Parse column positions from header if found
+        name_col = 0
+        id_col = -1
+        ver_col = -1
+        if header_line:
+            name_col = header_line.index("Name") if "Name" in header_line else 0
+            id_col = header_line.index("Id") if "Id" in header_line else -1
+            ver_col = header_line.index("Version") if "Version" in header_line else -1
+
+        for line in lines:
             cleaned = line.rstrip()
             stripped = cleaned.strip()
             if not stripped:
@@ -445,18 +508,38 @@ class PackageFaculty:
             lowered = stripped.lower()
             if lowered.startswith(("name", "no package found", "the `msstore` source")):
                 continue
-            columns = [part.strip() for part in re.split(r"\s{2,}", stripped) if part.strip()]
-            if not columns:
+
+            if id_col > 0 and ver_col > id_col:
+                # Use positional parsing from header
+                name = cleaned[name_col:id_col].strip()
+                pkg_id = cleaned[id_col:ver_col].strip()
+                version = cleaned[ver_col:].strip().split()[0] if cleaned[ver_col:].strip() else ""
+            else:
+                # Fallback: split on 2+ spaces
+                columns = [p.strip() for p in re.split(r"\s{2,}", stripped) if p.strip()]
+                if not columns:
+                    continue
+                name = columns[0]
+                # Pick the column that looks like a package ID (contains dot)
+                pkg_id = ""
+                version = ""
+                for col in columns[1:]:
+                    if "." in col and not col[0].isdigit():
+                        pkg_id = col
+                    elif col[0].isdigit() and not version:
+                        version = col
+                if not pkg_id and len(columns) >= 2:
+                    pkg_id = columns[1]
+
+            if not name:
                 continue
-            name = columns[0]
-            version = columns[2] if len(columns) >= 3 else ""
-            description = columns[1] if len(columns) >= 2 else ""
             records.append(
                 PackageRecord(
                     name=name,
                     version=version,
-                    description=description,
+                    description="",
                     installed=installed,
+                    pkg_id=pkg_id,
                 )
             )
         return records
