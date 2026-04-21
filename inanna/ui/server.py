@@ -18,6 +18,7 @@ from websockets.exceptions import ConnectionClosed
 
 from config import Config
 from core.auth import AuthStore
+from core.communication_workflows import CommunicationWorkflows
 from core.desktop_faculty import DesktopFaculty
 from core.filesystem_faculty import FileSystemFaculty
 from core.governance import GovernanceLayer
@@ -64,6 +65,7 @@ from main import (
     build_admin_surface_payload,
     build_body_report,
     build_body_summary,
+    build_communication_audit_entry,
     build_desktop_audit_entry,
     build_faculty_registry_payload,
     build_package_audit_entry,
@@ -101,11 +103,14 @@ from main import (
     create_realm_assignment_proposal,
     create_memory_request_proposal,
     create_realm_context_proposal,
+    create_communication_send_proposal,
     create_tool_use_proposal,
     coerce_profile_field_value,
     clear_communication_observations,
+    communication_result_requires_send_confirmation,
     complete_orchestration_resolution as complete_orchestration_backend_resolution,
     default_profile_field_value,
+    detect_communication_tool_action,
     detect_desktop_tool_action,
     detect_filesystem_tool_action,
     detect_package_tool_action,
@@ -136,6 +141,7 @@ from main import (
     revoke_persistent_tool_trust,
     run_sentinel_response as run_sentinel_backend_response,
     sentinel_response_mode,
+    display_communication_app_name,
     ensure_guardian_profile_completed,
     startup_context_items,
     sync_profile_grounding,
@@ -397,6 +403,7 @@ class InterfaceServer:
         self.guardian = GuardianFaculty()
         self.operator = OperatorFaculty()
         self.desktop_faculty = DesktopFaculty()
+        self.communication_workflows = CommunicationWorkflows(self.desktop_faculty)
         self.filesystem_faculty = FileSystemFaculty()
         self.process_faculty = ProcessFaculty()
         self.package_faculty = PackageFaculty()
@@ -850,6 +857,53 @@ class InterfaceServer:
                 },
                 "proposal": created,
             }
+
+        communication_action = detect_communication_tool_action(
+            text,
+            self.communication_workflows,
+        )
+        if communication_action is not None:
+            self._record_routing_decision("operator", text)
+            self._record_governance_decision(
+                "tool",
+                str(communication_action.get("reason", "Governed communication workflow use.")),
+                text,
+            )
+            if bool(communication_action.get("requires_proposal", False)):
+                params = dict(communication_action.get("params", {}))
+                created = create_communication_send_proposal(
+                    proposal=self.proposal,
+                    session=self.session,
+                    user_input=text,
+                    app=str(params.get("app", "")),
+                    contact=str(params.get("contact", "")),
+                    message=str(params.get("message", "")),
+                    stage="draft",
+                )
+                return {
+                    "response": {
+                        "type": "operator",
+                        "text": created["prompt_text"],
+                    },
+                    "proposal": created,
+                }
+            outcome = self.complete_tool_resolution(
+                {
+                    "payload": {
+                        "original_input": text,
+                        "query": str(communication_action["query"]),
+                        "tool": str(communication_action["tool"]),
+                        "params": dict(communication_action.get("params", {})),
+                    }
+                },
+                "approve",
+            )
+            responses = list(outcome["operator_payloads"])
+            if outcome["assistant_text"]:
+                responses.append({"type": "assistant", "text": outcome["assistant_text"]})
+            if outcome.get("proposal"):
+                responses.append({"type": "system", "text": outcome["proposal"]["line"]})
+            return {"responses": responses}
 
         desktop_action = detect_desktop_tool_action(
             text,
@@ -3013,6 +3067,7 @@ class InterfaceServer:
                 process_faculty=self.process_faculty,
                 package_faculty=self.package_faculty,
                 desktop_faculty=self.desktop_faculty,
+                communication_workflows=self.communication_workflows,
                 software_registry=self.software_registry,
             )
             self.faculty_monitor.record_call(
@@ -3025,6 +3080,7 @@ class InterfaceServer:
                 or build_filesystem_audit_entry(result)
                 or build_process_audit_entry(result)
                 or build_package_audit_entry(result)
+                or build_communication_audit_entry(result)
                 or build_desktop_audit_entry(result)
             )
             if audit_entry is not None:
@@ -3041,6 +3097,31 @@ class InterfaceServer:
                     "tool_result": build_tool_result_payload(result),
                 }
             ]
+            if communication_result_requires_send_confirmation(result):
+                created = create_communication_send_proposal(
+                    proposal=self.proposal,
+                    session=self.session,
+                    user_input=(
+                        f"send confirmation for {result.data.get('contact', 'contact')} "
+                        f"on {display_communication_app_name(str(result.data.get('app', '')))}"
+                    ),
+                    app=str(result.data.get("app", "")),
+                    contact=str(result.data.get("contact", "")),
+                    message=str(result.data.get("message", "")),
+                    stage="execute_send",
+                )
+                self._record_completed_turn()
+                return {
+                    "operator_payloads": operator_payloads
+                    + [
+                        {
+                            "type": "operator",
+                            "text": "send approval required. The draft is visible and waiting.",
+                        }
+                    ],
+                    "assistant_text": "",
+                    "proposal": created,
+                }
             model_connected = self.engine._connected
             t0 = time.monotonic()
             # Inject tool result as a direct instruction to CROWN
@@ -3088,6 +3169,23 @@ class InterfaceServer:
                     }
                 )
         else:
+            if tool == "comm_send_message":
+                self._record_completed_turn()
+                mode = str(params.get("mode", "draft") or "draft").strip().lower()
+                return {
+                    "operator_payloads": [
+                        {
+                            "type": "operator",
+                            "text": (
+                                "send cancelled. The drafted message remains unsent."
+                                if mode == "execute_send"
+                                else "draft cancelled. Nothing was typed."
+                            ),
+                        }
+                    ],
+                    "assistant_text": "",
+                    "proposal": None,
+                }
             operator_payloads = [
                 {
                     "type": "operator",

@@ -1638,7 +1638,11 @@ class CommandTests(unittest.TestCase):
             config,
         )
 
-        self.assertIn("tool-registry > Registered tools (23 total):", result)
+        self.assertIn("tool-registry > Registered tools (26 total):", result)
+        self.assertIn("COMMUNICATION", result)
+        self.assertIn("Read Messages [enabled]", result)
+        self.assertIn("Send Message [enabled]", result)
+        self.assertIn("List Contacts [enabled]", result)
         self.assertIn("DESKTOP", result)
         self.assertIn("Open Application [enabled]", result)
         self.assertIn("Read Window Content [enabled]", result)

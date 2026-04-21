@@ -203,6 +203,42 @@
         "app": "Application name (e.g. notepad++, firefox, krita)"
       }
     },
+    "comm_read_messages": {
+      "display_name": "Read Messages",
+      "description": "Read messages from Signal or WhatsApp.",
+      "category": "communication",
+      "requires_approval": false,
+      "requires_privilege": "converse",
+      "parameters": [
+        "app"
+      ],
+      "enabled": true
+    },
+    "comm_send_message": {
+      "display_name": "Send Message",
+      "description": "Type and send a message to a contact (send always requires approval).",
+      "category": "communication",
+      "requires_approval": true,
+      "requires_privilege": "converse",
+      "parameters": [
+        "app",
+        "contact",
+        "message",
+        "mode"
+      ],
+      "enabled": true
+    },
+    "comm_list_contacts": {
+      "display_name": "List Contacts",
+      "description": "List visible contacts in a messaging application.",
+      "category": "communication",
+      "requires_approval": false,
+      "requires_privilege": "converse",
+      "parameters": [
+        "app"
+      ],
+      "enabled": true
+    },
     "desktop_open_app": {
       "display_name": "Open Application",
       "description": "Open any installed application by name.",

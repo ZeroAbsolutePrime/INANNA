@@ -14,6 +14,7 @@ from dotenv import load_dotenv
 
 from config import Config
 from core.body import BodyInspector, BodyReport
+from core.communication_workflows import CommunicationWorkflows, WorkflowResult, normalize_app_name
 from core.desktop_faculty import DesktopFaculty, DesktopResult, is_consequential_label
 from core.faculty_monitor import FacultyMonitor
 from core.filesystem_faculty import FileInfo, FileSystemFaculty, FileSystemResult
@@ -270,6 +271,11 @@ DESKTOP_TOOL_NAMES = {
     "desktop_type",
     "desktop_screenshot",
 }
+COMMUNICATION_TOOL_NAMES = {
+    "comm_read_messages",
+    "comm_send_message",
+    "comm_list_contacts",
+}
 PROCESS_HINT_FALLBACKS = (
     "process",
     "processes",
@@ -300,6 +306,23 @@ PACKAGE_HINT_FALLBACKS = (
     "brew",
     "winget",
     "software",
+)
+COMMUNICATION_HINT_FALLBACKS = (
+    "send message",
+    "send signal",
+    "message to",
+    "text to",
+    "whatsapp",
+    "signal message",
+    "read messages",
+    "check messages",
+    "new messages",
+    "reply to",
+    "write to",
+    "contact",
+    "unread",
+    "chat",
+    "inbox",
 )
 DESKTOP_HINT_FALLBACKS = (
     "open app",
@@ -400,6 +423,25 @@ def load_package_domain_hints(
 
     cleaned = [str(item).strip().lower() for item in hints if str(item).strip()]
     return cleaned or list(PACKAGE_HINT_FALLBACKS)
+
+
+def load_communication_domain_hints(
+    signals_path: Path = FILESYSTEM_SIGNAL_PATH,
+) -> list[str]:
+    try:
+        payload = json.loads(signals_path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return list(COMMUNICATION_HINT_FALLBACKS)
+
+    domain_hints = payload.get("domain_hints", {})
+    if not isinstance(domain_hints, dict):
+        return list(COMMUNICATION_HINT_FALLBACKS)
+    hints = domain_hints.get("communication", [])
+    if not isinstance(hints, list):
+        return list(COMMUNICATION_HINT_FALLBACKS)
+
+    cleaned = [str(item).strip().lower() for item in hints if str(item).strip()]
+    return cleaned or list(COMMUNICATION_HINT_FALLBACKS)
 
 
 def load_desktop_domain_hints(
@@ -939,6 +981,146 @@ def desktop_request_requires_proposal(desktop_request: dict[str, Any]) -> bool:
     if tool_name == "desktop_click":
         return is_consequential_label(str(params.get("label", "")))
     return False
+
+
+def communication_request_requires_proposal(
+    communication_request: dict[str, Any],
+) -> bool:
+    return str(communication_request.get("tool", "")).strip().lower() == "comm_send_message"
+
+
+def display_communication_app_name(app: str) -> str:
+    normalized = normalize_app_name(app)
+    labels = {
+        "signal": "Signal",
+        "whatsapp": "WhatsApp",
+        "telegram": "Telegram",
+        "discord": "Discord",
+        "slack": "Slack",
+    }
+    return labels.get(normalized, normalized.title() or "Communication App")
+
+
+def build_communication_send_query(app: str, contact: str, message: str) -> str:
+    return (
+        f'{display_communication_app_name(app)} -> {normalize_request_fragment(contact)}: '
+        f'"{str(message or "").strip()}"'
+    )
+
+
+def extract_communication_tool_request(
+    text: str,
+    hints: list[str] | None = None,
+) -> dict[str, Any] | None:
+    normalized = str(text or "").strip()
+    lowered = normalized.lower()
+    prefix_pattern = r"^(?:inanna[,\s]+|hey inanna[,\s]+|please[,\s]+|can you[,\s]+)"
+    prefix_stripped = re.sub(prefix_pattern, "", lowered, flags=re.IGNORECASE).strip()
+    normalized_stripped = re.sub(prefix_pattern, "", normalized, flags=re.IGNORECASE).strip()
+
+    active_hints = hints or load_communication_domain_hints()
+    app_pattern = r"signal(?: messenger)?|whatsapp|whats app|wa|telegram|tg"
+    app_mentioned = re.search(app_pattern, prefix_stripped, flags=re.IGNORECASE) is not None
+    hint_match = any(hint in lowered for hint in active_hints)
+    if not app_mentioned and not hint_match:
+        return None
+
+    send_patterns = (
+        re.match(
+            rf"^(?:send|text)\s+(?:a\s+)?(?P<app>{app_pattern})\s+(?:message\s+)?to\s+(?P<contact>.+?)\s+(?:saying|that says)\s+(?P<message>.+)$",
+            normalized_stripped,
+            flags=re.IGNORECASE,
+        ),
+        re.match(
+            rf"^(?:send|text)\s+(?:a\s+)?message\s+to\s+(?P<contact>.+?)\s+on\s+(?P<app>{app_pattern})\s*(?::|saying)\s*(?P<message>.+)$",
+            normalized_stripped,
+            flags=re.IGNORECASE,
+        ),
+        re.match(
+            rf"^(?:message|text)\s+(?P<contact>.+?)\s+on\s+(?P<app>{app_pattern})\s*:\s*(?P<message>.+)$",
+            normalized_stripped,
+            flags=re.IGNORECASE,
+        ),
+    )
+    for send_match in send_patterns:
+        if send_match:
+            app = normalize_app_name(send_match.group("app"))
+            contact = normalize_request_fragment(send_match.group("contact"))
+            message = str(send_match.group("message") or "").strip()
+            params = {
+                "app": app,
+                "contact": contact,
+                "message": message,
+                "mode": "draft",
+            }
+            return {
+                "tool": "comm_send_message",
+                "params": params,
+                "query": build_communication_send_query(app, contact, message),
+                "reason": "Communication send requires a governed two-stage send flow.",
+            }
+
+    read_patterns = (
+        re.match(
+            rf"^(?:read|check|show)(?:\s+my)?\s+(?P<app>{app_pattern})(?:\s+(?:messages?|inbox|chat))?$",
+            prefix_stripped,
+            flags=re.IGNORECASE,
+        ),
+        re.match(
+            rf"^(?:read|check|show)\s+(?:messages?|inbox|chat)(?:\s+on)?\s+(?P<app>{app_pattern})$",
+            prefix_stripped,
+            flags=re.IGNORECASE,
+        ),
+    )
+    for read_match in read_patterns:
+        if read_match:
+            app = normalize_app_name(read_match.group("app"))
+            params = {"app": app}
+            return {
+                "tool": "comm_read_messages",
+                "params": params,
+                "query": f"{display_communication_app_name(app)} messages",
+                "reason": "Communication message reading routed to workflow execution.",
+            }
+
+    list_patterns = (
+        re.match(
+            rf"^(?:list|show)(?:\s+my)?\s+(?P<app>{app_pattern})\s+contacts$",
+            prefix_stripped,
+            flags=re.IGNORECASE,
+        ),
+        re.match(
+            rf"^(?:list|show)\s+contacts(?:\s+in|\s+on)?\s+(?P<app>{app_pattern})$",
+            prefix_stripped,
+            flags=re.IGNORECASE,
+        ),
+    )
+    for list_match in list_patterns:
+        if list_match:
+            app = normalize_app_name(list_match.group("app"))
+            params = {"app": app}
+            return {
+                "tool": "comm_list_contacts",
+                "params": params,
+                "query": f"{display_communication_app_name(app)} contacts",
+                "reason": "Communication contact inspection routed to workflow execution.",
+            }
+
+    return None
+
+
+def detect_communication_tool_action(
+    text: str,
+    communication_workflows: CommunicationWorkflows | None = None,
+) -> dict[str, Any] | None:
+    del communication_workflows
+    request = extract_communication_tool_request(text)
+    if request is None:
+        return None
+    return {
+        **request,
+        "requires_proposal": communication_request_requires_proposal(request),
+    }
 
 
 def detect_desktop_tool_action(
@@ -3195,6 +3377,66 @@ def create_tool_use_proposal(
     }
 
 
+def create_communication_send_proposal(
+    proposal: Proposal,
+    session: Session,
+    user_input: str,
+    app: str,
+    contact: str,
+    message: str,
+    stage: str = "draft",
+) -> dict[str, Any]:
+    normalized_stage = "execute_send" if str(stage).strip().lower() in {
+        "execute_send",
+        "send",
+        "confirm",
+    } else "draft"
+    app_label = display_communication_app_name(app)
+    contact_label = normalize_request_fragment(contact) or "contact"
+    message_text = str(message or "").strip()
+    summary = (
+        f"Send drafted message in {app_label} to {contact_label}"
+        if normalized_stage == "execute_send"
+        else f"Type draft message in {app_label} to {contact_label}"
+    )
+    prompt_text = (
+        f'Send this message to {contact_label} on {app_label}?\n"{message_text}"'
+        if normalized_stage == "execute_send"
+        else f'Type this message as a draft in {app_label} to {contact_label}?\n"{message_text}"'
+    )
+    created = proposal.create(
+        what=summary,
+        why=(
+            "Sending a communication draft is a consequential action and requires explicit approval."
+            if normalized_stage == "execute_send"
+            else "User requested a governed communication draft before any message is sent."
+        ),
+        payload={
+            "action": "tool_use",
+            "tool": "comm_send_message",
+            "query": build_communication_send_query(app, contact_label, message_text),
+            "params": {
+                "app": normalize_app_name(app),
+                "contact": contact_label,
+                "message": message_text,
+                "mode": normalized_stage,
+            },
+            "original_input": user_input,
+            "session_id": session.session_id,
+        },
+    )
+    tool_line = (
+        f"[TOOL PROPOSAL] {created['timestamp']} | "
+        f"{summary} | status: {created['status']}"
+    )
+    return {
+        **created,
+        "prompt_text": prompt_text,
+        "tool_line": tool_line,
+        "line": f"{prompt_text}\n{tool_line}",
+    }
+
+
 def create_orchestration_proposal(
     proposal: Proposal,
     session: Session,
@@ -3557,6 +3799,46 @@ def build_desktop_tool_result(
     )
 
 
+def build_communication_tool_result(
+    tool_name: str,
+    workflow_result: WorkflowResult,
+    communication_workflows: CommunicationWorkflows,
+    *,
+    query: str,
+    contact: str = "",
+    message: str = "",
+    mode: str = "",
+) -> ToolResult:
+    data: dict[str, Any] = {
+        "formatted": communication_workflows.format_result(workflow_result),
+        "workflow": workflow_result.workflow,
+        "app": workflow_result.app,
+        "messages": [
+            {
+                "sender": record.sender,
+                "content": record.content,
+                "timestamp": record.timestamp,
+                "unread": record.unread,
+                "app": record.app,
+            }
+            for record in workflow_result.messages
+        ],
+        "output": workflow_result.output,
+        "draft_visible": workflow_result.draft_visible,
+        "steps_completed": list(workflow_result.steps_completed),
+        "contact": contact,
+        "message": message,
+        "mode": mode,
+    }
+    return ToolResult(
+        tool=tool_name,
+        query=query,
+        success=workflow_result.success,
+        data=data,
+        error=str(workflow_result.error or ""),
+    )
+
+
 def run_filesystem_tool(
     filesystem_faculty: FileSystemFaculty,
     tool_name: str,
@@ -3660,6 +3942,48 @@ def run_desktop_tool(
     return build_desktop_tool_result(tool_name, result, desktop_faculty)
 
 
+def run_communication_tool(
+    communication_workflows: CommunicationWorkflows,
+    tool_name: str,
+    params: dict[str, Any],
+) -> ToolResult:
+    app = normalize_app_name(str(params.get("app", "") or params.get("query", "")))
+    contact = str(params.get("contact", "")).strip()
+    message = str(params.get("message", "")).strip()
+    mode = str(params.get("mode", "draft") or "draft").strip().lower()
+
+    if tool_name == "comm_read_messages":
+        result = communication_workflows.read_messages(app)
+        query = f"{display_communication_app_name(app)} messages"
+    elif tool_name == "comm_list_contacts":
+        result = communication_workflows.list_contacts(app)
+        query = f"{display_communication_app_name(app)} contacts"
+    elif tool_name == "comm_send_message":
+        query = build_communication_send_query(app, contact, message)
+        if mode == "execute_send":
+            result = communication_workflows.execute_send(app)
+        else:
+            result = communication_workflows.send_message(app, contact, message)
+    else:
+        result = WorkflowResult(
+            success=False,
+            workflow=tool_name,
+            app=app,
+            error=f"Unknown communication tool: {tool_name}",
+        )
+        query = build_communication_send_query(app, contact, message) if contact or message else app
+
+    return build_communication_tool_result(
+        tool_name,
+        result,
+        communication_workflows,
+        query=query,
+        contact=contact,
+        message=message,
+        mode=mode,
+    )
+
+
 def run_package_tool(
     package_faculty: PackageFaculty,
     tool_name: str,
@@ -3727,6 +4051,7 @@ def execute_tool_request(
     process_faculty: ProcessFaculty | None = None,
     package_faculty: PackageFaculty | None = None,
     desktop_faculty: DesktopFaculty | None = None,
+    communication_workflows: CommunicationWorkflows | None = None,
     software_registry: SoftwareRegistry | None = None,
 ) -> ToolResult:
     if tool_name in FILESYSTEM_TOOL_NAMES:
@@ -3740,6 +4065,11 @@ def execute_tool_request(
             params,
             software_registry=software_registry,
         )
+    if tool_name in COMMUNICATION_TOOL_NAMES:
+        communication_workflows = communication_workflows or CommunicationWorkflows(
+            desktop_faculty or DesktopFaculty()
+        )
+        return run_communication_tool(communication_workflows, tool_name, params)
     if tool_name in DESKTOP_TOOL_NAMES:
         return run_desktop_tool(desktop_faculty or DesktopFaculty(), tool_name, params)
     return operator.execute(tool_name, params)
@@ -3975,7 +4305,76 @@ def build_desktop_context_lines(result: ToolResult) -> list[str]:
     ]
 
 
+def build_communication_context_lines(result: ToolResult) -> list[str]:
+    if not result.success:
+        return [
+            f"tool result ({result.tool}) query: {result.query}",
+            f"error: {result.error or 'unknown communication error'}",
+        ]
+
+    workflow = str(result.data.get("workflow", "") or result.tool)
+    app = str(result.data.get("app", "") or result.query)
+    if workflow == "read_messages":
+        messages = list(result.data.get("messages", []))
+        lines = [
+            f"tool result ({result.tool}) app: {app}",
+            f"visible_items: {len(messages)}",
+        ]
+        for record in messages[:10]:
+            if isinstance(record, dict):
+                preview = str(record.get("content", "")).strip()
+                if preview:
+                    lines.append(f"message_excerpt: {preview[:200]}")
+        output = str(result.data.get("output", "")).strip()
+        if not messages and output:
+            lines.append(f"window_excerpt: {output[:4000]}")
+        return lines
+
+    if workflow == "list_contacts":
+        lines = [f"tool result ({result.tool}) app: {app}"]
+        output = str(result.data.get("output", "")).strip()
+        if output:
+            lines.append(f"contacts_excerpt: {output[:4000]}")
+        return lines
+
+    if workflow == "send_message":
+        return [
+            f"tool result ({result.tool}) app: {app}",
+            f"contact: {result.data.get('contact', '')}",
+            f"draft_visible: {'yes' if result.data.get('draft_visible') else 'no'}",
+            f"draft_text: {str(result.data.get('message', ''))[:400]}",
+        ]
+
+    if workflow == "execute_send":
+        return [
+            f"tool result ({result.tool}) app: {app}",
+            f"contact: {result.data.get('contact', '')}",
+            f"sent: {'yes' if result.success else 'no'}",
+            f"message: {str(result.data.get('message', ''))[:400]}",
+        ]
+
+    return [
+        f"tool result ({result.tool}) query: {result.query}",
+        str(result.data.get("formatted", "")),
+    ]
+
+
+def communication_result_requires_send_confirmation(result: ToolResult) -> bool:
+    return bool(
+        result.tool == "comm_send_message"
+        and result.success
+        and result.data.get("draft_visible")
+        and str(result.data.get("mode", "draft")).strip().lower() != "execute_send"
+    )
+
+
 def build_tool_result_text(result: ToolResult) -> str:
+    if result.tool in COMMUNICATION_TOOL_NAMES:
+        return str(
+            result.data.get("formatted")
+            or f"comm > error: {result.error or 'Unknown communication error.'}"
+        )
+
     if result.tool in DESKTOP_TOOL_NAMES:
         return str(
             result.data.get("formatted")
@@ -4058,6 +4457,9 @@ def build_tool_result_text(result: ToolResult) -> str:
 
 
 def build_tool_context_lines(result: ToolResult) -> list[str]:
+    if result.tool in COMMUNICATION_TOOL_NAMES:
+        return build_communication_context_lines(result)
+
     if result.tool in DESKTOP_TOOL_NAMES:
         return build_desktop_context_lines(result)
 
@@ -4335,6 +4737,39 @@ def build_desktop_audit_entry(result: ToolResult) -> dict[str, object] | None:
     return details
 
 
+def build_communication_audit_entry(result: ToolResult) -> dict[str, object] | None:
+    if result.tool not in COMMUNICATION_TOOL_NAMES:
+        return None
+
+    app = str(result.data.get("app") or result.query).strip()
+    contact = str(result.data.get("contact") or "").strip()
+    details: dict[str, object] = {
+        "tool": result.tool,
+        "app": app,
+    }
+    if contact:
+        details["contact"] = contact
+    if result.data.get("message"):
+        details["message_preview"] = str(result.data.get("message", ""))[:200]
+    if result.data.get("steps_completed"):
+        details["steps_completed"] = list(result.data.get("steps_completed", []))
+
+    if not result.success:
+        result_text = result.error or "failed"
+    elif communication_result_requires_send_confirmation(result):
+        result_text = "draft ready"
+    elif str(result.data.get("workflow", "")) == "execute_send":
+        result_text = "sent"
+    elif result.tool == "comm_list_contacts":
+        result_text = "contacts listed"
+    else:
+        result_text = f"{len(list(result.data.get('messages', [])))} items visible"
+
+    details["result"] = result_text
+    details["summary"] = f"{result.tool} {app}{f'/{contact}' if contact else ''} -> {result_text}"
+    return details
+
+
 def build_tool_registry_report(payload: dict[str, object]) -> str:
     tools = list(payload.get("tools", []))
     total = int(payload.get("total", len(tools)))
@@ -4455,6 +4890,7 @@ def complete_tool_resolution(
     process_faculty: ProcessFaculty | None = None,
     package_faculty: PackageFaculty | None = None,
     desktop_faculty: DesktopFaculty | None = None,
+    communication_workflows: CommunicationWorkflows | None = None,
     session_audit: list[dict[str, object]] | None = None,
     active_realm_name: str = "",
     conversation_state: dict[str, int] | None = None,
@@ -4483,6 +4919,7 @@ def complete_tool_resolution(
             process_faculty=process_faculty,
             package_faculty=package_faculty,
             desktop_faculty=desktop_faculty,
+            communication_workflows=communication_workflows,
         )
         if faculty_monitor is not None:
             faculty_monitor.record_call("operator", (time.monotonic() - t0) * 1000, result.success)
@@ -4491,6 +4928,7 @@ def complete_tool_resolution(
             or build_filesystem_audit_entry(result)
             or build_process_audit_entry(result)
             or build_package_audit_entry(result)
+            or build_communication_audit_entry(result)
             or build_desktop_audit_entry(result)
         )
         if audit_entry is not None:
@@ -4501,6 +4939,35 @@ def complete_tool_resolution(
                 {key: value for key, value in audit_entry.items() if key != "summary"},
             )
         operator_text = build_tool_result_text(result)
+        if communication_result_requires_send_confirmation(result):
+            created = create_communication_send_proposal(
+                proposal=proposal,
+                session=session,
+                user_input=(
+                    f"send confirmation for {result.data.get('contact', 'contact')} "
+                    f"on {display_communication_app_name(str(result.data.get('app', '')))}"
+                ),
+                app=str(result.data.get("app", "")),
+                contact=str(result.data.get("contact", "")),
+                message=str(result.data.get("message", "")),
+                stage="execute_send",
+            )
+            record_completed_turn(
+                conversation_state=conversation_state,
+                memory=memory,
+                session=session,
+                active_realm_name=active_realm_name,
+                active_token=active_token,
+                user_log=user_log,
+                session_audit=session_audit,
+            )
+            return (
+                f"operator > {operator_text}\n"
+                "operator > send approval required.\n"
+                f"{created['prompt_text']}\n"
+                'Type "approve" to send or "reject" to leave the draft unsent.\n'
+                f"{created['tool_line']}"
+            )
         model_connected = engine._connected
         t0 = time.monotonic()
         assistant_text = engine.respond(
@@ -4525,6 +4992,20 @@ def complete_tool_resolution(
                 "operator > model unavailable to summarize. Raw results shown above."
             )
     else:
+        if tool == "comm_send_message":
+            mode = str(params.get("mode", "draft") or "draft").strip().lower()
+            record_completed_turn(
+                conversation_state=conversation_state,
+                memory=memory,
+                session=session,
+                active_realm_name=active_realm_name,
+                active_token=active_token,
+                user_log=user_log,
+                session_audit=session_audit,
+            )
+            if mode == "execute_send":
+                return "operator > send cancelled. The drafted message remains unsent."
+            return "operator > draft cancelled. Nothing was typed."
         operator_text = "tool use rejected. Proceeding without tool execution."
         t0 = time.monotonic()
         assistant_text = engine.respond(
@@ -4632,6 +5113,7 @@ def handle_command(
     process_faculty: ProcessFaculty | None = None,
     package_faculty: PackageFaculty | None = None,
     desktop_faculty: DesktopFaculty | None = None,
+    communication_workflows: CommunicationWorkflows | None = None,
     guardian: GuardianFaculty | None = None,
     guardian_metrics: dict[str, int] | None = None,
     nammu_dir: Path | None = None,
@@ -4655,6 +5137,7 @@ def handle_command(
     filesystem_faculty = filesystem_faculty or FileSystemFaculty()
     process_faculty = process_faculty or ProcessFaculty()
     package_faculty = package_faculty or PackageFaculty()
+    communication_workflows = communication_workflows or CommunicationWorkflows(desktop_faculty)
     current_user = session_state.get("active_user") if session_state else None
     original_user = session_state.get("original_user") if session_state else None
     guardian_user = session_state.get("guardian_user") if session_state else None
@@ -5698,6 +6181,7 @@ def handle_command(
                 process_faculty=process_faculty,
                 package_faculty=package_faculty,
                 desktop_faculty=desktop_faculty,
+                communication_workflows=communication_workflows,
                 session_audit=session_audit,
                 active_realm_name=active_realm_name,
                 conversation_state=conversation_state,
@@ -5897,6 +6381,72 @@ def handle_command(
             f"{created['line']}"
         )
 
+    communication_action = detect_communication_tool_action(
+        normalized,
+        communication_workflows,
+    )
+    if communication_action is not None:
+        append_routing_decision(
+            routing_log,
+            session,
+            "operator",
+            normalized,
+            nammu_dir=nammu_dir,
+        )
+        append_governance_event(
+            resolve_nammu_dir(session, nammu_dir),
+            session.session_id,
+            "tool",
+            str(communication_action.get("reason", "Governed communication workflow use.")),
+            normalized[:60],
+        )
+        if bool(communication_action.get("requires_proposal", False)):
+            params = dict(communication_action.get("params", {}))
+            created = create_communication_send_proposal(
+                proposal=proposal,
+                session=session,
+                user_input=normalized,
+                app=str(params.get("app", "")),
+                contact=str(params.get("contact", "")),
+                message=str(params.get("message", "")),
+                stage="draft",
+            )
+            return (
+                f"operator > {created['prompt_text']}\n"
+                'Type "approve" to type the draft or "reject" to cancel.\n'
+                f"{created['tool_line']}"
+            )
+        return complete_tool_resolution(
+            {
+                "payload": {
+                    "original_input": normalized,
+                    "query": str(communication_action["query"]),
+                    "tool": str(communication_action["tool"]),
+                    "params": dict(communication_action.get("params", {})),
+                }
+            },
+            "approve",
+            session,
+            proposal,
+            memory,
+            engine,
+            startup_context,
+            operator or OperatorFaculty(),
+            guardian_metrics,
+            active_token=active_token,
+            user_log=user_log,
+            faculty_monitor=faculty_monitor,
+            filesystem_faculty=filesystem_faculty,
+            process_faculty=process_faculty,
+            package_faculty=package_faculty,
+            desktop_faculty=desktop_faculty,
+            communication_workflows=communication_workflows,
+            session_audit=session_audit,
+            active_realm_name=active_realm_name,
+            conversation_state=conversation_state,
+            reflective_memory=reflective_memory,
+        )
+
     desktop_action = detect_desktop_tool_action(
         normalized,
         desktop_faculty,
@@ -5954,6 +6504,7 @@ def handle_command(
             process_faculty=process_faculty,
             package_faculty=package_faculty,
             desktop_faculty=desktop_faculty,
+            communication_workflows=communication_workflows,
             session_audit=session_audit,
             active_realm_name=active_realm_name,
             conversation_state=conversation_state,
@@ -6020,6 +6571,7 @@ def handle_command(
             process_faculty=process_faculty,
             package_faculty=package_faculty,
             desktop_faculty=desktop_faculty,
+            communication_workflows=communication_workflows,
             session_audit=session_audit,
             active_realm_name=active_realm_name,
             conversation_state=conversation_state,
@@ -6083,6 +6635,7 @@ def handle_command(
             process_faculty=process_faculty,
             package_faculty=package_faculty,
             desktop_faculty=desktop_faculty,
+            communication_workflows=communication_workflows,
             session_audit=session_audit,
             active_realm_name=active_realm_name,
             conversation_state=conversation_state,
@@ -6146,6 +6699,7 @@ def handle_command(
             process_faculty=process_faculty,
             package_faculty=package_faculty,
             desktop_faculty=desktop_faculty,
+            communication_workflows=communication_workflows,
             session_audit=session_audit,
             active_realm_name=active_realm_name,
             conversation_state=conversation_state,
@@ -6241,6 +6795,7 @@ def handle_command(
                 process_faculty=process_faculty,
                 package_faculty=package_faculty,
                 desktop_faculty=desktop_faculty,
+                communication_workflows=communication_workflows,
                 session_audit=session_audit,
                 active_realm_name=active_realm_name,
                 conversation_state=conversation_state,
@@ -6424,6 +6979,7 @@ def main() -> None:
     process_faculty = ProcessFaculty()
     package_faculty = PackageFaculty()
     desktop_faculty = DesktopFaculty()
+    communication_workflows = CommunicationWorkflows(desktop_faculty)
     governance = GovernanceLayer(engine=engine)
     sync_profile_grounding(engine, profile_manager, guardian_user, guardian_token, reflective_memory)
     classifier = IntentClassifier(
@@ -6536,6 +7092,7 @@ def main() -> None:
             process_faculty=process_faculty,
             package_faculty=package_faculty,
             desktop_faculty=desktop_faculty,
+            communication_workflows=communication_workflows,
             guardian=guardian,
             guardian_metrics=guardian_metrics,
             nammu_dir=NAMMU_DIR,

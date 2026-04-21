@@ -47,6 +47,15 @@ HELP_COMMON = """𒀭 INANNA NYX — Available Commands
     "install firefox" (requires approval)
     "remove firefox" (requires approval)
 
+  COMMUNICATION (Signal, WhatsApp)
+    "read my Signal messages"          Read messages (no approval)
+    "check WhatsApp"                   Read WhatsApp (no approval)
+    "list my Signal contacts"          List contacts (no approval)
+    "send a message to Maria on Signal saying hello"
+                                       Send message (approval x2:
+                                       type draft + confirm send)
+    (sending ALWAYS requires approval - no exceptions)
+
   DESKTOP (speak naturally)
     "open firefox"                Open any application
     "read the whatsapp window"    Read window content
@@ -202,6 +211,7 @@ HELP_TOPICS = {
   OPERATOR   Tool execution. web_search, ping, scan_ports, resolve_host,
               read_file, list_dir, file_info, search_files, write_file,
               list_processes, system_info, kill_process, run_command,
+              comm_read_messages, comm_send_message, comm_list_contacts,
               search_packages, list_packages, install_package, remove_package,
               launch_app,
               desktop_open_app, desktop_read_window, desktop_click,
@@ -219,7 +229,7 @@ HELP_TOPICS = {
   help [topic]       Show details on a specific topic
 
   Topics: my-profile, governance-trust, inanna-reflect,
-          faculties, tools, files, processes, packages, desktop, memory, realms, departments""",
+          faculties, tools, files, processes, packages, communication, desktop, memory, realms, departments""",
 
     "tools": """tools — Available tools (all require proposal approval)
 
@@ -234,6 +244,8 @@ HELP_TOPICS = {
     - web_search, ping, resolve_host, scan_ports: approval required
     - list_processes, system_info: no approval required
     - kill_process, run_command: approval required
+    - comm_read_messages, comm_list_contacts: no approval required
+    - comm_send_message: ALWAYS requires approval and send confirmation
     - search_packages, list_packages: no approval required
     - install_package, remove_package, launch_app: approval required
     - desktop_read_window, desktop_screenshot: no approval required
@@ -301,6 +313,28 @@ HELP_TOPICS = {
 
   Package actions are routed through the detected system manager:
   NixOS, apt, brew, or winget.""",
+
+    "communication": """communication - Messaging workflows
+
+  INANNA can read messages, list visible contacts, and prepare
+  governed drafts in supported communication apps.
+
+  Read messages:   "read my Signal messages"
+  Check inbox:     "check WhatsApp"
+  List contacts:   "list my Signal contacts"
+  Send message:    "send a message to Maria on Signal saying hello"
+
+  Governance:
+    - comm_read_messages: no approval required
+    - comm_list_contacts: no approval required
+    - comm_send_message: ALWAYS requires approval twice
+
+  Sending is a two-stage flow:
+    1. Approve typing the draft
+    2. Approve clicking Send after the draft is visible
+
+  Supported now: Signal and WhatsApp workflows
+  Future phases: Telegram, Discord, Slack.""",
 
     "desktop": """desktop - Desktop Faculty operations
 

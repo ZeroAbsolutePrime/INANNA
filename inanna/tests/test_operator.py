@@ -32,6 +32,9 @@ class OperatorFacultyTests(unittest.TestCase):
                 "install_package",
                 "remove_package",
                 "launch_app",
+                "comm_read_messages",
+                "comm_send_message",
+                "comm_list_contacts",
                 "desktop_open_app",
                 "desktop_read_window",
                 "desktop_click",
@@ -96,6 +99,18 @@ class OperatorFacultyTests(unittest.TestCase):
                 "requires_approval": False,
                 "requires_privilege": "converse",
                 "parameters": ["query"],
+                "enabled": True,
+            },
+        )
+        self.assertEqual(
+            operator.get_tool_definition("comm_send_message"),
+            {
+                "display_name": "Send Message",
+                "description": "Type and send a message to a contact (send always requires approval).",
+                "category": "communication",
+                "requires_approval": True,
+                "requires_privilege": "converse",
+                "parameters": ["app", "contact", "message", "mode"],
                 "enabled": True,
             },
         )
