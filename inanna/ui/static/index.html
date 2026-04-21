@@ -955,6 +955,79 @@ html,body{
 .sys-proc-name { color: var(--cream); flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .sys-proc-mem  { color: var(--gold2); min-width: 52px; text-align: right; }
 .sys-proc-cpu  { color: var(--faded); min-width: 36px; text-align: right; }
+
+/* ── SIDE PANEL SECTION COLOURS ── */
+
+/* ADMIN — lapis blue, governance authority */
+#admin-panel .sp-title { color: #6a9fd8; }
+#admin-panel .sp-head:hover { background: rgba(106,159,216,.06); }
+#admin-panel .sp-head { border-left: 2px solid transparent; transition: border-color .2s; }
+#admin-panel.expanded .sp-head { border-left-color: #6a9fd8; }
+
+/* PROPOSALS — amber, action pending */
+#proposal-panel .sp-title { color: #e07030; }
+#proposal-panel .sp-head:hover { background: rgba(224,112,48,.06); }
+#proposal-panel .sp-head { border-left: 2px solid transparent; transition: border-color .2s; }
+#proposal-panel.expanded .sp-head { border-left-color: #e07030; }
+#proposal-panel .sp-badge { background: #8a3e10; }
+#proposal-panel .sp-badge.urgent { background: #cc3820; }
+
+/* FACULTIES — violet, intelligence */
+#faculty-panel .sp-title { color: #a870d8; }
+#faculty-panel .sp-head:hover { background: rgba(168,112,216,.06); }
+#faculty-panel .sp-head { border-left: 2px solid transparent; transition: border-color .2s; }
+#faculty-panel.expanded .sp-head { border-left-color: #a870d8; }
+#faculty-panel .sp-badge { background: #4a2878; }
+
+/* MEMORY — jade green, organic growing */
+#memory-panel .sp-title { color: #5aaa70; }
+#memory-panel .sp-head:hover { background: rgba(90,170,112,.06); }
+#memory-panel .sp-head { border-left: 2px solid transparent; transition: border-color .2s; }
+#memory-panel.expanded .sp-head { border-left-color: #5aaa70; }
+#memory-panel .sp-badge { background: #2a5a38; }
+
+/* GUARDIAN ROOM — deep red, vigilance */
+#guardian-panel .sp-title { color: #cc6060; }
+#guardian-panel .sp-head:hover { background: rgba(204,96,96,.06); }
+#guardian-panel .sp-head { border-left: 2px solid transparent; transition: border-color .2s; }
+#guardian-panel.expanded .sp-head { border-left-color: #cc6060; }
+#guardian-panel .sp-badge { background: #7a2020; }
+#guardian-panel .sp-badge.urgent { background: #cc3820; }
+
+/* AUDIT — ivory neutral, the record */
+#audit-panel .sp-title { color: #c8a860; }
+#audit-panel .sp-head:hover { background: rgba(200,168,96,.06); }
+#audit-panel .sp-head { border-left: 2px solid transparent; transition: border-color .2s; }
+#audit-panel.expanded .sp-head { border-left-color: #c8a860; }
+#audit-panel .sp-badge { background: #6a5020; }
+
+/* SYSTEM — cyan/teal, machine technical */
+#system-panel .sp-title { color: #50c8b8; }
+#system-panel .sp-head:hover { background: rgba(80,200,184,.06); }
+#system-panel .sp-head { border-left: 2px solid transparent; transition: border-color .2s; }
+#system-panel.expanded .sp-head { border-left-color: #50c8b8; }
+#system-panel .sp-badge { background: #cc3820; color: #fff; }
+
+/* Section toggles match their section colour on expand */
+#admin-panel.expanded .sp-toggle    { color: #6a9fd8; }
+#proposal-panel.expanded .sp-toggle { color: #e07030; }
+#faculty-panel.expanded .sp-toggle  { color: #a870d8; }
+#memory-panel.expanded .sp-toggle   { color: #5aaa70; }
+#guardian-panel.expanded .sp-toggle { color: #cc6060; }
+#audit-panel.expanded .sp-toggle    { color: #c8a860; }
+#system-panel.expanded .sp-toggle   { color: #50c8b8; }
+
+/* Proposal filter tabs — amber theme */
+.pf-tab.active { border-color: #e07030; color: #e07030; background: rgba(224,112,48,.06); }
+
+/* Faculty dots use their Faculty colours */
+.fac-dot.connected { box-shadow: 0 0 6px rgba(168,112,216,.4); }
+
+/* Memory bar — jade */
+.mem-fill { background: linear-gradient(90deg, #3a8a50, #5aaa70) !important; }
+
+/* Guardian alerts text */
+.gr-alerts { color: #cc6060; }
 </style>
 </head>
 <body>
