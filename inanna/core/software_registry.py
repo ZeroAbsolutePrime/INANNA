@@ -84,7 +84,11 @@ class SoftwareRegistry:
         return results
 
     def is_installed(self, query: str) -> Optional[SoftwareEntry]:
-        """Return the first matching installed entry, or None."""
+        """Return the first matching installed entry, or None.
+        Safe to call before load() — returns None if registry not yet loaded.
+        """
+        if not self._loaded:
+            return None  # Don't block — registry loads in background
         matches = self.find(query)
         return matches[0] if matches else None
 

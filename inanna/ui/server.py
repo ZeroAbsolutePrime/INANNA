@@ -279,6 +279,15 @@ class InterfaceServer:
         self.process_faculty = ProcessFaculty()
         self.package_faculty = PackageFaculty()
         self.software_registry = SoftwareRegistry()
+        # Load software registry in background — takes ~9s (winget)
+        # Server starts immediately; registry is ready within ~10s
+        import threading
+        threading.Thread(
+            target=self.software_registry.load,
+            kwargs={"force": False},
+            daemon=True,
+            name="software-registry-loader"
+        ).start()
         self.process_monitor = ProcessMonitor(self.server_start_time)
         self.governance = GovernanceLayer(engine=self.engine)
         self.classifier = IntentClassifier(
