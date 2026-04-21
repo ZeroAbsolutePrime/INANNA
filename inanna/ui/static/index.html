@@ -917,6 +917,44 @@ html,body{
 ::-webkit-scrollbar{width:2px;height:2px;}
 ::-webkit-scrollbar-track{background:var(--ob);}
 ::-webkit-scrollbar-thumb{background:var(--gold1);}
+
+/* ── SYSTEM STATUS PANEL ── */
+.sys-panel { padding: 0 14px 14px; }
+.sys-row {
+  display: flex; align-items: center; gap: 8px;
+  margin-bottom: 8px;
+}
+.sys-label {
+  font-size: 8px; letter-spacing: 3px; color: var(--faded);
+  min-width: 38px; flex-shrink: 0;
+}
+.sys-bar-wrap { flex: 1; height: 5px; background: var(--dust); border-radius: 2px; overflow: hidden; }
+.sys-bar-fill {
+  height: 100%; border-radius: 2px;
+  transition: width .8s ease, background .4s;
+}
+.sys-bar-fill.ok   { background: linear-gradient(90deg, var(--jade), #88cc88); }
+.sys-bar-fill.warn { background: linear-gradient(90deg, var(--gold3), var(--gold4)); }
+.sys-bar-fill.crit { background: linear-gradient(90deg, var(--am2), var(--danger)); }
+.sys-pct {
+  font-size: 9px; color: var(--ivory); min-width: 34px;
+  text-align: right; letter-spacing: 1px;
+}
+.sys-detail {
+  font-size: 8px; color: var(--dim); letter-spacing: 1px;
+  margin-bottom: 10px; margin-top: -4px;
+}
+.sys-uptime { font-size: 8px; color: var(--dim); letter-spacing: 2px; margin-bottom: 10px; }
+.sys-procs-title { font-size: 8px; letter-spacing: 3px; color: var(--gold2); margin-bottom: 6px; }
+.sys-proc-row {
+  display: flex; gap: 6px; align-items: baseline;
+  padding: 3px 0; border-bottom: .5px solid rgba(56,42,24,.4);
+  font-size: 9px;
+}
+.sys-proc-row:last-child { border-bottom: none; }
+.sys-proc-name { color: var(--cream); flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.sys-proc-mem  { color: var(--gold2); min-width: 52px; text-align: right; }
+.sys-proc-cpu  { color: var(--faded); min-width: 36px; text-align: right; }
 </style>
 </head>
 <body>
@@ -1122,7 +1160,21 @@ html,body{
         </div>
       </div>
 
-    </div><!-- end side-panel -->
+    
+      <!-- SYSTEM STATUS -->
+      <div class="sp-section" id="system-panel">
+        <div class="sp-head" onclick="toggleSection('system')">
+          <span class="sp-title">SYSTEM</span>
+          <span class="sp-badge hidden" id="system-badge"></span>
+          <span class="sp-toggle">▸</span>
+        </div>
+        <div class="sp-body" id="system-body">
+          <div class="sys-panel" id="sys-content">
+            <div style="font-size:9px;color:var(--dim);letter-spacing:2px">Loading system info...</div>
+          </div>
+        </div>
+      </div>
+</div><!-- end side-panel -->
   </div><!-- end body-wrap -->
 </div><!-- end shell -->
 
@@ -1331,6 +1383,7 @@ function handleStatus(d){
   const pending=d.pending_proposals||0;
   setBadge('proposal',pending,pending>0);
   if(d.faculties&&d.faculties.length>0)renderFaculties(d.faculties);
+  if(d.sys)renderSysStatus(d.sys);
   setBadge('faculty',(d.faculties||[]).filter(f=>f.mode==='connected').length,false);
 }
 
@@ -1857,6 +1910,79 @@ function cancelProfileField(fieldKey, label, currentVal, placeholder) {
     <span class="prof-field-value${isEmpty?' empty':''}" id="pval-${fieldKey}">${isEmpty?'—':esc(currentVal)}</span>
     <span class="prof-edit-hint">✎ edit</span>
   `;
+}
+
+// ══════════════════════════════════
+//  LIVE SYSTEM STATUS
+// ══════════════════════════════════
+
+function renderSysStatus(sys) {
+  if (!sys || !sys.ram_total_gb) return;
+  const el = document.getElementById('sys-content');
+  if (!el) return;
+
+  function bar(pct) {
+    const cls = pct >= 90 ? 'crit' : pct >= 70 ? 'warn' : 'ok';
+    return `<div class="sys-bar-wrap"><div class="sys-bar-fill ${cls}" style="width:${Math.min(100,pct)}%"></div></div>`;
+  }
+
+  let html = '';
+
+  // CPU
+  html += `<div class="sys-row">
+    <span class="sys-label">CPU</span>
+    ${bar(sys.cpu_percent)}
+    <span class="sys-pct">${sys.cpu_percent.toFixed(0)}%</span>
+  </div>`;
+  html += `<div class="sys-detail">${sys.cpu_count} cores · ${sys.platform || ''}</div>`;
+
+  // RAM
+  html += `<div class="sys-row">
+    <span class="sys-label">RAM</span>
+    ${bar(sys.ram_percent)}
+    <span class="sys-pct">${sys.ram_percent.toFixed(0)}%</span>
+  </div>`;
+  html += `<div class="sys-detail">${sys.ram_used_gb.toFixed(1)} / ${sys.ram_total_gb.toFixed(1)} GB</div>`;
+
+  // DISK
+  html += `<div class="sys-row">
+    <span class="sys-label">DISK</span>
+    ${bar(sys.disk_percent)}
+    <span class="sys-pct">${sys.disk_percent.toFixed(0)}%</span>
+  </div>`;
+  html += `<div class="sys-detail">${sys.disk_used_gb.toFixed(1)} / ${sys.disk_total_gb.toFixed(1)} GB</div>`;
+
+  // Uptime
+  if (sys.uptime) {
+    html += `<div class="sys-uptime">⏱ uptime: ${sys.uptime}</div>`;
+  }
+
+  // Top processes
+  const procs = sys.top_processes || [];
+  if (procs.length > 0) {
+    html += `<div class="sys-procs-title">TOP PROCESSES</div>`;
+    for (const p of procs) {
+      html += `<div class="sys-proc-row">
+        <span class="sys-proc-name" title="${esc(p.name)} (${p.pid})">${esc(p.name)}</span>
+        <span class="sys-proc-mem">${p.mem_mb.toFixed(0)} MB</span>
+        <span class="sys-proc-cpu">${p.cpu.toFixed(1)}%</span>
+      </div>`;
+    }
+  }
+
+  el.innerHTML = html;
+
+  // Update badge if any metric is critical
+  const badge = document.getElementById('system-badge');
+  if (badge) {
+    if (sys.ram_percent >= 90 || sys.disk_percent >= 95 || sys.cpu_percent >= 90) {
+      badge.textContent = '!';
+      badge.classList.remove('hidden');
+      badge.classList.add('urgent');
+    } else {
+      badge.classList.add('hidden');
+    }
+  }
 }
 </script>
 </body>

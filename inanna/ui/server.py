@@ -2754,6 +2754,41 @@ class InterfaceServer:
         _, report = self.inspect_guardian()
         return report
 
+    def _build_sys_payload(self) -> dict:
+        """Build live system metrics for the status payload."""
+        try:
+            from core.process_faculty import ProcessFaculty
+            pf = ProcessFaculty()
+            r = pf.system_info()
+            if r.success and r.system_info:
+                s = r.system_info
+                # Top 5 processes by memory
+                pr = pf.list_processes(limit=5, sort_by="memory")
+                top = []
+                for rec in (pr.records if pr.success else []):
+                    top.append({
+                        "pid": rec.pid,
+                        "name": rec.name[:28],
+                        "cpu": rec.cpu_percent,
+                        "mem_mb": rec.memory_mb,
+                    })
+                return {
+                    "cpu_percent": s.cpu_percent,
+                    "cpu_count": s.cpu_count,
+                    "ram_used_gb": s.ram_used_gb,
+                    "ram_total_gb": s.ram_total_gb,
+                    "ram_percent": s.ram_percent,
+                    "disk_used_gb": s.disk_used_gb,
+                    "disk_total_gb": s.disk_total_gb,
+                    "disk_percent": s.disk_percent,
+                    "uptime": s.uptime_human,
+                    "platform": s.platform,
+                    "top_processes": top,
+                }
+        except Exception:
+            pass
+        return {}
+
     def build_status_payload(self) -> dict[str, Any]:
         self._refresh_session_users()
         visible_memory_report = self._visible_memory_report()
@@ -2829,6 +2864,7 @@ class InterfaceServer:
                 self.active_token,
             ),
             "faculties": self.faculty_monitor.summary(),
+            "sys": self._build_sys_payload(),
             "body": build_body_summary(body_report),
             "capabilities": list(STARTUP_COMMANDS),
             "report": self.state_report.render(
