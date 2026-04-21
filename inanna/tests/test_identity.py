@@ -111,6 +111,11 @@ class IdentityTests(unittest.TestCase):
         self.assertIn("ping", tools)
         self.assertIn("resolve_host", tools)
         self.assertIn("scan_ports", tools)
+        self.assertIn("read_file", tools)
+        self.assertIn("list_dir", tools)
+        self.assertIn("file_info", tools)
+        self.assertIn("search_files", tools)
+        self.assertIn("write_file", tools)
 
     def test_guardian_codes_list_system_healthy(self) -> None:
         codes = list_guardian_codes()
@@ -121,8 +126,8 @@ class IdentityTests(unittest.TestCase):
     def test_current_phase_constant_matches_phase_banner(self) -> None:
         self.assertEqual(CURRENT_PHASE, phase_banner())
 
-    def test_current_phase_names_nixos_configuration(self) -> None:
-        self.assertIn("NixOS Configuration", CURRENT_PHASE)
+    def test_current_phase_names_file_system_faculty(self) -> None:
+        self.assertIn("File System Faculty", CURRENT_PHASE)
 
     def test_cycle2_summary_describes_completed_kernel(self) -> None:
         self.assertIn("NAMMU Kernel", CYCLE2_SUMMARY)
@@ -153,6 +158,7 @@ class IdentityTests(unittest.TestCase):
     def test_cycle7_preview_describes_nyxos(self) -> None:
         self.assertIn("NYXOS", CYCLE7_PREVIEW)
         self.assertIn("NixOS system service", CYCLE7_PREVIEW)
+        self.assertIn("file system tools", CYCLE7_PREVIEW)
         self.assertIn("Whisper + Piper TTS", CYCLE7_PREVIEW)
 
 

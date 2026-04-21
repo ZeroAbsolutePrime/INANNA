@@ -44,6 +44,65 @@
         "port_range"
       ],
       "enabled": true
+    },
+    "read_file": {
+      "display_name": "Read File",
+      "description": "Read the contents of a file. Safe paths may skip proposal approval.",
+      "category": "filesystem",
+      "requires_approval": true,
+      "requires_privilege": "converse",
+      "safe_paths_skip_approval": true,
+      "parameters": [
+        "path"
+      ],
+      "enabled": true
+    },
+    "list_dir": {
+      "display_name": "List Directory",
+      "description": "List files and directories in a folder.",
+      "category": "filesystem",
+      "requires_approval": false,
+      "requires_privilege": "converse",
+      "parameters": [
+        "path"
+      ],
+      "enabled": true
+    },
+    "file_info": {
+      "display_name": "File Info",
+      "description": "Get metadata about a file or directory.",
+      "category": "filesystem",
+      "requires_approval": false,
+      "requires_privilege": "converse",
+      "parameters": [
+        "path"
+      ],
+      "enabled": true
+    },
+    "search_files": {
+      "display_name": "Search Files",
+      "description": "Search for files matching a glob pattern.",
+      "category": "filesystem",
+      "requires_approval": false,
+      "requires_privilege": "converse",
+      "parameters": [
+        "directory",
+        "pattern"
+      ],
+      "enabled": true
+    },
+    "write_file": {
+      "display_name": "Write File",
+      "description": "Write content to a file.",
+      "category": "filesystem",
+      "requires_approval": true,
+      "requires_privilege": "converse",
+      "parameters": [
+        "path",
+        "content",
+        "overwrite"
+      ],
+      "enabled": true
     }
   }
 }

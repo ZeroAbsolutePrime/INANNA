@@ -13,7 +13,17 @@ class OperatorFacultyTests(unittest.TestCase):
 
         self.assertEqual(
             operator.PERMITTED_TOOLS,
-            {"web_search", "ping", "resolve_host", "scan_ports"},
+            {
+                "web_search",
+                "ping",
+                "resolve_host",
+                "scan_ports",
+                "read_file",
+                "list_dir",
+                "file_info",
+                "search_files",
+                "write_file",
+            },
         )
         self.assertEqual(
             operator.get_tool_definition("ping"),
@@ -36,6 +46,18 @@ class OperatorFacultyTests(unittest.TestCase):
                 "requires_approval": True,
                 "requires_privilege": "network_tools",
                 "parameters": ["host"],
+                "enabled": True,
+            },
+        )
+        self.assertEqual(
+            operator.get_tool_definition("read_file"),
+            {
+                "display_name": "Read File",
+                "description": "Read the contents of a file. Safe paths may skip proposal approval.",
+                "category": "filesystem",
+                "requires_approval": True,
+                "requires_privilege": "converse",
+                "parameters": ["path"],
                 "enabled": True,
             },
         )

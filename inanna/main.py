@@ -15,6 +15,7 @@ from dotenv import load_dotenv
 from config import Config
 from core.body import BodyInspector, BodyReport
 from core.faculty_monitor import FacultyMonitor
+from core.filesystem_faculty import FileInfo, FileSystemFaculty, FileSystemResult
 from core.governance import GovernanceLayer
 from core.guardian import GuardianFaculty
 from core.memory import Memory
@@ -192,11 +193,281 @@ PROFILE_COMMUNICATION_CLEAR_FIELDS = (
     "communication_style",
     "observed_patterns",
 )
+FILESYSTEM_SIGNAL_PATH = APP_ROOT / "config" / "governance_signals.json"
+FILESYSTEM_TOOL_NAMES = {
+    "read_file",
+    "list_dir",
+    "file_info",
+    "search_files",
+    "write_file",
+}
+FILESYSTEM_HINT_FALLBACKS = (
+    "read file",
+    "open file",
+    "show file",
+    "list directory",
+    "list folder",
+    "what files",
+    "search files",
+    "find files",
+    "file size",
+    "file info",
+    "write file",
+    "save file",
+    "create file",
+    "what is in",
+    "show me",
+)
+FILESYSTEM_PATTERN_ALIASES = {
+    "python": "*.py",
+    "python code": "*.py",
+    "py": "*.py",
+    ".py": "*.py",
+    "text": "*.txt",
+    "txt": "*.txt",
+    ".txt": "*.txt",
+    "markdown": "*.md",
+    "md": "*.md",
+    ".md": "*.md",
+    "json": "*.json",
+    ".json": "*.json",
+    "csv": "*.csv",
+    ".csv": "*.csv",
+    "pdf": "*.pdf",
+    ".pdf": "*.pdf",
+}
 
 
 def get_active_realm_name() -> str:
     realm_name = os.getenv("INANNA_REALM", DEFAULT_REALM).strip()
     return realm_name or DEFAULT_REALM
+
+
+def load_filesystem_domain_hints(
+    signals_path: Path = FILESYSTEM_SIGNAL_PATH,
+) -> list[str]:
+    try:
+        payload = json.loads(signals_path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return list(FILESYSTEM_HINT_FALLBACKS)
+
+    domain_hints = payload.get("domain_hints", {})
+    if not isinstance(domain_hints, dict):
+        return list(FILESYSTEM_HINT_FALLBACKS)
+    hints = domain_hints.get("filesystem", [])
+    if not isinstance(hints, list):
+        return list(FILESYSTEM_HINT_FALLBACKS)
+
+    cleaned = [str(item).strip().lower() for item in hints if str(item).strip()]
+    return cleaned or list(FILESYSTEM_HINT_FALLBACKS)
+
+
+def normalize_request_fragment(value: str) -> str:
+    cleaned = str(value or "").strip()
+    if len(cleaned) >= 2 and cleaned[0] == cleaned[-1] and cleaned[0] in {'"', "'"}:
+        cleaned = cleaned[1:-1].strip()
+    return cleaned.rstrip(".,;:!?")
+
+
+def normalize_filesystem_path(value: str) -> str:
+    cleaned = normalize_request_fragment(value)
+    lowered = cleaned.lower()
+    for prefix in ("the ",):
+        if lowered.startswith(prefix):
+            cleaned = cleaned[len(prefix) :].strip()
+            lowered = cleaned.lower()
+    for suffix in (" folder", " directory"):
+        if lowered.endswith(suffix):
+            cleaned = cleaned[: -len(suffix)].strip()
+            lowered = cleaned.lower()
+    if lowered in {"home", "home directory", "my home"}:
+        return str(Path.home())
+    if lowered.startswith("my "):
+        remainder = cleaned[3:].strip()
+        special = {
+            "documents": Path.home() / "Documents",
+            "downloads": Path.home() / "Downloads",
+            "desktop": Path.home() / "Desktop",
+            "pictures": Path.home() / "Pictures",
+            "music": Path.home() / "Music",
+            "videos": Path.home() / "Videos",
+        }
+        return str(special.get(remainder.lower(), Path.home() / remainder))
+    return cleaned
+
+
+def normalize_search_pattern(value: str) -> str:
+    cleaned = normalize_request_fragment(value)
+    lowered = cleaned.lower()
+    if lowered.endswith(" files"):
+        cleaned = cleaned[:-6].strip()
+        lowered = cleaned.lower()
+    alias = FILESYSTEM_PATTERN_ALIASES.get(lowered)
+    if alias:
+        return alias
+    if cleaned.startswith("."):
+        return f"*{cleaned}"
+    return cleaned or "*"
+
+
+def build_tool_request_query(tool_name: str, params: dict[str, Any]) -> str:
+    if tool_name == "search_files":
+        directory = str(params.get("directory", "")).strip()
+        pattern = str(params.get("pattern", "")).strip()
+        return f"{directory} | {pattern}".strip(" |")
+    if tool_name in FILESYSTEM_TOOL_NAMES:
+        return str(params.get("path", "")).strip()
+    return str(params.get("query", "")).strip()
+
+
+def extract_filesystem_tool_request(
+    text: str,
+    hints: list[str] | None = None,
+) -> dict[str, Any] | None:
+    normalized = str(text or "").strip()
+    lowered = normalized.lower()
+    active_hints = hints or load_filesystem_domain_hints()
+    hint_match = any(hint in lowered for hint in active_hints)
+    if not hint_match and not re.match(r"^(read|open|list|find|search|write|save|create|what is in)\b", lowered):
+        return None
+
+    write_match = re.match(
+        r"^(?P<verb>overwrite|write|save|create)\s+(?:a\s+)?file(?:\s+called)?\s+(?P<path>.+?)\s+(?:with|containing)\s+(?P<content>.+)$",
+        normalized,
+        flags=re.IGNORECASE | re.DOTALL,
+    )
+    if write_match:
+        params = {
+            "path": normalize_filesystem_path(write_match.group("path")),
+            "content": normalize_request_fragment(write_match.group("content")),
+            "overwrite": write_match.group("verb").strip().lower() == "overwrite",
+        }
+        return {
+            "tool": "write_file",
+            "params": params,
+            "query": build_tool_request_query("write_file", params),
+            "reason": "File write operations require governed tool use.",
+        }
+
+    search_match = re.match(
+        r"^(?:find|search(?:\s+for)?)\s+(?:all\s+)?(?P<pattern>.+?)\s+files?\s+(?:in|under)\s+(?P<directory>.+)$",
+        normalized,
+        flags=re.IGNORECASE,
+    )
+    if search_match:
+        params = {
+            "directory": normalize_filesystem_path(search_match.group("directory")),
+            "pattern": normalize_search_pattern(search_match.group("pattern")),
+        }
+        return {
+            "tool": "search_files",
+            "params": params,
+            "query": build_tool_request_query("search_files", params),
+            "reason": "File search routed to OPERATOR tool use.",
+        }
+
+    info_match = re.match(
+        r"^(?:what is|show)(?:\s+me)?(?:\s+the)?\s+(?:size|file info|info|metadata)\s+(?:of|for)?\s+(?P<path>.+)$",
+        normalized,
+        flags=re.IGNORECASE,
+    )
+    if info_match:
+        params = {"path": normalize_filesystem_path(info_match.group("path"))}
+        return {
+            "tool": "file_info",
+            "params": params,
+            "query": build_tool_request_query("file_info", params),
+            "reason": "File metadata routed to OPERATOR tool use.",
+        }
+
+    read_match = re.match(
+        r"^(?:read|open|show)(?:\s+me)?(?:\s+the)?\s+file(?:\s+at)?\s+(?P<path>.+)$",
+        normalized,
+        flags=re.IGNORECASE,
+    )
+    if read_match:
+        params = {"path": normalize_filesystem_path(read_match.group("path"))}
+        return {
+            "tool": "read_file",
+            "params": params,
+            "query": build_tool_request_query("read_file", params),
+            "reason": "File read routed to OPERATOR tool use.",
+        }
+
+    list_match = re.match(
+        r"^(?:list|show)(?:\s+me)?(?:\s+the)?\s+(?:files?|contents?)\s+(?:in|of)\s+(?P<path>.+)$",
+        normalized,
+        flags=re.IGNORECASE,
+    )
+    if list_match:
+        params = {"path": normalize_filesystem_path(list_match.group("path"))}
+        return {
+            "tool": "list_dir",
+            "params": params,
+            "query": build_tool_request_query("list_dir", params),
+            "reason": "Directory listing routed to OPERATOR tool use.",
+        }
+
+    if lowered.startswith("what is in "):
+        params = {"path": normalize_filesystem_path(normalized[len("what is in ") :])}
+        return {
+            "tool": "list_dir",
+            "params": params,
+            "query": build_tool_request_query("list_dir", params),
+            "reason": "Directory listing routed to OPERATOR tool use.",
+        }
+
+    if lowered.startswith("list "):
+        params = {"path": normalize_filesystem_path(normalized[len("list ") :])}
+        return {
+            "tool": "list_dir",
+            "params": params,
+            "query": build_tool_request_query("list_dir", params),
+            "reason": "Directory listing routed to OPERATOR tool use.",
+        }
+
+    return None
+
+
+def filesystem_request_requires_proposal(
+    filesystem_request: dict[str, Any],
+    filesystem_faculty: FileSystemFaculty,
+) -> bool:
+    tool_name = str(filesystem_request.get("tool", "")).strip().lower()
+    params = filesystem_request.get("params", {})
+    if not isinstance(params, dict):
+        params = {}
+    if tool_name == "write_file":
+        return True
+    if tool_name == "read_file":
+        path = normalize_filesystem_path(str(params.get("path", "")))
+        if not path:
+            return True
+        return not filesystem_faculty.is_safe_read(Path(path).expanduser())
+    return False
+
+
+def detect_filesystem_tool_action(
+    text: str,
+    filesystem_faculty: FileSystemFaculty,
+    profile_manager: ProfileManager | None = None,
+    current_user: UserRecord | None = None,
+    active_token: SessionToken | None = None,
+) -> dict[str, Any] | None:
+    request = extract_filesystem_tool_request(text)
+    if request is None:
+        return None
+    requires_proposal = filesystem_request_requires_proposal(request, filesystem_faculty)
+    persistent_trusted_tools: list[str] = []
+    if profile_manager is not None and current_user is not None and active_token is not None:
+        profile = profile_manager.load(current_user.user_id)
+        if profile is not None:
+            persistent_trusted_tools = normalize_trusted_tools(profile.persistent_trusted_tools)
+    return {
+        **request,
+        "requires_proposal": requires_proposal,
+        "persistent_trusted_tools": persistent_trusted_tools,
+    }
 
 
 def build_sentinel_stub_response() -> str:
@@ -2188,6 +2459,7 @@ def create_tool_use_proposal(
     user_input: str,
     tool: str,
     query: str,
+    params: dict[str, Any] | None = None,
 ) -> dict:
     created = proposal.create(
         what=f"{tool} tool use",
@@ -2196,6 +2468,7 @@ def create_tool_use_proposal(
             "action": "tool_use",
             "tool": tool,
             "query": query,
+            "params": dict(params or {"query": query}),
             "original_input": user_input,
             "session_id": session.session_id,
         },
@@ -2416,7 +2689,171 @@ def complete_orchestration_resolution(
     }
 
 
+def serialize_file_info(info: FileInfo) -> dict[str, object]:
+    return {
+        "path": info.path,
+        "name": info.name,
+        "size_bytes": info.size_bytes,
+        "size_human": info.size_human,
+        "is_dir": info.is_dir,
+        "is_file": info.is_file,
+        "modified_at": info.modified_at,
+        "created_at": info.created_at,
+        "permissions": info.permissions,
+        "extension": info.extension,
+    }
+
+
+def build_filesystem_tool_result(
+    tool_name: str,
+    fs_result: FileSystemResult,
+    filesystem_faculty: FileSystemFaculty,
+) -> ToolResult:
+    data: dict[str, Any] = {
+        "formatted": filesystem_faculty.format_result(fs_result),
+        "operation": fs_result.operation,
+        "path": fs_result.path,
+        "truncated": fs_result.truncated,
+        "bytes_read": fs_result.bytes_read,
+    }
+    if fs_result.content is not None:
+        data["content"] = fs_result.content
+    if fs_result.info is not None:
+        data["info"] = serialize_file_info(fs_result.info)
+    if fs_result.entries:
+        data["entries"] = [serialize_file_info(entry) for entry in fs_result.entries]
+    return ToolResult(
+        tool=tool_name,
+        query=fs_result.path,
+        success=fs_result.success,
+        data=data,
+        error=str(fs_result.error or ""),
+    )
+
+
+def run_filesystem_tool(
+    filesystem_faculty: FileSystemFaculty,
+    tool_name: str,
+    params: dict[str, Any],
+) -> ToolResult:
+    if tool_name == "read_file":
+        result = filesystem_faculty.read_file(str(params.get("path", "")))
+    elif tool_name == "list_dir":
+        result = filesystem_faculty.list_dir(str(params.get("path", "")))
+    elif tool_name == "file_info":
+        result = filesystem_faculty.file_info(str(params.get("path", "")))
+    elif tool_name == "search_files":
+        result = filesystem_faculty.search_files(
+            str(params.get("directory", "")),
+            str(params.get("pattern", "")),
+        )
+    elif tool_name == "write_file":
+        result = filesystem_faculty.write_file(
+            str(params.get("path", "")),
+            str(params.get("content", "")),
+            overwrite=bool(params.get("overwrite", False)),
+        )
+    else:
+        result = FileSystemResult(
+            success=False,
+            operation=tool_name,
+            path=str(params.get("path", "") or params.get("directory", "")),
+            error=f"Unknown file system tool: {tool_name}",
+        )
+    return build_filesystem_tool_result(tool_name, result, filesystem_faculty)
+
+
+def execute_tool_request(
+    tool_name: str,
+    params: dict[str, Any],
+    operator: OperatorFaculty,
+    filesystem_faculty: FileSystemFaculty | None = None,
+) -> ToolResult:
+    if tool_name in FILESYSTEM_TOOL_NAMES:
+        return run_filesystem_tool(filesystem_faculty or FileSystemFaculty(), tool_name, params)
+    return operator.execute(tool_name, params)
+
+
+def build_filesystem_context_lines(result: ToolResult) -> list[str]:
+    path = str(result.data.get("path") or result.query)
+    if not result.success:
+        return [
+            f"tool result ({result.tool}) path: {path}",
+            f"error: {result.error or 'unknown file system error'}",
+        ]
+
+    if result.tool == "read_file":
+        content = str(result.data.get("content", ""))
+        excerpt = content[:4000]
+        lines = [
+            f"tool result ({result.tool}) path: {path}",
+            f"bytes_read: {result.data.get('bytes_read', 0)}",
+            f"truncated: {'yes' if result.data.get('truncated') else 'no'}",
+        ]
+        if excerpt:
+            lines.append(f"content_excerpt: {excerpt}")
+        return lines
+
+    if result.tool == "list_dir":
+        entries = list(result.data.get("entries", []))
+        preview = ", ".join(
+            str(item.get("name", ""))
+            for item in entries[:20]
+            if isinstance(item, dict)
+        )
+        lines = [
+            f"tool result ({result.tool}) path: {path}",
+            f"entries: {len(entries)}",
+        ]
+        if preview:
+            lines.append(f"entry_preview: {preview}")
+        return lines
+
+    if result.tool == "file_info":
+        info = result.data.get("info", {})
+        if isinstance(info, dict):
+            kind = "directory" if info.get("is_dir") else "file"
+            return [
+                f"tool result ({result.tool}) path: {path}",
+                f"type: {kind}",
+                f"size_bytes: {info.get('size_bytes', 0)}",
+                f"permissions: {info.get('permissions', 'unknown')}",
+            ]
+
+    if result.tool == "search_files":
+        entries = list(result.data.get("entries", []))
+        preview = ", ".join(
+            str(item.get("path", ""))
+            for item in entries[:10]
+            if isinstance(item, dict)
+        )
+        lines = [
+            f"tool result ({result.tool}) path: {path}",
+            f"matches: {len(entries)}",
+        ]
+        if preview:
+            lines.append(f"match_preview: {preview}")
+        return lines
+
+    if result.tool == "write_file":
+        return [
+            f"tool result ({result.tool}) path: {path}",
+            f"bytes_written: {result.data.get('bytes_read', 0)}",
+        ]
+
+    return [
+        f"tool result ({result.tool}) path: {path}",
+        str(result.data.get("formatted", "")),
+    ]
+
+
 def build_tool_result_text(result: ToolResult) -> str:
+    if result.tool in FILESYSTEM_TOOL_NAMES:
+        return str(
+            result.data.get("formatted")
+            or f"fs > error: {result.error or 'Unknown file system error.'}"
+        )
+
     if result.tool == "ping":
         lines = ["ping result:"]
         if not result.success:
@@ -2475,6 +2912,9 @@ def build_tool_result_text(result: ToolResult) -> str:
 
 
 def build_tool_context_lines(result: ToolResult) -> list[str]:
+    if result.tool in FILESYSTEM_TOOL_NAMES:
+        return build_filesystem_context_lines(result)
+
     if result.tool == "ping":
         if result.success:
             latency = result.data.get("latency_ms")
@@ -2600,6 +3040,44 @@ def build_network_audit_entry(result: ToolResult) -> dict[str, object] | None:
     return details
 
 
+def build_filesystem_audit_entry(result: ToolResult) -> dict[str, object] | None:
+    if result.tool not in FILESYSTEM_TOOL_NAMES:
+        return None
+
+    path = str(result.data.get("path") or result.query).strip()
+    result_text = result.error or "unknown"
+    details: dict[str, object] = {
+        "tool": result.tool,
+        "path": path,
+    }
+
+    if result.tool == "read_file":
+        result_text = f"read {result.data.get('bytes_read', 0)} bytes"
+        details["bytes_read"] = int(result.data.get("bytes_read", 0))
+        details["truncated"] = bool(result.data.get("truncated", False))
+    elif result.tool == "list_dir":
+        entries = list(result.data.get("entries", []))
+        result_text = f"{len(entries)} entries"
+        details["entries"] = len(entries)
+    elif result.tool == "file_info":
+        info = result.data.get("info", {})
+        if isinstance(info, dict):
+            kind = "directory" if info.get("is_dir") else "file"
+            result_text = f"{info.get('size_human', 'unknown')} {kind}"
+            details["size_bytes"] = int(info.get("size_bytes", 0))
+    elif result.tool == "search_files":
+        entries = list(result.data.get("entries", []))
+        result_text = f"{len(entries)} matches"
+        details["matches"] = len(entries)
+    elif result.tool == "write_file":
+        result_text = f"wrote {result.data.get('bytes_read', 0)} bytes"
+        details["bytes_written"] = int(result.data.get("bytes_read", 0))
+
+    details["result"] = result_text
+    details["summary"] = f"{result.tool} {path} -> {result_text}"
+    return details
+
+
 def build_tool_registry_report(payload: dict[str, object]) -> str:
     tools = list(payload.get("tools", []))
     total = int(payload.get("total", len(tools)))
@@ -2716,6 +3194,7 @@ def complete_tool_resolution(
     active_token: SessionToken | None = None,
     user_log: UserLog | None = None,
     faculty_monitor: FacultyMonitor | None = None,
+    filesystem_faculty: FileSystemFaculty | None = None,
     session_audit: list[dict[str, object]] | None = None,
     active_realm_name: str = "",
     conversation_state: dict[str, int] | None = None,
@@ -2725,16 +3204,26 @@ def complete_tool_resolution(
     original_input = payload.get("original_input", "")
     query = payload.get("query", "")
     tool = payload.get("tool", "")
+    params = payload.get("params", {})
+    if not isinstance(params, dict):
+        params = {}
+    if "query" not in params and query:
+        params["query"] = query
 
     session.add_event("user", original_input)
 
     if decision == "approve":
         guardian_metrics["tool_executions"] += 1
         t0 = time.monotonic()
-        result = operator.execute(tool, {"query": query})
+        result = execute_tool_request(
+            tool,
+            params,
+            operator,
+            filesystem_faculty=filesystem_faculty,
+        )
         if faculty_monitor is not None:
             faculty_monitor.record_call("operator", (time.monotonic() - t0) * 1000, result.success)
-        audit_entry = build_network_audit_entry(result)
+        audit_entry = build_network_audit_entry(result) or build_filesystem_audit_entry(result)
         if audit_entry is not None:
             append_audit_event(
                 session_audit,
@@ -2870,6 +3359,7 @@ def handle_command(
     startup_context: dict,
     config: Config,
     operator: OperatorFaculty | None = None,
+    filesystem_faculty: FileSystemFaculty | None = None,
     guardian: GuardianFaculty | None = None,
     guardian_metrics: dict[str, int] | None = None,
     nammu_dir: Path | None = None,
@@ -2889,6 +3379,7 @@ def handle_command(
 ) -> str | None:
     normalized = command.strip()
     guardian_metrics = ensure_guardian_metrics(guardian_metrics)
+    filesystem_faculty = filesystem_faculty or FileSystemFaculty()
     current_user = session_state.get("active_user") if session_state else None
     original_user = session_state.get("original_user") if session_state else None
     guardian_user = session_state.get("guardian_user") if session_state else None
@@ -3928,6 +4419,7 @@ def handle_command(
                 active_token=active_token,
                 user_log=user_log,
                 faculty_monitor=faculty_monitor,
+                filesystem_faculty=filesystem_faculty,
                 session_audit=session_audit,
                 active_realm_name=active_realm_name,
                 conversation_state=conversation_state,
@@ -4127,6 +4619,69 @@ def handle_command(
             f"{created['line']}"
         )
 
+    filesystem_action = detect_filesystem_tool_action(
+        normalized,
+        filesystem_faculty,
+        profile_manager=profile_manager,
+        current_user=current_user,
+        active_token=active_token,
+    )
+    if filesystem_action is not None:
+        append_routing_decision(
+            routing_log,
+            session,
+            "operator",
+            normalized,
+            nammu_dir=nammu_dir,
+        )
+        append_governance_event(
+            resolve_nammu_dir(session, nammu_dir),
+            session.session_id,
+            "tool",
+            str(filesystem_action.get("reason", "Governed file system tool use.")),
+            normalized[:60],
+        )
+        if bool(filesystem_action.get("requires_proposal", False)):
+            created = create_tool_use_proposal(
+                proposal=proposal,
+                session=session,
+                user_input=normalized,
+                tool=str(filesystem_action["tool"]),
+                query=str(filesystem_action["query"]),
+                params=dict(filesystem_action.get("params", {})),
+            )
+            return (
+                f'operator > tool proposed: {filesystem_action["tool"]} - "{filesystem_action["query"]}"\n'
+                'Type "approve" to execute or "reject" to cancel.\n'
+                f"{created['tool_line']}"
+            )
+        return complete_tool_resolution(
+            {
+                "payload": {
+                    "original_input": normalized,
+                    "query": str(filesystem_action["query"]),
+                    "tool": str(filesystem_action["tool"]),
+                    "params": dict(filesystem_action.get("params", {})),
+                }
+            },
+            "approve",
+            session,
+            proposal,
+            memory,
+            engine,
+            startup_context,
+            operator or OperatorFaculty(),
+            guardian_metrics,
+            active_token=active_token,
+            user_log=user_log,
+            faculty_monitor=faculty_monitor,
+            filesystem_faculty=filesystem_faculty,
+            session_audit=session_audit,
+            active_realm_name=active_realm_name,
+            conversation_state=conversation_state,
+            reflective_memory=reflective_memory,
+        )
+
     governance_result = classifier.route(normalized)
     if governance_result.faculty == "sentinel":
         append_audit_event(
@@ -4193,7 +4748,14 @@ def handle_command(
                     },
                 )
             return complete_tool_resolution(
-                {"payload": {"original_input": normalized, "query": tool_query, "tool": proposed_tool}},
+                {
+                    "payload": {
+                        "original_input": normalized,
+                        "query": tool_query,
+                        "tool": proposed_tool,
+                        "params": {"query": tool_query},
+                    }
+                },
                 "approve",
                 session,
                 proposal,
@@ -4205,6 +4767,7 @@ def handle_command(
                 active_token=active_token,
                 user_log=user_log,
                 faculty_monitor=faculty_monitor,
+                filesystem_faculty=filesystem_faculty,
                 session_audit=session_audit,
                 active_realm_name=active_realm_name,
                 conversation_state=conversation_state,
@@ -4216,6 +4779,7 @@ def handle_command(
             user_input=normalized,
             tool=proposed_tool,
             query=tool_query,
+            params={"query": tool_query},
         )
         return (
             f'operator > tool proposed: {proposed_tool} - "{tool_query}"\n'
@@ -4383,6 +4947,7 @@ def main() -> None:
     )
     guardian = GuardianFaculty()
     operator = OperatorFaculty()
+    filesystem_faculty = FileSystemFaculty()
     governance = GovernanceLayer(engine=engine)
     sync_profile_grounding(engine, profile_manager, guardian_user, guardian_token, reflective_memory)
     classifier = IntentClassifier(
@@ -4491,6 +5056,7 @@ def main() -> None:
             startup_context=startup_context,
             config=config,
             operator=operator,
+            filesystem_faculty=filesystem_faculty,
             guardian=guardian,
             guardian_metrics=guardian_metrics,
             nammu_dir=NAMMU_DIR,

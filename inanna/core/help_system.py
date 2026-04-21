@@ -26,6 +26,14 @@ HELP_COMMON = """𒀭 INANNA NYX — Available Commands
   ORGANIZATION
     my-departments                Show your departments and groups
 
+  FILES (speak naturally)
+    "read the file at ~/notes.txt"
+    "list my Documents folder"
+    "find all .py files in ~/code"
+    "what is the size of ~/report.pdf"
+    "write a file called ideas.txt with this content..."
+    (all file writes require approval)
+
   SESSION
     whoami                        Show who you are logged in as
     logout                        End your session
@@ -148,7 +156,8 @@ HELP_TOPICS = {
 
   CROWN      Primary conversational voice. Warm, honest, relational.
   ANALYST    Structured reasoning. Analysis, comparison, logic.
-  OPERATOR   Tool execution. web_search, ping, scan_ports, resolve_host.
+  OPERATOR   Tool execution. web_search, ping, scan_ports, resolve_host,
+             read_file, list_dir, file_info, search_files, write_file.
   GUARDIAN   System observation. Health, audit, inspection.
   SENTINEL   Security Faculty. CVE analysis, threat reasoning.
              Uses qwen2.5-14b-instruct for deeper security reasoning.
@@ -162,7 +171,7 @@ HELP_TOPICS = {
   help [topic]       Show details on a specific topic
 
   Topics: my-profile, governance-trust, inanna-reflect,
-          faculties, tools, memory, realms, departments""",
+          faculties, tools, files, memory, realms, departments""",
 
     "tools": """tools — Available tools (all require proposal approval)
 
@@ -173,6 +182,27 @@ HELP_TOPICS = {
 
   To trust a tool permanently: governance-trust [tool_name]
   To see registered tools: tool-registry""",
+
+    "files": """files вЂ” File system operations
+
+  INANNA can read, list, search, and write files.
+  Speak naturally or use direct requests.
+
+  Read a file:    "read the file at ~/path/to/file.txt"
+  List a folder:  "list the files in ~/Documents"
+  Find files:     "find all .txt files in ~/notes"
+  File info:      "what is the size of ~/report.pdf"
+  Write a file:   "write a file called todo.txt with..."
+
+  Governance:
+    - list, info, search: no approval required
+    - read: approval required for paths outside home directory
+    - write: ALWAYS requires approval
+    - delete: not available (by design)
+
+  Max file read: 512 KB
+  Max search results: 50 files
+  Max directory listing: 100 entries""",
 
     "memory": """memory — How INANNA remembers
 

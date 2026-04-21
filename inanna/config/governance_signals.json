@@ -113,6 +113,23 @@
       "step by step",
       "logical",
       "deduce"
+    ],
+    "filesystem": [
+      "read file",
+      "open file",
+      "show file",
+      "list directory",
+      "list folder",
+      "what files",
+      "search files",
+      "find files",
+      "file size",
+      "file info",
+      "write file",
+      "save file",
+      "create file",
+      "what is in",
+      "show me"
     ]
   }
 }

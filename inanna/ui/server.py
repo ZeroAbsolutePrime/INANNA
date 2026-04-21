@@ -15,6 +15,7 @@ from websockets.asyncio.server import ServerConnection, serve
 from websockets.exceptions import ConnectionClosed
 
 from config import Config
+from core.filesystem_faculty import FileSystemFaculty
 from core.governance import GovernanceLayer
 from core.guardian import GuardianFaculty
 from core.faculty_monitor import FacultyMonitor
@@ -57,6 +58,7 @@ from main import (
     build_body_report,
     build_body_summary,
     build_faculty_registry_payload,
+    build_filesystem_audit_entry,
     build_grounding_prefix,
     build_history_report,
     build_organizational_context_report,
@@ -94,7 +96,9 @@ from main import (
     clear_communication_observations,
     complete_orchestration_resolution as complete_orchestration_backend_resolution,
     default_profile_field_value,
+    detect_filesystem_tool_action,
     deliver_pending_notifications,
+    execute_tool_request,
     finalize_auto_memory,
     format_profile_output,
     format_profile_value,
@@ -264,6 +268,7 @@ class InterfaceServer:
         )
         self.guardian = GuardianFaculty()
         self.operator = OperatorFaculty()
+        self.filesystem_faculty = FileSystemFaculty()
         self.process_monitor = ProcessMonitor(self.server_start_time)
         self.governance = GovernanceLayer(engine=self.engine)
         self.classifier = IntentClassifier(
@@ -594,6 +599,55 @@ class InterfaceServer:
                 "proposal": created,
             }
 
+        filesystem_action = detect_filesystem_tool_action(
+            text,
+            self.filesystem_faculty,
+            profile_manager=self.profile_manager,
+            current_user=self.active_user,
+            active_token=self.active_token,
+        )
+        if filesystem_action is not None:
+            self._record_routing_decision("operator", text)
+            self._record_governance_decision(
+                "tool",
+                str(filesystem_action.get("reason", "Governed file system tool use.")),
+                text,
+            )
+            if bool(filesystem_action.get("requires_proposal", False)):
+                created = create_tool_use_proposal(
+                    proposal=self.proposal,
+                    session=self.session,
+                    user_input=text,
+                    tool=str(filesystem_action["tool"]),
+                    query=str(filesystem_action["query"]),
+                    params=dict(filesystem_action.get("params", {})),
+                )
+                return {
+                    "response": {
+                        "type": "operator",
+                        "text": (
+                            f'tool proposed: {filesystem_action["tool"]} - '
+                            f'"{filesystem_action["query"]}"'
+                        ),
+                    },
+                    "proposal": {**created, "line": created["tool_line"]},
+                }
+            outcome = self.complete_tool_resolution(
+                {
+                    "payload": {
+                        "original_input": text,
+                        "query": str(filesystem_action["query"]),
+                        "tool": str(filesystem_action["tool"]),
+                        "params": dict(filesystem_action.get("params", {})),
+                    }
+                },
+                "approve",
+            )
+            responses = list(outcome["operator_payloads"])
+            if outcome["assistant_text"]:
+                responses.append({"type": "assistant", "text": outcome["assistant_text"]})
+            return {"responses": responses}
+
         governance_result = self.classifier.route(text)
         if governance_result.faculty == "sentinel":
             append_audit_event(
@@ -675,6 +729,7 @@ class InterfaceServer:
                             "original_input": text,
                             "query": tool_query,
                             "tool": proposed_tool,
+                            "params": {"query": tool_query},
                         }
                     },
                     "approve",
@@ -694,6 +749,7 @@ class InterfaceServer:
                 user_input=text,
                 tool=proposed_tool,
                 query=tool_query,
+                params={"query": tool_query},
             )
             return {
                 "response": {
@@ -2512,19 +2568,29 @@ class InterfaceServer:
         original_input = payload.get("original_input", "")
         query = payload.get("query", "")
         tool = payload.get("tool", "")
+        params = payload.get("params", {})
+        if not isinstance(params, dict):
+            params = {}
+        if "query" not in params and query:
+            params["query"] = query
 
         self.session.add_event("user", original_input)
 
         if decision == "approve":
             self.tool_executions += 1
             t0 = time.monotonic()
-            result = self.operator.execute(tool, {"query": query})
+            result = execute_tool_request(
+                tool,
+                params,
+                self.operator,
+                filesystem_faculty=self.filesystem_faculty,
+            )
             self.faculty_monitor.record_call(
                 "operator",
                 (time.monotonic() - t0) * 1000,
                 result.success,
             )
-            audit_entry = build_network_audit_entry(result)
+            audit_entry = build_network_audit_entry(result) or build_filesystem_audit_entry(result)
             if audit_entry is not None:
                 append_audit_event(
                     self.session_audit,

@@ -11,6 +11,7 @@ from unittest.mock import patch
 
 from config import Config
 from core.faculty_monitor import FacultyMonitor
+from core.filesystem_faculty import FileSystemFaculty
 from core.governance import GovernanceResult
 from core.memory import Memory
 from core.nammu import IntentClassifier
@@ -1038,6 +1039,81 @@ class CommandTests(unittest.TestCase):
             any(event.get("event_type") == "tool_executed_trusted" for event in session_audit)
         )
 
+    def test_safe_filesystem_read_executes_without_proposal(self) -> None:
+        (
+            session,
+            memory,
+            proposal,
+            state_report,
+            _engine,
+            analyst,
+            classifier,
+            routing_log,
+            startup_context,
+            config,
+        ) = self.make_runtime()
+        engine = FlakySummaryEngine()
+        with TemporaryDirectory() as temp_dir:
+            base = Path(temp_dir)
+            target = base / "notes.txt"
+            target.write_text("hello from filesystem", encoding="utf-8")
+            filesystem_faculty = FileSystemFaculty(
+                safe_read_paths=(base,),
+                forbidden_paths=(Path("/etc/shadow"), Path("/etc/passwd"), Path("/root")),
+            )
+
+            result = handle_command(
+                f"read the file at {target}",
+                session,
+                memory,
+                proposal,
+                state_report,
+                engine,
+                analyst,
+                classifier,
+                routing_log,
+                startup_context,
+                config,
+                filesystem_faculty=filesystem_faculty,
+            )
+
+        self.assertIn("fs > read:", result)
+        self.assertIn("hello from filesystem", result)
+        self.assertIn("model unavailable to summarize", result)
+        self.assertEqual(proposal.pending_count(), 0)
+
+    def test_write_file_request_creates_governed_tool_proposal(self) -> None:
+        (
+            session,
+            memory,
+            proposal,
+            state_report,
+            engine,
+            analyst,
+            classifier,
+            routing_log,
+            startup_context,
+            config,
+        ) = self.make_runtime()
+        with TemporaryDirectory() as temp_dir:
+            target = Path(temp_dir) / "todo.txt"
+            result = handle_command(
+                f"write a file called {target} with remember the milk",
+                session,
+                memory,
+                proposal,
+                state_report,
+                engine,
+                analyst,
+                classifier,
+                routing_log,
+                startup_context,
+                config,
+            )
+
+        self.assertIn('operator > tool proposed: write_file - "', result)
+        self.assertEqual(proposal.pending_count(), 1)
+
     def test_crown_response_with_reflect_tag_creates_reflection_proposal(self) -> None:
         (
             session,
@@ -1313,7 +1389,13 @@ class CommandTests(unittest.TestCase):
             config,
         )
 
-        self.assertIn("tool-registry > Registered tools (4 total):", result)
+        self.assertIn("tool-registry > Registered tools (9 total):", result)
+        self.assertIn("FILESYSTEM", result)
+        self.assertIn("Read File [enabled]", result)
+        self.assertIn("List Directory [enabled]", result)
+        self.assertIn("File Info [enabled]", result)
+        self.assertIn("Search Files [enabled]", result)
+        self.assertIn("Write File [enabled]", result)
         self.assertIn("INFORMATION", result)
         self.assertIn("Web Search [enabled]", result)
         self.assertIn("Privilege: converse", result)
