@@ -120,17 +120,31 @@ HELP_ANONYMOUS = """𒀭 INANNA NYX
 HELP_TOPICS = {
     "my-profile": """my-profile — View and edit your profile
 
-  my-profile                        Show your full profile
-  my-profile edit preferred_name X  Set your preferred name
-  my-profile edit pronouns she/her   Set your pronouns
-  my-profile edit timezone Europe/Madrid  Set your timezone
-  my-profile edit location_city Barcelona  Set your city
-  my-profile edit languages en,es,pt  Set your languages
-  my-profile clear [field]           Clear a field
-  my-profile clear communication     Clear all style observations
+  my-profile                         Show your full profile
 
-  Fields: preferred_name, pronouns, gender, sex, languages,
-          timezone, location_city, location_region, location_country""",
+  EDIT — use friendly names (no underscores needed):
+  my-profile edit name ZAERA           Set your preferred name
+  my-profile edit pronouns she/her      Set your pronouns
+  my-profile edit city Barcelona        Set your city
+  my-profile edit country Spain         Set your country
+  my-profile edit timezone Europe/Madrid  Set your timezone
+  my-profile edit languages en,es,pt    Set your languages
+  my-profile edit gender nonbinary      Set your gender
+
+  CLEAR:
+  my-profile clear pronouns             Clear a field
+  my-profile clear communication        Clear all style observations
+
+  Friendly field names:
+    name / preferred          → preferred_name
+    pronouns / pronoun        → pronouns
+    city / location_city      → location_city
+    country / location_country → location_country
+    region / location_region  → location_region
+    timezone / tz             → timezone
+    language / languages      → languages
+    gender                    → gender
+    sex                       → sex""",
 
     "governance-trust": """governance-trust — Persistent tool trust
 

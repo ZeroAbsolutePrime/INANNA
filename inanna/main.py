@@ -1021,16 +1021,65 @@ def format_profile_output(
     return "\n".join(lines)
 
 
+# Human-friendly aliases for profile fields
+# Allows natural language like "name", "pronouns", "city" instead of snake_case
+PROFILE_FIELD_ALIASES: dict[str, str] = {
+    # Name
+    "name":              "preferred_name",
+    "preferred":         "preferred_name",
+    "preferred_name":    "preferred_name",
+    "display_name":      "preferred_name",
+    "call_me":           "preferred_name",
+    # Pronouns & identity
+    "pronouns":          "pronouns",
+    "pronoun":           "pronouns",
+    "gender":            "gender",
+    "sex":               "sex",
+    # Location
+    "city":              "location_city",
+    "location_city":     "location_city",
+    "region":            "location_region",
+    "location_region":   "location_region",
+    "country":           "location_country",
+    "location_country":  "location_country",
+    # Languages
+    "language":          "languages",
+    "languages":         "languages",
+    "lang":              "languages",
+    # Timezone
+    "timezone":          "timezone",
+    "tz":                "timezone",
+    "time_zone":         "timezone",
+    # Communication
+    "style":             "communication_style",
+    "communication_style": "communication_style",
+    "length":            "preferred_length",
+    "preferred_length":  "preferred_length",
+    "formality":         "formality",
+    # Notification
+    "notification":      "notification_scope",
+    "notification_scope": "notification_scope",
+    "notifications":     "notification_scope",
+}
+
+
+def resolve_profile_field(field_name: str) -> str:
+    """Resolve a human-friendly field alias to the actual UserProfile field name."""
+    return PROFILE_FIELD_ALIASES.get(field_name.lower().strip(), field_name.lower().strip())
+
+
 def parse_profile_edit_command(command: str) -> tuple[str, str] | None:
     parts = command.strip().split(maxsplit=3)
     if len(parts) != 4:
         return None
     if parts[0].lower() != "my-profile" or parts[1].lower() != "edit":
         return None
-    field_name = parts[2].strip()
+    raw_field = parts[2].strip()
     value = parts[3].strip()
-    if not field_name or not value:
+    if not raw_field or not value:
         return None
+    # Resolve alias to actual field name
+    field_name = resolve_profile_field(raw_field)
     return field_name, value
 
 
