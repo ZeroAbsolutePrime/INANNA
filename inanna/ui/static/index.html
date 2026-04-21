@@ -526,9 +526,68 @@ html,body{
   border-left:2px solid var(--gold3);
   font-family:var(--mono);
   font-size:12px;
-  line-height:2;
+  line-height:1.6;
   color:var(--ivory);
-  white-space:pre-wrap;
+  min-width:320px;
+  max-width:520px;
+}
+/* Profile editor card */
+.prof-card{width:100%;}
+.prof-card-title{
+  font-family:var(--dec);font-size:11px;letter-spacing:4px;
+  color:var(--gold3);margin-bottom:12px;padding-bottom:8px;
+  border-bottom:1px solid var(--dust);
+}
+.prof-section{margin-bottom:14px;}
+.prof-section-label{
+  font-size:8px;letter-spacing:4px;color:var(--gold2);
+  margin-bottom:6px;font-family:var(--serif);
+}
+.prof-row{
+  display:flex;align-items:center;gap:8px;
+  padding:5px 0;border-bottom:.5px solid rgba(56,42,24,.4);
+  cursor:pointer;transition:background .15s;
+  border-radius:2px;padding-left:4px;
+}
+.prof-row:last-child{border-bottom:none;}
+.prof-row:hover{background:rgba(212,160,48,.05);}
+.prof-row.editing{background:rgba(212,160,48,.08);cursor:default;}
+.prof-field-name{
+  font-size:9px;letter-spacing:2px;color:var(--faded);
+  min-width:90px;flex-shrink:0;
+}
+.prof-field-value{
+  font-size:11px;color:var(--cream);flex:1;
+}
+.prof-field-value.empty{color:var(--dimmer);font-style:italic;}
+.prof-edit-hint{
+  font-size:8px;color:var(--dim);letter-spacing:1px;
+  opacity:0;transition:opacity .2s;margin-left:auto;
+}
+.prof-row:hover .prof-edit-hint{opacity:1;}
+.prof-inline-input{
+  flex:1;background:transparent;
+  border:none;border-bottom:1px solid var(--gold3);
+  color:var(--gold4);font-family:var(--mono);font-size:11px;
+  padding:2px 4px;outline:none;caret-color:var(--gold4);
+}
+.prof-save-btn{
+  background:transparent;border:1px solid var(--gold2);
+  color:var(--gold3);font-family:var(--mono);font-size:8px;
+  letter-spacing:2px;padding:3px 8px;cursor:pointer;
+  transition:all .2s;flex-shrink:0;
+}
+.prof-save-btn:hover{background:rgba(212,160,48,.12);color:var(--gold4);}
+.prof-cancel-btn{
+  background:transparent;border:none;
+  color:var(--dim);font-family:var(--mono);font-size:10px;
+  cursor:pointer;padding:2px 4px;flex-shrink:0;
+}
+.prof-cancel-btn:hover{color:var(--faded);}
+.prof-onboarding{
+  font-size:9px;color:var(--jade);letter-spacing:2px;
+  margin-top:10px;padding-top:8px;
+  border-top:.5px solid rgba(56,42,24,.4);
 }
 .onboarding-skip{
   margin-top:12px;
@@ -1331,7 +1390,7 @@ function addMessage(type,text,meta){
     row.innerHTML=`<div class="msg-label">inanna ∴</div><div class="msg-bubble">${esc(text)}${data.showSkip?`<div class="onboarding-skip"><button onclick="sendSkipOnboarding()">[ skip survey ]</button></div>`:''}</div>`;
   }else if(type==='profile'){
     row.className='msg-row profile';
-    row.innerHTML=`<div class="msg-label">profile</div><div class="msg-bubble">${esc(text)}</div>`;
+    row.innerHTML=`<div class="msg-label">profile</div><div class="msg-bubble">${buildProfileCard(text)}</div>`;
   }else if(type==='guardian'){
     row.className='msg-row guardian';
     row.innerHTML=`<div class="msg-label">guardian</div><div class="msg-bubble">${esc(text)}</div>`;
@@ -1623,6 +1682,181 @@ function initApp(){
   restoreSections();
   connect();
   setTimeout(()=>sendCmd('proposal-history'),900);
+}
+
+// ══════════════════════════════════
+//  INTERACTIVE PROFILE CARD
+// ══════════════════════════════════
+
+// Field metadata: [friendlyName, fieldKey, placeholder]
+const PROFILE_FIELDS = {
+  'Identity': [
+    ['Name',       'name',      'Your preferred name'],
+    ['Pronouns',   'pronouns',  'she/her · he/him · they/them'],
+    ['Gender',     'gender',    'As you define it'],
+    ['Sex',        'sex',       'biological sex'],
+    ['Languages',  'languages', 'en,es,pt'],
+    ['Timezone',   'tz',        'Europe/Madrid'],
+  ],
+  'Location': [
+    ['City',       'city',      'Barcelona'],
+    ['Region',     'region',    'Catalonia'],
+    ['Country',    'country',   'Spain'],
+  ],
+  'Communication': [
+    ['Style',      'style',     'casual · formal · mixed'],
+    ['Length',     'length',    'short · medium · long'],
+    ['Formality',  'formality', 'casual · mixed · formal'],
+  ],
+  'Organization': [
+    ['Departments','departments','engineering,research'],
+    ['Groups',     'groups',    'core-team,facilitators'],
+    ['Scope',      'notifications','all · realm · none'],
+  ],
+};
+
+// Parse the profile text into a structured object
+function parseProfileText(text) {
+  const data = {};
+  const lines = text.split('\n');
+  let section = '';
+  for (const line of lines) {
+    const trimmed = line.trim();
+    if (!trimmed || trimmed.startsWith('Type ')) continue;
+    // Section headers like "  Identity" or "Organization"
+    const sectionMatch = trimmed.match(/^(Name|Preferred|Pronouns|Gender|Sex|Languages|Timezone|Location|Organization|Departments|Groups|Communication|Style|Length|Formality|Interests|Trust|Onboarding)$/i);
+    if (sectionMatch) { section = sectionMatch[1].toLowerCase(); continue; }
+    // Key-value lines like "  Name         ZAERA"
+    const kvMatch = trimmed.match(/^(\S[\w\s]+?)\s{2,}(.+)$/);
+    if (kvMatch) {
+      const k = kvMatch[1].trim().toLowerCase().replace(/\s+/g,'_');
+      const v = kvMatch[2].trim();
+      if (v !== '—') data[k] = v;
+    }
+    // Onboarding line
+    if (trimmed.startsWith('Onboarding')) {
+      const m = trimmed.match(/completed (.+)/i);
+      if (m) data['onboarding'] = 'completed ' + m[1];
+    }
+  }
+  return data;
+}
+
+function buildProfileCard(text) {
+  const data = parseProfileText(text);
+  let html = '<div class="prof-card">';
+  html += '<div class="prof-card-title">𒀭 YOUR PROFILE</div>';
+
+  for (const [sectionName, fields] of Object.entries(PROFILE_FIELDS)) {
+    html += '<div class="prof-section">';
+    html += `<div class="prof-section-label">${sectionName.toUpperCase()}</div>`;
+    for (const [label, fieldKey, placeholder] of fields) {
+      // Try to find the value from parsed data
+      const searchKeys = [
+        fieldKey,
+        label.toLowerCase(),
+        label.toLowerCase().replace(/\s+/g,'_'),
+        fieldKey.replace('tz','timezone'),
+      ];
+      let value = '';
+      for (const k of searchKeys) {
+        if (data[k]) { value = data[k]; break; }
+        // Also check with section prefix
+        for (const dk of Object.keys(data)) {
+          if (dk.includes(k) || k.includes(dk)) { value = data[dk]; break; }
+        }
+        if (value) break;
+      }
+
+      const displayVal = value || '';
+      const isEmpty = !displayVal;
+      html += `<div class="prof-row" id="prow-${fieldKey}" onclick="startEditField('${fieldKey}','${label}','${esc(displayVal)}','${placeholder}')">`;
+      html += `<span class="prof-field-name">${label}</span>`;
+      html += `<span class="prof-field-value${isEmpty?' empty':''}" id="pval-${fieldKey}">${isEmpty?'—':esc(displayVal)}</span>`;
+      html += `<span class="prof-edit-hint">✎ edit</span>`;
+      html += '</div>';
+    }
+    html += '</div>';
+  }
+
+  // Onboarding status
+  if (data['onboarding']) {
+    html += `<div class="prof-onboarding">✦ onboarding ${esc(data['onboarding'])}</div>`;
+  }
+
+  html += '</div>';
+  return html;
+}
+
+function startEditField(fieldKey, label, currentVal, placeholder) {
+  const row = document.getElementById('prow-' + fieldKey);
+  if (!row || row.classList.contains('editing')) return;
+  row.classList.add('editing');
+  row.onclick = null;
+
+  const inputId = 'pinput-' + fieldKey;
+  row.innerHTML = `
+    <span class="prof-field-name">${esc(label)}</span>
+    <input class="prof-inline-input" id="${inputId}"
+      value="${esc(currentVal === '—' ? '' : currentVal)}"
+      placeholder="${esc(placeholder)}"
+      onkeydown="handleProfileKey(event,'${fieldKey}','${esc(label)}')"
+      autocomplete="off" />
+    <button class="prof-save-btn" onclick="saveProfileField('${fieldKey}','${esc(label)}')">[ save ]</button>
+    <button class="prof-cancel-btn" onclick="cancelProfileField('${fieldKey}','${esc(label)}','${esc(currentVal)}','${esc(placeholder)}')">✕</button>
+  `;
+
+  const inp = document.getElementById(inputId);
+  if (inp) { inp.focus(); inp.select(); }
+}
+
+function handleProfileKey(e, fieldKey, label) {
+  if (e.key === 'Enter') { e.preventDefault(); saveProfileField(fieldKey, label); }
+  if (e.key === 'Escape') {
+    const inp = document.getElementById('pinput-' + fieldKey);
+    const val = inp ? inp.defaultValue : '';
+    cancelProfileField(fieldKey, label, val, '');
+  }
+}
+
+function saveProfileField(fieldKey, label) {
+  const inp = document.getElementById('pinput-' + fieldKey);
+  if (!inp) return;
+  const newVal = inp.value.trim();
+  if (!newVal) { cancelProfileField(fieldKey, label, '', ''); return; }
+
+  // Send via WebSocket
+  if (S.ws && S.ws.readyState === 1) {
+    S.ws.send(JSON.stringify({
+      type: 'input',
+      text: `my-profile edit ${fieldKey} ${newVal}`
+    }));
+  }
+
+  // Optimistically update the display
+  const row = document.getElementById('prow-' + fieldKey);
+  if (row) {
+    row.classList.remove('editing');
+    row.onclick = () => startEditField(fieldKey, label, newVal, '');
+    row.innerHTML = `
+      <span class="prof-field-name">${esc(label)}</span>
+      <span class="prof-field-value" id="pval-${fieldKey}">${esc(newVal)}</span>
+      <span class="prof-edit-hint">✎ edit</span>
+    `;
+  }
+}
+
+function cancelProfileField(fieldKey, label, currentVal, placeholder) {
+  const row = document.getElementById('prow-' + fieldKey);
+  if (!row) return;
+  row.classList.remove('editing');
+  const isEmpty = !currentVal || currentVal === '—';
+  row.onclick = () => startEditField(fieldKey, label, currentVal, placeholder);
+  row.innerHTML = `
+    <span class="prof-field-name">${esc(label)}</span>
+    <span class="prof-field-value${isEmpty?' empty':''}" id="pval-${fieldKey}">${isEmpty?'—':esc(currentVal)}</span>
+    <span class="prof-edit-hint">✎ edit</span>
+  `;
 }
 </script>
 </body>
