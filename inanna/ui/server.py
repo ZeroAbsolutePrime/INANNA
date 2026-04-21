@@ -2440,11 +2440,21 @@ class InterfaceServer:
         elif command_name == "software":
             parts = raw_cmd.strip().split(None, 1)
             filt = parts[1].strip().lower() if len(parts) > 1 else ""
-            # Send loading indicator first — winget takes several seconds
-            loading_msg = f"software > scanning installed software" + (f" for '{filt}'" if filt else "") + "..."
-            await self.broadcast({"type": "system", "text": loading_msg})
-            # Load registry in a thread so we don't block the event loop
-            await asyncio.to_thread(self.software_registry.load, True)
+            # If registry still loading, wait for it (up to 15s)
+            if not self.software_registry._loaded:
+                await self.broadcast({"type": "system", "text": "software > registry loading, please wait..."})
+                for _ in range(30):  # wait up to 15s in 0.5s steps
+                    await asyncio.sleep(0.5)
+                    if self.software_registry._loaded:
+                        break
+                if not self.software_registry._loaded:
+                    # Force load now in thread
+                    await asyncio.to_thread(self.software_registry.load, False)
+            else:
+                # Send loading indicator
+                loading_msg = "software > scanning installed software" + (f" for '{filt}'" if filt else "") + "..."
+                await self.broadcast({"type": "system", "text": loading_msg})
+                await asyncio.to_thread(self.software_registry.load, True)
             entries = self.software_registry.all_entries()
             if filt:
                 entries = [e for e in entries if filt in e.name.lower() or filt in e.pkg_id.lower()]
