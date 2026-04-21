@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import time
 from dataclasses import MISSING
 from datetime import datetime, timezone
@@ -37,6 +38,7 @@ from core.profile import (
 from core.process_monitor import ProcessMonitor
 from core.proposal import Proposal
 from core.realm import DEFAULT_REALM, RealmConfig, RealmManager
+from core.reflection import ReflectionEntry, ReflectiveMemory
 from core.session import AnalystFaculty, Engine, Session
 from core.session_token import SessionToken, TokenStore
 from core.state import StateReport
@@ -64,6 +66,7 @@ SESSION_DIR = DATA_ROOT / "sessions"
 MEMORY_DIR = DATA_ROOT / "memory"
 PROPOSAL_DIR = DATA_ROOT / "proposals"
 NAMMU_DIR = DATA_ROOT / "nammu"
+SELF_DIR = DATA_ROOT / "self"
 STARTUP_COMMANDS = (
     "users",
     "create-user",
@@ -72,6 +75,7 @@ STARTUP_COMMANDS = (
     "whoami",
     "my-profile",
     "view-profile",
+    "inanna-reflect",
     "my-trust",
     "my-departments",
     "assign-department",
@@ -118,6 +122,10 @@ STARTUP_COMMANDS = (
     "exit",
 )
 AUTO_MEMORY_TURN_THRESHOLD = 20
+REFLECT_PATTERN = re.compile(
+    r"\[REFLECT:\s*(.+?)\s*\|\s*context:\s*(.+?)\s*\]",
+    re.DOTALL,
+)
 SENTINEL_STUB_RESPONSE = (
     "SENTINEL Faculty is registered but not yet deployed. Activate it in the Faculty Registry."
 )
@@ -563,18 +571,39 @@ def build_grounding_prefix(
     return "\n".join(lines)
 
 
+def build_reflection_grounding(reflective_memory: ReflectiveMemory | None) -> str:
+    if reflective_memory is None:
+        return ""
+    entries = reflective_memory.load_all()
+    if not entries:
+        return ""
+    observations = [entry.observation.strip() for entry in entries[-5:] if entry.observation.strip()]
+    if not observations:
+        return ""
+    return f"Your self-knowledge: {'; '.join(observations)}"
+
+
 def sync_profile_grounding(
     engine: Engine | None,
     profile_manager: ProfileManager | None,
     active_user: UserRecord | None,
     active_token: SessionToken | None,
+    reflective_memory: ReflectiveMemory | None = None,
 ) -> None:
     if engine is None:
         return
-    engine.grounding_prefix = build_grounding_prefix(
+    if reflective_memory is None and profile_manager is not None:
+        reflective_memory = ReflectiveMemory(profile_manager.profiles_dir.parent / "self")
+    profile_grounding = build_grounding_prefix(
         profile_manager,
         active_user,
         active_token,
+    )
+    reflection_grounding = build_reflection_grounding(reflective_memory)
+    engine.grounding_prefix = "\n".join(
+        line
+        for line in [profile_grounding, reflection_grounding]
+        if line
     )
 
 
@@ -1121,7 +1150,7 @@ def complete_onboarding(
     profile_manager.update_field(user_id, "survey_responses", survey_responses)
     profile_manager.update_field(user_id, "onboarding_completed", True)
     profile_manager.update_field(user_id, "onboarding_completed_at", utc_now())
-    sync_profile_grounding(engine, profile_manager, active_user, active_token)
+    sync_profile_grounding(engine, profile_manager, active_user, active_token, None)
     name = profile_manager.display_name_for(user_id, fallback=display_name)
     return (
         f"Thank you, {name}. I will remember what you have shared. "
@@ -1893,6 +1922,77 @@ def create_memory_request_proposal(
     )
 
 
+def extract_reflection_proposal(text: str) -> tuple[str | None, str | None]:
+    match = REFLECT_PATTERN.search(str(text or ""))
+    if match:
+        return match.group(1).strip(), match.group(2).strip()
+    return None, None
+
+
+def strip_reflection_markup(text: str) -> str:
+    cleaned = REFLECT_PATTERN.sub("", str(text or "")).strip()
+    cleaned = re.sub(r"[ \t]+\n", "\n", cleaned)
+    cleaned = re.sub(r"\n{3,}", "\n\n", cleaned)
+    return cleaned
+
+
+def create_reflection_proposal(
+    proposal: Proposal,
+    session: Session,
+    entry: ReflectionEntry,
+) -> dict[str, Any]:
+    created = proposal.create(
+        what="INANNA self-reflection",
+        why="INANNA proposed a governed self-observation.",
+        payload={
+            "action": "reflection",
+            "session_id": session.session_id,
+            "entry": {
+                "entry_id": entry.entry_id,
+                "observation": entry.observation,
+                "context": entry.context,
+                "approved_at": entry.approved_at,
+                "approved_by": entry.approved_by,
+                "created_at": entry.created_at,
+            },
+        },
+    )
+    preview = entry.observation[:72]
+    return {
+        **created,
+        "line": (
+            f"[REFLECTION PROPOSAL] {created['timestamp']} | "
+            f"{preview} | status: {created['status']}"
+        ),
+    }
+
+
+def maybe_capture_reflection_proposal(
+    response_text: str,
+    proposal: Proposal | None,
+    session: Session | None,
+    reflective_memory: ReflectiveMemory | None,
+) -> tuple[str, dict[str, Any] | None]:
+    observation, context = extract_reflection_proposal(response_text)
+    if observation is None or context is None:
+        return str(response_text or "").strip(), None
+    cleaned = strip_reflection_markup(response_text)
+    if proposal is None or session is None or reflective_memory is None:
+        return cleaned, None
+    entry = reflective_memory.propose(observation, context)
+    return cleaned, create_reflection_proposal(proposal, session, entry)
+
+
+def reflection_entry_from_payload(payload: dict[str, Any]) -> ReflectionEntry | None:
+    entry_payload = payload.get("entry", {})
+    if not isinstance(entry_payload, dict):
+        return None
+    try:
+        return ReflectionEntry(**entry_payload)
+    except TypeError:
+        return None
+
+
 def build_auto_memory_events(
     session: Session,
     user_log: UserLog | None,
@@ -2615,6 +2715,7 @@ def complete_tool_resolution(
     session_audit: list[dict[str, object]] | None = None,
     active_realm_name: str = "",
     conversation_state: dict[str, int] | None = None,
+    reflective_memory: ReflectiveMemory | None = None,
 ) -> str:
     payload = resolved["payload"]
     original_input = payload.get("original_input", "")
@@ -2671,6 +2772,12 @@ def complete_tool_resolution(
         if faculty_monitor is not None:
             faculty_monitor.record_call("crown", (time.monotonic() - t0) * 1000, True)
 
+    assistant_text, reflection_proposal = maybe_capture_reflection_proposal(
+        assistant_text,
+        proposal,
+        session,
+        reflective_memory,
+    )
     session.add_event("assistant", assistant_text)
     append_user_log_entry(user_log, active_token, session.session_id, original_input, assistant_text)
     record_completed_turn(
@@ -2682,7 +2789,10 @@ def complete_tool_resolution(
         user_log=user_log,
         session_audit=session_audit,
     )
-    return f"operator > {operator_text}\ninanna > {assistant_text}"
+    lines = [f"operator > {operator_text}", f"inanna > {assistant_text}"]
+    if reflection_proposal is not None:
+        lines.append(reflection_proposal["line"])
+    return "\n".join(lines)
 
 
 def _resolve_inline_proposal(
@@ -2771,6 +2881,7 @@ def handle_command(
     conversation_state: dict[str, int] | None = None,
     orchestration_engine: OrchestrationEngine | None = None,
     profile_manager: ProfileManager | None = None,
+    reflective_memory: ReflectiveMemory | None = None,
 ) -> str | None:
     normalized = command.strip()
     guardian_metrics = ensure_guardian_metrics(guardian_metrics)
@@ -2941,6 +3052,16 @@ def handle_command(
         if profile is None:
             return "my-profile > profile management is unavailable."
         return format_profile_output(profile, display_name or current_user.display_name)
+
+    if lowered == "inanna-reflect":
+        if user_manager is None:
+            return "inanna-reflect > user management is unavailable."
+        allowed, reason = check_privilege(current_user, user_manager, "all")
+        if not allowed:
+            return f"access > {reason}"
+        if reflective_memory is None:
+            return "inanna-reflect > reflective memory is unavailable."
+        return reflective_memory.format_for_display()
 
     if lowered == "my-trust":
         if user_manager is None or active_token is None or current_user is None:
@@ -3806,6 +3927,7 @@ def handle_command(
                 session_audit=session_audit,
                 active_realm_name=active_realm_name,
                 conversation_state=conversation_state,
+                reflective_memory=reflective_memory,
             )
 
         if payload.get("action") == "orchestration":
@@ -3828,6 +3950,31 @@ def handle_command(
                 profile_manager=profile_manager,
             )
             return outcome["display_text"]
+
+        if payload.get("action") == "reflection":
+            entry = reflection_entry_from_payload(payload)
+            if lowered != "approve":
+                return f"Rejected {resolved['proposal_id']}."
+            if entry is None or reflective_memory is None:
+                return f"Approved {resolved['proposal_id']} but reflective memory was unavailable."
+            approver = (
+                current_user.display_name
+                if current_user is not None
+                else (
+                    active_token.display_name
+                    if active_token is not None
+                    else "guardian"
+                )
+            )
+            reflective_memory.approve(entry, approved_by=approver)
+            sync_profile_grounding(engine, profile_manager, current_user, active_token, reflective_memory)
+            append_audit_event(
+                session_audit,
+                "reflection_approved",
+                f"reflection_approved: {entry.observation[:60]}",
+                {"entry_id": entry.entry_id, "approved_by": approver},
+            )
+            return f"Approved {resolved['proposal_id']} and recorded INANNA reflection."
 
         if payload.get("action") == "realm_context_update":
             realm_name = payload.get("realm_name", "")
@@ -4057,6 +4204,7 @@ def handle_command(
                 session_audit=session_audit,
                 active_realm_name=active_realm_name,
                 conversation_state=conversation_state,
+                reflective_memory=reflective_memory,
             )
         created = create_tool_use_proposal(
             proposal=proposal,
@@ -4144,6 +4292,12 @@ def handle_command(
     )
     if faculty_monitor is not None:
         faculty_monitor.record_call("crown", (time.monotonic() - t0) * 1000, True)
+    assistant_text, reflection_proposal = maybe_capture_reflection_proposal(
+        assistant_text,
+        proposal,
+        session,
+        reflective_memory,
+    )
     session.add_event("assistant", assistant_text)
     append_user_log_entry(user_log, active_token, session.session_id, normalized, assistant_text)
     record_completed_turn(
@@ -4159,6 +4313,8 @@ def handle_command(
     if governance_result.decision == "redirect":
         lines.append(f"governance > redirected: {governance_result.reason}")
     lines.append(f"inanna > {assistant_text}")
+    if reflection_proposal is not None:
+        lines.append(reflection_proposal["line"])
     return "\n".join(lines)
 
 
@@ -4179,6 +4335,7 @@ def main() -> None:
     user_manager = UserManager(data_root=DATA_ROOT, roles_config_path=ROLES_CONFIG_PATH)
     guardian_user = ensure_guardian_exists(user_manager)
     profile_manager = ProfileManager(PROFILES_DIR)
+    reflective_memory = ReflectiveMemory(SELF_DIR)
     expired_invites = user_manager.expire_old_invites()
     token_store = TokenStore()
     guardian_token = token_store.issue(
@@ -4223,7 +4380,7 @@ def main() -> None:
     guardian = GuardianFaculty()
     operator = OperatorFaculty()
     governance = GovernanceLayer(engine=engine)
-    sync_profile_grounding(engine, profile_manager, guardian_user, guardian_token)
+    sync_profile_grounding(engine, profile_manager, guardian_user, guardian_token, reflective_memory)
     classifier = IntentClassifier(
         engine,
         governance=governance,
@@ -4345,6 +4502,7 @@ def main() -> None:
             conversation_state=conversation_state,
             orchestration_engine=orchestration_engine,
             profile_manager=profile_manager,
+            reflective_memory=reflective_memory,
         )
         if result is None:
             observe_session_communication(

@@ -19,6 +19,7 @@ from core.profile import NotificationStore, ProfileManager
 from core.process_monitor import ProcessMonitor
 from core.proposal import Proposal
 from core.realm import RealmManager
+from core.reflection import ReflectiveMemory
 from core.session import AnalystFaculty, Engine, Session
 from core.session_token import TokenStore
 from core.state import StateReport
@@ -502,6 +503,7 @@ class CommandTests(unittest.TestCase):
                 "whoami",
                 "my-profile",
                 "view-profile",
+                "inanna-reflect",
                 "my-trust",
                 "my-departments",
                 "assign-department",
@@ -551,7 +553,7 @@ class CommandTests(unittest.TestCase):
         self.assertEqual(
             startup_commands_line(),
             (
-                "Commands: users, create-user, login, logout, whoami, my-profile, view-profile, my-trust, "
+                "Commands: users, create-user, login, logout, whoami, my-profile, view-profile, inanna-reflect, my-trust, "
                 "my-departments, assign-department, unassign-department, assign-group, "
                 "unassign-group, notify-department, governance-trust, governance-revoke, reflect, analyse, audit, guardian, faculties, realms, "
                 "create-realm, realm-context, switch-user, assign-realm, unassign-realm, my-log, user-log, invite, join, invites, "
@@ -782,6 +784,52 @@ class CommandTests(unittest.TestCase):
         self.assertIn(f"Profile for Alice ({target.user_id}):", result)
         self.assertIn("Preferred    Alicia", result)
 
+    def test_inanna_reflect_shows_approved_reflections(self) -> None:
+        (
+            session,
+            memory,
+            proposal,
+            state_report,
+            engine,
+            analyst,
+            classifier,
+            routing_log,
+            startup_context,
+            config,
+        ) = self.make_runtime()
+        root = session.session_path.parent.parent
+        user_manager, session_state, token_store, user_log, faculty_monitor = self.make_user_context(root)
+        reflective_memory = ReflectiveMemory(root / "self")
+        entry = reflective_memory.propose(
+            "I tend toward structured formatting when reasoning about technical domains.",
+            "observed across multiple security sessions",
+        )
+        reflective_memory.approve(entry, approved_by="ZAERA")
+
+        result = handle_command(
+            "inanna-reflect",
+            session,
+            memory,
+            proposal,
+            state_report,
+            engine,
+            analyst,
+            classifier,
+            routing_log,
+            startup_context,
+            config,
+            user_manager=user_manager,
+            session_state=session_state,  # type: ignore[arg-type]
+            token_store=token_store,
+            user_log=user_log,
+            faculty_monitor=faculty_monitor,
+            reflective_memory=reflective_memory,
+        )
+
+        self.assertIn("INANNA's self-knowledge - 1 entry:", result)
+        self.assertIn("structured formatting", result)
+        self.assertIn("context: observed across multiple security sessions", result)
+
     def test_my_trust_reports_session_and_persistent_trust(self) -> None:
         (
             session,
@@ -988,6 +1036,67 @@ class CommandTests(unittest.TestCase):
         self.assertTrue(
             any(event.get("event_type") == "tool_executed_trusted" for event in session_audit)
         )
+
+    def test_crown_response_with_reflect_tag_creates_reflection_proposal(self) -> None:
+        (
+            session,
+            memory,
+            proposal,
+            state_report,
+            engine,
+            analyst,
+            classifier,
+            routing_log,
+            startup_context,
+            config,
+        ) = self.make_runtime()
+        root = session.session_path.parent.parent
+        user_manager, session_state, token_store, user_log, faculty_monitor = self.make_user_context(root)
+        reflective_memory = ReflectiveMemory(root / "self")
+
+        with patch.object(
+            classifier,
+            "route",
+            return_value=GovernanceResult(
+                decision="allow",
+                faculty="crown",
+                reason="normal conversation",
+            ),
+        ), patch.object(
+            engine,
+            "respond",
+            return_value=(
+                "I notice I consistently provide more structured responses. "
+                "[REFLECT: I tend toward structured formatting when reasoning about "
+                "technical domains. | context: observed across multiple code analysis "
+                "sessions]"
+            ),
+        ):
+            result = handle_command(
+                "tell me how you think",
+                session,
+                memory,
+                proposal,
+                state_report,
+                engine,
+                analyst,
+                classifier,
+                routing_log,
+                startup_context,
+                config,
+                user_manager=user_manager,
+                session_state=session_state,  # type: ignore[arg-type]
+                token_store=token_store,
+                user_log=user_log,
+                faculty_monitor=faculty_monitor,
+                reflective_memory=reflective_memory,
+            )
+
+        self.assertIn("inanna > I notice I consistently provide more structured responses.", result)
+        self.assertIn("[REFLECTION PROPOSAL]", result)
+        self.assertEqual(proposal.pending_count(), 1)
+        pending = proposal.pending_records()[0]
+        self.assertEqual(pending["payload"]["action"], "reflection")
 
     def test_my_departments_reports_current_context(self) -> None:
         (

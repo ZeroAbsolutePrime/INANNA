@@ -50,9 +50,9 @@ class StateTests(unittest.TestCase):
                     "Rejected proposals: 1",
                     (
                         "Capabilities: respond, users, create-user, login, logout, whoami, "
-                        "my-profile, view-profile, my-trust, my-departments, "
-                        "assign-department, unassign-department, assign-group, "
-                        "unassign-group, notify-department, governance-trust, "
+                        "my-profile, view-profile, inanna-reflect, my-trust, "
+                        "my-departments, assign-department, unassign-department, "
+                        "assign-group, unassign-group, notify-department, governance-trust, "
                         "governance-revoke, reflect, analyse, audit, guardian, faculties, "
                         "realms, create-realm, realm-context, switch-user, assign-realm, "
                         "unassign-realm, my-log, user-log, invite, join, invites, "

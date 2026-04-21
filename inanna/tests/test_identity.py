@@ -112,8 +112,8 @@ class IdentityTests(unittest.TestCase):
     def test_current_phase_constant_matches_phase_banner(self) -> None:
         self.assertEqual(CURRENT_PHASE, phase_banner())
 
-    def test_current_phase_names_trust_persistence(self) -> None:
-        self.assertIn("Trust Persistence", CURRENT_PHASE)
+    def test_current_phase_names_reflective_memory(self) -> None:
+        self.assertIn("Reflective Memory", CURRENT_PHASE)
 
     def test_cycle2_summary_describes_completed_kernel(self) -> None:
         self.assertIn("NAMMU Kernel", CYCLE2_SUMMARY)

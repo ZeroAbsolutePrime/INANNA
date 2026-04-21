@@ -30,6 +30,7 @@ from core.operator import OperatorFaculty
 from core.profile import NotificationStore, ProfileManager
 from core.process_monitor import ProcessMonitor
 from core.proposal import Proposal
+from core.reflection import ReflectiveMemory
 from core.session import AnalystFaculty, Engine, Session
 from core.session_token import TokenStore
 from core.state import StateReport
@@ -104,6 +105,7 @@ from main import (
     initialize_realm_context,
     inspect_body_report,
     load_current_realm,
+    maybe_capture_reflection_proposal,
     needs_onboarding,
     normalize_tool_name,
     observe_session_communication,
@@ -112,6 +114,7 @@ from main import (
     parse_profile_edit_command,
     record_completed_turn,
     reset_onboarding_state,
+    reflection_entry_from_payload,
     resolve_profile_subject,
     revoke_persistent_tool_trust,
     run_sentinel_response as run_sentinel_backend_response,
@@ -223,6 +226,7 @@ class InterfaceServer:
         self.guardian_user = ensure_guardian_exists(self.user_manager)
         self.profile_manager = ProfileManager(self.data_root / "profiles")
         self.notification_store = NotificationStore(self.data_root / "notifications")
+        self.reflective_memory = ReflectiveMemory(self.data_root / "self")
         expired_invites = self.user_manager.expire_old_invites()
         if expired_invites:
             self.startup_messages.append(f"Expired {expired_invites} invite(s).")
@@ -290,6 +294,7 @@ class InterfaceServer:
             self.profile_manager,
             self.active_user,
             self.active_token,
+            self.reflective_memory,
         )
         self.startup_context = self.memory.load_startup_context(
             user_id=self._memory_scope_user_id()
@@ -386,7 +391,7 @@ class InterfaceServer:
         finally:
             await self.broadcast({"type": "thinking", "active": False})
 
-    def _run_user_turn(self, text: str) -> str:
+    def _run_user_turn(self, text: str) -> dict[str, Any]:
         self.session.add_event("user", text)
         t0 = time.monotonic()
         assistant_text = self.engine.respond(
@@ -394,6 +399,12 @@ class InterfaceServer:
             conversation=self.session.events,
         )
         self.faculty_monitor.record_call("crown", (time.monotonic() - t0) * 1000, True)
+        assistant_text, reflection_proposal = maybe_capture_reflection_proposal(
+            assistant_text,
+            self.proposal,
+            self.session,
+            self.reflective_memory,
+        )
         self.session.add_event("assistant", assistant_text)
         append_user_log_entry(
             self.user_log,
@@ -403,7 +414,7 @@ class InterfaceServer:
             assistant_text,
         )
         self._record_completed_turn()
-        return assistant_text
+        return {"assistant_text": assistant_text, "proposal": reflection_proposal}
 
     def _refresh_session_users(self) -> None:
         if self.active_user is not None:
@@ -430,6 +441,7 @@ class InterfaceServer:
             self.profile_manager,
             self.active_user,
             self.active_token,
+            self.reflective_memory,
         )
         self.startup_context = self.memory.load_startup_context(
             user_id=self._memory_scope_user_id()
@@ -770,11 +782,12 @@ class InterfaceServer:
                 "response": {"type": "sentinel", "text": sentinel_text},
             }
 
-        assistant_text = self._run_user_turn(text)
+        user_turn = self._run_user_turn(text)
         return {
             "nammu": nammu_message,
             "governance": governance_message,
-            "response": {"type": "assistant", "text": assistant_text},
+            "response": {"type": "assistant", "text": user_turn["assistant_text"]},
+            "proposal": user_turn["proposal"],
         }
 
     def _run_analysis_turn(
@@ -1036,6 +1049,7 @@ class InterfaceServer:
                     self.profile_manager,
                     self.active_user,
                     self.active_token,
+                    self.reflective_memory,
                 )
                 await self.broadcast(
                     {
@@ -1094,6 +1108,7 @@ class InterfaceServer:
                         self.profile_manager,
                         self.active_user,
                         self.active_token,
+                        self.reflective_memory,
                     )
                     await self.broadcast(
                         {
@@ -1156,6 +1171,7 @@ class InterfaceServer:
                     self.profile_manager,
                     self.active_user,
                     self.active_token,
+                    self.reflective_memory,
                 )
                 await self.broadcast(
                     {"type": "system", "text": f"profile > {field_name} cleared."}
@@ -1182,6 +1198,19 @@ class InterfaceServer:
                         profile,
                         display_name or self.active_user.display_name,
                     ),
+                }
+            )
+            await self.broadcast_state()
+        elif command_name == "inanna-reflect":
+            allowed, reason = check_privilege(self.active_user, self.user_manager, "all")
+            if not allowed:
+                await self.broadcast({"type": "system", "text": f"access > {reason}"})
+                await self.broadcast_state()
+                return
+            await self.broadcast(
+                {
+                    "type": "system",
+                    "text": await asyncio.to_thread(self.reflective_memory.format_for_display),
                 }
             )
             await self.broadcast_state()
@@ -2235,6 +2264,8 @@ class InterfaceServer:
                         await self.broadcast(operator_payload)
                     if outcome["assistant_text"]:
                         await self.broadcast({"type": "assistant", "text": outcome["assistant_text"]})
+                    if outcome.get("proposal"):
+                        await self.broadcast({"type": "system", "text": outcome["proposal"]["line"]})
                 elif resolved.get("payload", {}).get("action") == "orchestration":
                     outcome = await asyncio.to_thread(
                         self.complete_orchestration_resolution,
@@ -2417,6 +2448,34 @@ class InterfaceServer:
                         f"invite > They join with: join {invite.invite_code} [their name]",
                     ]
                 )
+            if payload.get("action") == "reflection":
+                entry = reflection_entry_from_payload(payload)
+                if entry is None:
+                    return f"Approved {resolved['proposal_id']} but reflective memory was unavailable."
+                approver = (
+                    self.active_user.display_name
+                    if self.active_user is not None
+                    else (
+                        self.active_token.display_name
+                        if self.active_token is not None
+                        else "guardian"
+                    )
+                )
+                self.reflective_memory.approve(entry, approved_by=approver)
+                sync_profile_grounding(
+                    self.engine,
+                    self.profile_manager,
+                    self.active_user,
+                    self.active_token,
+                    self.reflective_memory,
+                )
+                append_audit_event(
+                    self.session_audit,
+                    "reflection_approved",
+                    f"reflection_approved: {entry.observation[:60]}",
+                    {"entry_id": entry.entry_id, "approved_by": approver},
+                )
+                return f"Approved {resolved['proposal_id']} and recorded INANNA reflection."
             self.memory.write_memory(
                 proposal_id=resolved["proposal_id"],
                 session_id=payload["session_id"],
@@ -2436,6 +2495,7 @@ class InterfaceServer:
             "create_user",
             "create_realm",
             "create_invite",
+            "reflection",
         }:
             return f"Rejected {resolved['proposal_id']}."
         return f"Rejected {resolved['proposal_id']}."
@@ -2502,6 +2562,12 @@ class InterfaceServer:
             )
             self.faculty_monitor.record_call("crown", (time.monotonic() - t0) * 1000, True)
 
+        assistant_text, reflection_proposal = maybe_capture_reflection_proposal(
+            assistant_text,
+            self.proposal,
+            self.session,
+            self.reflective_memory,
+        )
         if assistant_text:
             self.session.add_event("assistant", assistant_text)
             append_user_log_entry(
@@ -2515,6 +2581,7 @@ class InterfaceServer:
         return {
             "operator_payloads": operator_payloads,
             "assistant_text": assistant_text,
+            "proposal": reflection_proposal,
         }
 
     def complete_orchestration_resolution(
