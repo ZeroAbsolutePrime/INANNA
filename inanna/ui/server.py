@@ -2780,11 +2780,24 @@ class InterfaceServer:
             {"type": "system", "text": line}
             for line in build_realm_access_warning_lines(self.active_user, self.active_realm.name)
         )
+        from identity import CURRENT_PHASE, build_system_prompt
+        profile = self.profile_manager.load(self.active_token.user_id) if self.active_token else None
+        name = profile.preferred_name if profile and profile.preferred_name else (self.active_token.display_name if self.active_token else "Guardian")
+        mem_count = len(visible_memory_report.get("records", []))
+        welcome_lines = [
+            f"𒀭 Welcome back, {name}. INANNA NYX is online.",
+            f"Phase: {CURRENT_PHASE}",
+            f"Memory: {mem_count} approved record{'s' if mem_count != 1 else ''} loaded into context.",
+            "Faculties: CROWN · ANALYST · OPERATOR · SENTINEL · GUARDIAN",
+            "Tools available: web_search · ping · resolve_host · scan_ports (all require proposal approval)",
+            "Commands: my-profile · my-trust · my-departments · inanna-reflect",
+            "Console: http://localhost:8080/console (Guardian & Operator access)",
+        ]
         payloads.extend(
             [
                 {"type": "memory_update", "records": visible_memory_report["records"]},
                 {"type": "proposal", "records": self.build_pending_proposals()},
-                {"type": "system", "text": "INANNA NYX interface online."},
+                {"type": "system", "text": "\n".join(welcome_lines)},
             ]
         )
         if self.onboarding_active:

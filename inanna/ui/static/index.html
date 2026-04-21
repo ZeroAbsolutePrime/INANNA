@@ -1500,11 +1500,17 @@ function approveP(pid){sendCmd('approve',{proposal_id:pid});setTimeout(loadPropo
 function declineP(pid){sendCmd('reject',{proposal_id:pid});setTimeout(loadProposalHistory,600);}
 function approvePendingTool(btn){
   const p=S.proposalRecords.filter(r=>r.status==='pending');
-  if(p.length){approveP(p[p.length-1].proposal_id);btn.closest('.prop-inline-actions').innerHTML='<span style="color:var(--jade);font-size:9px;letter-spacing:2px">✦ approved</span>';}
+  if(p.length){approveP(p[p.length-1].proposal_id);btn.closest('.prop-inline-actions').innerHTML='<span style="color:var(--jade);font-size:9px;letter-spacing:2px">✦ approved</span>';return;}
+  const bubble=btn.closest('.msg-bubble');
+  if(bubble){const text=bubble.textContent||'';const m=text.match(/proposal-([a-f0-9]+)/i);if(m){approveP('proposal-'+m[1]);btn.closest('.prop-inline-actions').innerHTML='<span style="color:var(--jade);font-size:9px;letter-spacing:2px">✦ approved</span>';return;}}
+  sendCmd('approve-latest');btn.closest('.prop-inline-actions').innerHTML='<span style="color:var(--jade);font-size:9px;letter-spacing:2px">✦ sent</span>';setTimeout(()=>sendCmd('proposal-history'),600);
 }
 function declinePendingTool(btn){
   const p=S.proposalRecords.filter(r=>r.status==='pending');
-  if(p.length){declineP(p[p.length-1].proposal_id);btn.closest('.prop-inline-actions').innerHTML='<span style="color:var(--dim);font-size:9px;letter-spacing:2px">✗ declined</span>';}
+  if(p.length){declineP(p[p.length-1].proposal_id);btn.closest('.prop-inline-actions').innerHTML='<span style="color:var(--dim);font-size:9px;letter-spacing:2px">✗ declined</span>';return;}
+  const bubble=btn.closest('.msg-bubble');
+  if(bubble){const text=bubble.textContent||'';const m=text.match(/proposal-([a-f0-9]+)/i);if(m){declineP('proposal-'+m[1]);btn.closest('.prop-inline-actions').innerHTML='<span style="color:var(--dim);font-size:9px;letter-spacing:2px">✗ declined</span>';return;}}
+  sendCmd('reject-latest');btn.closest('.prop-inline-actions').innerHTML='<span style="color:var(--dim);font-size:9px;letter-spacing:2px">✗ sent</span>';
 }
 
 // ══════════════════════════════════
