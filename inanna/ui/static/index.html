@@ -2280,16 +2280,16 @@ const HELP_DEF = {
      rows:[{cmd:'users',desc:'List all users',run:'users'},{cmd:'create-user [name] [role]',desc:'Create a user',run:'create-user '},{cmd:'invite [role]',desc:'Generate invite code',run:'invite user'},{cmd:'guardian',desc:'Run GUARDIAN inspection',run:'guardian'},{cmd:'diagnostics',desc:'Deep diagnostics',run:'diagnostics'},{cmd:'admin-surface',desc:'Admin dashboard',run:'admin-surface'},{cmd:'reflect [observation]',desc:'Propose reflection',run:'reflect '}]},
   ],
 };
-const HELP_ICONS = {conversation:'\u{12041}',profile:'\u25c6',software:'\u25c8',files:'\u25fb',system:'\u25c9',governance:'\u2726',session:'\u25cc',operator:'\u27c1',guardian:'\ud83c\udcab'};
+const HELP_ICONS = {conversation:'𒁁',profile:'◆',software:'◈',files:'◻',system:'◉',governance:'✦',session:'◌',operator:'⟁',guardian:'🂫'};
 const HELP_TOPICS_LIST = ['my-profile','governance-trust','inanna-reflect','faculties','tools','files','processes','packages','memory'];
 
 function buildHelpPanel(text, role) {
-  if (!text || text.indexOf('\u{12041}') < 0) return null;
+  if (!text || text.indexOf('INANNA NYX') < 0) return null;
   let secs = [...HELP_DEF.user];
   if (role==='operator'||role==='guardian') secs = secs.concat(HELP_DEF.operator_extra);
   if (role==='guardian') secs = secs.concat(HELP_DEF.guardian_extra);
   let h = '<div class="help-panel">';
-  h += '<div class="help-title">\u{12041}\u00a0INANNA NYX \u2014 Command Reference</div>';
+  h += '<div class="help-title">𒁁 INANNA NYX — Command Reference</div>';
   h += '<div class="help-grid">';
   for (const sec of secs) {
     h += `<div class="help-section ${sec.cls}${sec.wide?' wide':''}">`;
