@@ -10,7 +10,7 @@ if TYPE_CHECKING:
 # - Faculty runtime assignments are declared in config/faculties.json.
 # - Full Faculty-to-model mapping is documented in docs/llm_configuration.md.
 # - SENTINEL may use a different model than the core Faculties without changing Python code.
-CURRENT_PHASE = "Cycle 7 - Phase 7.7 - The UX Polish Pass"
+CURRENT_PHASE = "Cycle 7 - Phase 7.8 - The Capability Proof"
 
 CYCLE2_SUMMARY = (
     "Cycle 2 built the NAMMU Kernel: web interface, two Faculties, "
@@ -62,6 +62,15 @@ CYCLE7_PREVIEW = (
     "Cycle 7 builds NYXOS: INANNA as a NixOS system service, "
     "file system tools, process management, package management, "
     "and the voice pipeline (Whisper + Piper TTS)."
+)
+
+CYCLE7_COMPLETE = (
+    "Cycle 7 built NYXOS: NixOS service configuration, the File System "
+    "Faculty, the Process Faculty, the Package Faculty, the software "
+    "registry with launch_app, the deferred Voice Listener scaffold, "
+    "PBKDF2 authentication for ZAERA / ETERNALOVE, the standalone login "
+    "page, and the UX polish pass. 18 tools registered. Full suite green "
+    "at 432 unit tests."
 )
 
 

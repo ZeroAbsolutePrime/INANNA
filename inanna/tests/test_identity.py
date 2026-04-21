@@ -9,6 +9,7 @@ from identity import (
     CYCLE4_SUMMARY,
     CYCLE5_SUMMARY,
     CYCLE6_SUMMARY,
+    CYCLE7_COMPLETE,
     CYCLE7_PREVIEW,
     build_analyst_prompt,
     build_nammu_prompt,
@@ -134,8 +135,8 @@ class IdentityTests(unittest.TestCase):
     def test_current_phase_constant_matches_phase_banner(self) -> None:
         self.assertEqual(CURRENT_PHASE, phase_banner())
 
-    def test_current_phase_names_the_ux_polish_pass(self) -> None:
-        self.assertIn("UX Polish Pass", CURRENT_PHASE)
+    def test_current_phase_names_the_capability_proof(self) -> None:
+        self.assertIn("Capability Proof", CURRENT_PHASE)
 
     def test_cycle2_summary_describes_completed_kernel(self) -> None:
         self.assertIn("NAMMU Kernel", CYCLE2_SUMMARY)
@@ -170,6 +171,11 @@ class IdentityTests(unittest.TestCase):
         self.assertIn("process management", CYCLE7_PREVIEW)
         self.assertIn("package management", CYCLE7_PREVIEW)
         self.assertIn("Whisper + Piper TTS", CYCLE7_PREVIEW)
+
+    def test_cycle7_complete_describes_the_proven_capability_surface(self) -> None:
+        self.assertIn("NYXOS", CYCLE7_COMPLETE)
+        self.assertIn("18 tools", CYCLE7_COMPLETE)
+        self.assertIn("PBKDF2", CYCLE7_COMPLETE)
 
 
 if __name__ == "__main__":

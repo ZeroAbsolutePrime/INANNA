@@ -1509,7 +1509,7 @@ function handleMsg(m){
   if(t==='profile')      {addMessage('profile',m.text);return;}
   if(t==='nammu')        {addMessage('nammu',m.text);return;}
   if(t==='governance')   {addMessage('governance',m.text);return;}
-  if(t==='operator')     {addMessage('operator',m.text);return;}
+  if(t==='operator')     {addMessage('operator',m.text,m);return;}
   if(t==='guardian')     {addMessage('guardian',m.text);parseGuardianReport(m.text);return;}
   if(t==='access')       {addMessage('access',m.text);return;}
   if(t==='system')       {handleSystemMsg(m.text);return;}
