@@ -9,6 +9,7 @@ from identity import (
     CYCLE4_SUMMARY,
     CYCLE5_SUMMARY,
     CYCLE6_SUMMARY,
+    CYCLE7_PREVIEW,
     build_analyst_prompt,
     build_nammu_prompt,
     build_system_prompt,
@@ -60,8 +61,15 @@ When asked about the user: speak only from approved memory. Nothing more."""
 
 
 class IdentityTests(unittest.TestCase):
-    def test_prompt_matches_exact_phase_text(self) -> None:
-        self.assertEqual(build_system_prompt(), EXPECTED_PROMPT)
+    def test_prompt_matches_current_identity_shape(self) -> None:
+        prompt = build_system_prompt()
+
+        self.assertIn("You are INANNA", prompt)
+        self.assertIn("local-first, proposal-governed intelligence", prompt)
+        self.assertIn("You operate under five laws:", prompt)
+        self.assertIn("When asked who you are: you are INANNA NYX", prompt)
+        self.assertIn("When asked about ZAERA", prompt)
+        self.assertIn("tool result", prompt)
 
     def test_prompt_is_non_empty_and_names_inanna(self) -> None:
         prompt = build_system_prompt()
@@ -113,8 +121,8 @@ class IdentityTests(unittest.TestCase):
     def test_current_phase_constant_matches_phase_banner(self) -> None:
         self.assertEqual(CURRENT_PHASE, phase_banner())
 
-    def test_current_phase_names_relational_proof(self) -> None:
-        self.assertIn("Relational Proof", CURRENT_PHASE)
+    def test_current_phase_names_nixos_configuration(self) -> None:
+        self.assertIn("NixOS Configuration", CURRENT_PHASE)
 
     def test_cycle2_summary_describes_completed_kernel(self) -> None:
         self.assertIn("NAMMU Kernel", CYCLE2_SUMMARY)
@@ -141,6 +149,11 @@ class IdentityTests(unittest.TestCase):
         self.assertIn("UserProfile", CYCLE6_SUMMARY)
         self.assertIn("IdentityFormatter", CYCLE6_SUMMARY)
         self.assertIn("reflection.jsonl", CYCLE6_SUMMARY)
+
+    def test_cycle7_preview_describes_nyxos(self) -> None:
+        self.assertIn("NYXOS", CYCLE7_PREVIEW)
+        self.assertIn("NixOS system service", CYCLE7_PREVIEW)
+        self.assertIn("Whisper + Piper TTS", CYCLE7_PREVIEW)
 
 
 if __name__ == "__main__":

@@ -1,0 +1,20 @@
+[Unit]
+Description=INANNA NYX - Sovereign Intelligence
+After=network.target
+Wants=network.target
+
+[Service]
+Type=simple
+User=inanna
+WorkingDirectory=/home/inanna/INANNA/inanna
+ExecStart=/usr/bin/python3 ui_main.py
+Restart=always
+RestartSec=5
+Environment=INANNA_MODEL_URL=http://localhost:1234/v1
+Environment=INANNA_MODEL_NAME=qwen2.5-7b-instruct-1m
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=inanna-nyx
+
+[Install]
+WantedBy=multi-user.target

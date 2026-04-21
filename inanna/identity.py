@@ -10,7 +10,7 @@ if TYPE_CHECKING:
 # - Faculty runtime assignments are declared in config/faculties.json.
 # - Full Faculty-to-model mapping is documented in docs/llm_configuration.md.
 # - SENTINEL may use a different model than the core Faculties without changing Python code.
-CURRENT_PHASE = "Cycle 6 - Phase 6.9 - The Relational Proof"
+CURRENT_PHASE = "Cycle 7 - Phase 7.1 - The NixOS Configuration"
 
 CYCLE2_SUMMARY = (
     "Cycle 2 built the NAMMU Kernel: web interface, two Faculties, "
@@ -56,6 +56,12 @@ CYCLE6_SUMMARY = (
     "Persistence allowing permanent tool trust grants, and the Reflective "
     "Memory - INANNA's governed self-knowledge at "
     "inanna/data/self/reflection.jsonl."
+)
+
+CYCLE7_PREVIEW = (
+    "Cycle 7 builds NYXOS: INANNA as a NixOS system service, "
+    "file system tools, process management, package installation, "
+    "and the voice pipeline (Whisper + Piper TTS)."
 )
 
 
