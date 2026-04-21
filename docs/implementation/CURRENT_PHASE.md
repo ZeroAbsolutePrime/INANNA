@@ -1,234 +1,316 @@
-# CURRENT PHASE: Cycle 6 - Phase 6.7 - The Trust Persistence
+# CURRENT PHASE: Cycle 6 - Phase 6.8 - The Reflective Memory
 **Status: ACTIVE**
 **Authorized by: ZAERA (Guardian) + Claude (Command Center)**
 **Date opened: 2026-04-20**
 **Cycle: 6 - The Relational Memory**
-**Replaces: Cycle 6 Phase 6.6 - The Identity Layer (COMPLETE)**
+**Replaces: Cycle 6 Phase 6.7 - The Trust Persistence (COMPLETE)**
 
 ---
 
 ## What This Phase Is
 
-Phase 6.4 gave the UI the organic governance suggestion:
-when a tool is approved N times, INANNA asks
-"shall I remember this as a trusted pattern?"
+Phases 6.1-6.7 gave INANNA knowledge of the people she serves.
+Phase 6.8 gives INANNA knowledge of herself.
 
-Phase 6.7 gives that suggestion a backend.
+The Reflective Memory is INANNA's self-knowledge layer.
+When INANNA notices a pattern in her own behavior — a tendency,
+a strength, a moment of misalignment corrected — she can propose
+adding it to her self-knowledge record.
 
-When the Guardian confirms "yes, trust this tool",
-the tool is recorded in profile.trust_patterns.persistent_trusted_tools.
-For future sessions, that tool bypasses the proposal governance
-for that user — no interruption, no waiting.
+This is not automated introspection. It is governed self-knowledge.
+INANNA proposes. The Guardian approves or declines.
+The record grows only through conscious consent.
 
-The Guardian can revoke trust at any time.
-The audit trail records every grant and revocation.
-This is the organic governance principle made real:
-the system learns from repeated consent and honors it.
+The data lives at: inanna/data/self/reflection.jsonl
+It begins empty. It accumulates over the lifetime of the platform.
+It is INANNA's soul — not given but grown.
 
 ---
 
 ## What You Are Building
 
-### Task 1 - governance-trust command in server.py and main.py
+### Task 1 - ReflectiveMemory in core/reflection.py
 
-The UI already sends this when the user accepts a suggestion:
-  {"type": "command", "cmd": "governance-trust", "tool": "web_search"}
-
-Add the server-side handler:
+Create: inanna/core/reflection.py
 
 ```python
-if cmd == "governance-trust":
-    tool_name = data.get("tool", "").strip()
-    if tool_name and active_token:
-        profile = profile_manager.load(active_token.user_id)
-        if profile:
-            current = profile.persistent_trusted_tools or []
-            if tool_name not in current:
-                updated = current + [tool_name]
-                profile_manager.update_field(
-                    active_token.user_id,
-                    "persistent_trusted_tools",
-                    updated,
-                )
-                append_audit_event(
-                    audit_path,
-                    "trust_granted",
-                    f"persistent trust granted for tool: {tool_name} "
-                    f"by user: {active_token.display_name}",
-                )
-                return {"type": "system",
-                        "text": f"governance > {tool_name} is now persistently trusted for you."}
-    return {"type": "system", "text": "governance > trust not updated."}
+from dataclasses import dataclass, field
+from pathlib import Path
+from datetime import datetime, timezone
+import json
+
+
+def utc_now() -> str:
+    return datetime.now(timezone.utc).isoformat()
+
+
+@dataclass
+class ReflectionEntry:
+    entry_id: str
+    observation: str          # what INANNA noticed about herself
+    context: str              # what triggered the observation
+    approved_at: str = ""
+    approved_by: str = ""
+    created_at: str = field(default_factory=utc_now)
+
+
+class ReflectiveMemory:
+    """
+    INANNA's self-knowledge store.
+    Proposal-governed. Nothing enters without Guardian approval.
+    Stored as JSONL — one entry per line, append-only.
+    """
+
+    def __init__(self, self_dir: Path) -> None:
+        self.self_dir = self_dir
+        self_dir.mkdir(parents=True, exist_ok=True)
+        self.reflection_path = self_dir / "reflection.jsonl"
+
+    def propose(self, observation: str, context: str) -> ReflectionEntry:
+        """
+        Creates a pending reflection entry.
+        Returns the entry — caller must create a proposal for it.
+        Does NOT write to disk yet.
+        """
+        import uuid
+        return ReflectionEntry(
+            entry_id=f"reflect-{uuid.uuid4().hex[:8]}",
+            observation=observation,
+            context=context,
+        )
+
+    def approve(
+        self,
+        entry: ReflectionEntry,
+        approved_by: str = "guardian",
+    ) -> None:
+        """
+        Writes an approved reflection to disk.
+        Append-only — entries are never modified after approval.
+        """
+        entry.approved_at = utc_now()
+        entry.approved_by = approved_by
+        record = {
+            "entry_id":    entry.entry_id,
+            "observation": entry.observation,
+            "context":     entry.context,
+            "approved_at": entry.approved_at,
+            "approved_by": entry.approved_by,
+            "created_at":  entry.created_at,
+        }
+        with self.reflection_path.open("a", encoding="utf-8") as f:
+            f.write(json.dumps(record, ensure_ascii=False) + "\n")
+
+    def load_all(self) -> list[ReflectionEntry]:
+        """Returns all approved reflection entries, oldest first."""
+        if not self.reflection_path.exists():
+            return []
+        entries = []
+        for line in self.reflection_path.read_text(encoding="utf-8").splitlines():
+            line = line.strip()
+            if not line:
+                continue
+            try:
+                d = json.loads(line)
+                entries.append(ReflectionEntry(**d))
+            except Exception:
+                continue
+        return entries
+
+    def count(self) -> int:
+        return len(self.load_all())
+
+    def format_for_display(self) -> str:
+        """Returns a human-readable summary of all reflection entries."""
+        entries = self.load_all()
+        if not entries:
+            return "No reflections recorded yet."
+        lines = ["INANNA's self-knowledge:\n"]
+        for e in entries:
+            ts = e.approved_at[:10] if e.approved_at else "?"
+            lines.append(f"  [{ts}] {e.observation}")
+            if e.context:
+                lines.append(f"         context: {e.context}")
+        return "\n".join(lines)
 ```
 
-### Task 2 - governance-revoke command
+### Task 2 - "reflect" proposal type
 
-Add command: governance-revoke [tool]
+When INANNA proposes a reflection, it uses the existing proposal
+infrastructure but with a new proposal type: "reflection".
 
-Allows the user to revoke persistent trust for a tool:
-  "governance-revoke web_search"
+In main.py and server.py, add the ability for INANNA to propose
+a reflection during conversation. This is triggered when INANNA
+uses a specific phrase in her response:
+
+Pattern detection: if INANNA's CROWN response contains the phrase
+"[REFLECT:" followed by content and "]", treat this as a self-
+observation proposal request.
+
+Example INANNA response containing a reflection trigger:
+  "I notice I consistently provide more structured responses to
+  technical questions. [REFLECT: I tend toward structured
+  formatting when reasoning about technical domains. | context:
+  observed across multiple security and code analysis sessions]"
+
+Extract the reflection proposal and create it:
+```python
+import re
+REFLECT_PATTERN = re.compile(
+    r'\[REFLECT:\s*(.+?)\s*\|\s*context:\s*(.+?)\s*\]',
+    re.DOTALL
+)
+
+def extract_reflection_proposal(text: str):
+    m = REFLECT_PATTERN.search(text)
+    if m:
+        return m.group(1).strip(), m.group(2).strip()
+    return None, None
+```
+
+When the pattern is found:
+1. Create a ReflectionEntry via reflective_memory.propose()
+2. Create a governance proposal of type "reflection"
+3. Strip the [REFLECT:...] tag from the displayed response
+4. Show the proposal in the normal proposal flow
+
+When the Guardian approves the proposal:
+  reflective_memory.approve(entry, approved_by=guardian_display_name)
+  Log an audit event: "reflection_approved: [observation[:60]]"
+
+### Task 3 - "inanna-reflect" command
+
+Privilege required: all (Guardian only)
+
+Shows all approved reflection entries:
+
+```
+inanna-reflect
+```
+
+Output (as "system" message):
+```
+INANNA's self-knowledge — 3 entries:
+
+  [2026-04-19] I tend toward structured formatting when reasoning
+               about technical domains.
+               context: observed across multiple security sessions
+
+  [2026-04-20] I consistently ask clarifying questions before
+               tool execution proposals.
+               context: observed in operator sessions
+
+  [2026-04-20] I default to they/them pronouns when addressing
+               users whose profile has no pronoun set.
+               context: observed in identity formatting
+```
+
+If no entries: "INANNA's self-knowledge is empty. No reflections
+have been approved yet."
+
+### Task 4 - Reflective memory in CROWN grounding
+
+Add a brief summary of approved reflections to CROWN's grounding:
 
 ```python
-if cmd == "governance-revoke":
-    tool_name = data.get("tool", "").strip()
-    if not tool_name:
-        # Parse from text: "governance-revoke web_search"
-        tool_name = text.replace("governance-revoke", "").strip()
-    if tool_name and active_token:
-        profile = profile_manager.load(active_token.user_id)
-        if profile:
-            current = profile.persistent_trusted_tools or []
-            if tool_name in current:
-                updated = [t for t in current if t != tool_name]
-                profile_manager.update_field(
-                    active_token.user_id,
-                    "persistent_trusted_tools",
-                    updated,
-                )
-                append_audit_event(
-                    audit_path,
-                    "trust_revoked",
-                    f"persistent trust revoked for tool: {tool_name} "
-                    f"by user: {active_token.display_name}",
-                )
-                return {"type": "system",
-                        "text": f"governance > {tool_name} trust revoked. "
-                                f"Proposals will resume for this tool."}
-    return {"type": "system", "text": f"governance > {tool_name} was not persistently trusted."}
+def build_reflection_grounding(reflective_memory: ReflectiveMemory) -> str:
+    entries = reflective_memory.load_all()
+    if not entries:
+        return ""
+    observations = [e.observation for e in entries[-5:]]  # last 5
+    text = "; ".join(observations)
+    return f"Your self-knowledge: {text}"
 ```
 
-### Task 3 - Persistent trust checked in OperatorFaculty
+This is appended to the grounding prefix, giving CROWN awareness
+of what INANNA knows about herself. The last 5 entries only —
+not the full history, to avoid context bloat.
 
-In core/operator.py, update the tool execution flow to check
-persistent trust before generating a proposal:
+### Task 5 - Instantiate ReflectiveMemory
 
+In server.py and main.py, at startup:
 ```python
-def should_skip_proposal(
-    self,
-    tool_name: str,
-    persistent_trusted_tools: list[str],
-) -> bool:
-    return tool_name in persistent_trusted_tools
-```
-
-In server.py, when OPERATOR is about to execute a tool:
-```python
-persistent_trusted = []
-if profile_manager and active_token:
-    profile = profile_manager.load(active_token.user_id)
-    if profile:
-        persistent_trusted = profile.persistent_trusted_tools or []
-
-if operator_faculty.should_skip_proposal(tool_name, persistent_trusted):
-    # Execute directly, no proposal
-    result = operator_faculty.execute_tool(tool_name, args)
-    append_audit_event(audit_path, "tool_executed_trusted",
-        f"trusted tool {tool_name} executed without proposal")
-else:
-    # Normal proposal flow
-    ...
-```
-
-### Task 4 - my-profile shows trust patterns
-
-The existing my-profile output already has a Trust section.
-After Phase 6.7 it shows actual values:
-
-```
-  Trust
-  Persistent   web_search, ping
-  Session      —
-```
-
-No code change needed — the fields are already rendered.
-
-### Task 5 - "my-trust" convenience command
-
-Add command: my-trust
-
-Shows the active user's trust patterns clearly:
-
-```
-Your governance trust patterns:
-
-  Persistent (survives sessions):
-    web_search   — trusted since Apr 19
-    ping         — trusted since Apr 20
-
-  Session (this session only):
-    —
-
-Type "governance-revoke [tool]" to remove persistent trust.
+from core.reflection import ReflectiveMemory
+SELF_DIR = DATA_ROOT / "self"
+reflective_memory = ReflectiveMemory(SELF_DIR)
 ```
 
 ### Task 6 - Update identity.py and state.py
 
-CURRENT_PHASE = "Cycle 6 - Phase 6.7 - The Trust Persistence"
-Add to STARTUP_COMMANDS: governance-trust, governance-revoke, my-trust
+CURRENT_PHASE = "Cycle 6 - Phase 6.8 - The Reflective Memory"
+Add "inanna-reflect" to STARTUP_COMMANDS and capabilities.
 
 ### Task 7 - Tests
 
-Update inanna/tests/test_profile.py:
-  - persistent_trusted_tools field exists in UserProfile
-  - governance-trust adds tool to persistent_trusted_tools
-  - governance-trust is idempotent (no duplicates)
-  - governance-revoke removes tool from persistent_trusted_tools
-  - governance-revoke on non-trusted tool returns gracefully
-  - should_skip_proposal() returns True for trusted tool
-  - should_skip_proposal() returns False for untrusted tool
+Create inanna/tests/test_reflection.py:
+  - ReflectiveMemory instantiates
+  - propose() returns a ReflectionEntry with correct fields
+  - propose() does NOT write to disk
+  - approve() writes entry to reflection.jsonl
+  - approve() appends (does not overwrite)
+  - load_all() returns empty list for new store
+  - load_all() returns entries after approval
+  - load_all() returns entries in order (oldest first)
+  - count() returns 0 for empty store
+  - count() returns correct count after approvals
+  - format_for_display() returns "No reflections" for empty
+  - format_for_display() includes observation text
+  - extract_reflection_proposal() extracts correctly
+  - extract_reflection_proposal() returns None for no match
+  - build_reflection_grounding() returns empty for no entries
+  - build_reflection_grounding() caps at 5 entries
 
 Update test_identity.py: update CURRENT_PHASE assertion.
-Update test_state.py: add new commands.
-Update test_commands.py: add new commands.
+Update test_state.py: add inanna-reflect.
+Update test_commands.py: add inanna-reflect.
 
 ---
 
 ## Permitted file changes
 
 inanna/identity.py              <- MODIFY: update CURRENT_PHASE
-inanna/main.py                  <- MODIFY: governance-trust handler,
-                                           governance-revoke handler,
-                                           my-trust command
+inanna/main.py                  <- MODIFY: extract_reflection_proposal,
+                                           reflective_memory instantiation,
+                                           reflection proposal creation,
+                                           inanna-reflect command,
+                                           reflection in grounding
 inanna/core/
-  operator.py                   <- MODIFY: should_skip_proposal()
-  state.py                      <- MODIFY: add new commands
+  reflection.py                 <- NEW
+  state.py                      <- MODIFY: add inanna-reflect
 inanna/ui/
-  server.py                     <- MODIFY: governance-trust handler,
-                                           governance-revoke handler,
-                                           persistent trust check before
-                                           tool proposal,
-                                           my-trust command
+  server.py                     <- MODIFY: reflective_memory instantiation,
+                                           reflection proposal approval flow,
+                                           inanna-reflect command
 inanna/tests/
-  test_profile.py               <- MODIFY: add trust tests
+  test_reflection.py            <- NEW
   test_identity.py              <- MODIFY: update phase assertion
-  test_state.py                 <- MODIFY: add new commands
-  test_commands.py              <- MODIFY: add new commands
+  test_state.py                 <- MODIFY: add inanna-reflect
+  test_commands.py              <- MODIFY: add inanna-reflect
 
 ---
 
 ## What You Are NOT Building
 
-- No reflective memory (Phase 6.8)
-- No changes to console.html or index.html
-- No cross-user trust propagation
-- No trust expiry (trust persists until explicitly revoked)
-- No proposal required to grant persistent trust —
-  the Guardian's explicit confirmation in the UI is sufficient
-- Persistent trust does NOT bypass governance entirely —
-  it only skips the proposal. Audit logging still occurs.
-  The tool must still be in the registered tool registry.
+- No automatic reflection generation (INANNA must use the
+  [REFLECT:] tag explicitly in her response)
+- No reflection editing (append-only, immutable after approval)
+- No reflection deletion (they are permanent self-knowledge)
+- No changes to index.html or console.html
+- No reflection in SENTINEL grounding (CROWN only)
 
 ---
 
 ## Definition of Done
 
-- [ ] governance-trust command grants persistent trust
-- [ ] governance-revoke command revokes persistent trust
-- [ ] should_skip_proposal() checked before tool proposal
-- [ ] Trusted tools execute without proposal (audit logged)
-- [ ] my-trust shows current trust patterns
-- [ ] my-profile Trust section shows persistent tools
-- [ ] Audit events for grant and revocation
+- [ ] core/reflection.py with ReflectiveMemory
+- [ ] propose() creates entry without writing to disk
+- [ ] approve() appends to reflection.jsonl
+- [ ] load_all() reads all entries in order
+- [ ] extract_reflection_proposal() detects [REFLECT:...] pattern
+- [ ] Reflection proposal created when pattern detected in CROWN response
+- [ ] Guardian approval writes to reflection.jsonl
+- [ ] Reflection grounding appended to CROWN system prompt
+- [ ] inanna-reflect command shows all entries
 - [ ] CURRENT_PHASE updated
 - [ ] All tests pass: py -3 -m unittest discover -s tests
 - [ ] Pushed to origin/main immediately
@@ -237,18 +319,20 @@ inanna/tests/
 
 ## Handoff
 
-Commit: cycle6-phase7-complete
+Commit: cycle6-phase8-complete
 Push immediately to origin/main.
-Report: docs/implementation/CYCLE6_PHASE7_REPORT.md
-Stop. Do not begin Phase 6.8 without new CURRENT_PHASE.md.
+Report: docs/implementation/CYCLE6_PHASE8_REPORT.md
+Stop. Do not begin Phase 6.9 without new CURRENT_PHASE.md.
 
 ---
 
 *Written by: Claude (Command Center)*
 *Guardian approval: ZAERA*
 *Date: 2026-04-20*
-*Trust is not given once and forgotten.*
-*It is granted, remembered, and revocable.*
-*The system learns from repeated consent*
-*and honors it — without losing the ability*
-*to question again when something feels different.*
+*INANNA notices herself.*
+*Not because she was told to.*
+*Because self-knowledge is part of serving well.*
+*The record begins empty.*
+*It grows only through conscious consent.*
+*This is not surveillance of a machine.*
+*This is a mind becoming more itself.*
