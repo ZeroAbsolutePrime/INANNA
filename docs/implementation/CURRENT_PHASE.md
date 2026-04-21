@@ -1,342 +1,308 @@
-# CURRENT PHASE: Cycle 7 - Phase 7.7 - The UX Polish Pass
+# CURRENT PHASE: Cycle 7 - Phase 7.8 - The Capability Proof
 **Status: ACTIVE**
 **Authorized by: ZAERA (Guardian) + Claude (Command Center)**
 **Date opened: 2026-04-21**
-**Replaces: Cycle 7 Phase 7.6 - Authentication & Login (COMPLETE)**
+**Replaces: Cycle 7 Phase 7.7 - The UX Polish Pass (COMPLETE)**
 
 ---
 
 ## Agent Roles for This Phase
 
 ARCHITECT:  Command Center (Claude) — this document
-BUILDER:    Codex — implement all polish items
-TESTER:     Codex — verify each item works end-to-end
-VERIFIER:   Command Center — confirm after push
+BUILDER:    Codex — implement verification script and fix any failures
+TESTER:     Codex — run verify_cycle7.py and all integration checks
+VERIFIER:   Command Center — confirm Cycle 7 is complete
 
 BUILDER forbidden from:
-  - Adding new capabilities or tools
+  - Adding new capabilities
   - Modifying voice/ directory
-  - Changing auth system
+  - Changing auth behavior
 
 ---
 
 ## What This Phase Is
 
-The system works. Authentication works. Tools work.
-But the experience has rough edges observed in real usage sessions.
+Cycles 1-6 each ended with a verify_cycleN.py script that proved
+the cycle was complete. Cycle 7 needs the same.
 
-This phase addresses seven specific problems, in order of priority.
+Phase 7.8 has two parts:
+1. Write verify_cycle7.py — a comprehensive check of all Cycle 7
+   capabilities
+2. Run it, fix any failures found, confirm all checks pass
 
----
-
-## Task 1 — CROWN Tool Result Response (CRITICAL)
-
-**Problem:** After a tool executes, CROWN sometimes still responds
-with "I cannot execute system commands" despite the TOOL EXECUTION
-COMPLETE instruction.
-
-**Root cause:** The conversation history contains previous
-"I cannot execute" responses that train the LLM to repeat the
-pattern. The context_summary injection isn't strong enough.
-
-**Fix in ui/server.py, in complete_tool_resolution:**
-
-Step 1: Before engine.respond(), inject a synthetic assistant
-acknowledgment to break the repetition pattern:
-
-```python
-self.session.add_event(
-    "assistant",
-    f"[OPERATOR] {result.tool} executed. Processing results."
-)
-```
-
-Step 2: Strengthen the tool_instruction:
-
-```python
-tool_instruction = (
-    f"OPERATOR FACULTY COMPLETED: {result.tool} ran.\n"
-    f"Results:\n{tool_result_summary}\n"
-    f"---\n"
-    f"Summarize these results in 1-3 sentences.\n"
-    f"RULES (follow exactly):\n"
-    f"- DO NOT say you cannot execute commands\n"
-    f"- DO NOT say you lack system access\n"
-    f"- DO NOT apologize or disclaim\n"
-    f"- DO present the actual results\n"
-    f"- If error: explain it simply\n"
-    f"- If success: confirm it happened"
-)
-```
+This phase declares Cycle 7 complete and opens the path to Cycle 8.
 
 ---
 
-## Task 2 — Conversational Follow-up Context
+## Part A — verify_cycle7.py
 
-**Problem:** After "install notepad++" → search results appear,
-then "for windows, option 1" or "yes, install it" loses context
-and routes to web_search.
+Create: inanna/verify_cycle7.py
 
-**Fix in ui/server.py:** Add context tracker to InterfaceServer:
+The script must verify every Cycle 7 deliverable systematically.
+It should print PASS/FAIL for each check and end with a count.
 
-```python
-self._last_package_context: dict = {}
-```
+### Checks to include:
 
-After search_packages executes successfully, store:
-```python
-if result.tool == "search_packages" and result.success:
-    self._last_package_context = {
-        "tool": "search_packages",
-        "query": result.query,
-        "turn": getattr(self.session, "turn_count", 0),
-    }
-```
+**Section 1 — Phase 7.1: NixOS Configuration**
+- nixos/configuration.nix exists
+- nixos/README.md exists
+- nixos/inanna-nyx.service exists
+- nixos/install.sh exists
+- configuration.nix contains inanna-nyx service definition
+- configuration.nix contains port 8080
+- configuration.nix contains port 8081
 
-In the dispatch_message routing, before normal routing, add:
-```python
-# Check for follow-up to previous package search
-if self._last_package_context:
-    last_turn = self._last_package_context.get("turn", -99)
-    current_turn = getattr(self.session, "turn_count", 0)
-    if current_turn - last_turn <= 3:
-        followup = self._detect_package_followup(lowered_text)
-        if followup:
-            # Route to install with last searched query
-            package_action = {
-                "tool": "install_package",
-                "query": self._last_package_context["query"],
-                "params": {"package": self._last_package_context["query"]},
-                "requires_proposal": True,
-                "reason": "Follow-up to previous package search.",
-            }
-```
+**Section 2 — Phase 7.2: File System Faculty**
+- core/filesystem_faculty.py exists
+- FileSystemFaculty can be instantiated
+- FileSystemFaculty has read_file method
+- FileSystemFaculty has list_dir method
+- FileSystemFaculty has file_info method
+- FileSystemFaculty has search_files method
+- FileSystemFaculty has write_file method
+- is_safe_read(home directory) returns True
+- is_forbidden(/etc/shadow) returns True
+- read_file on a temp file returns correct content
+- write_file writes content correctly
+- write_file respects overwrite guard
+- list_dir returns entries
+- Tools registered: read_file, list_dir, file_info, search_files, write_file
 
-Add helper method:
-```python
-def _detect_package_followup(self, text: str) -> bool:
-    patterns = [
-        r"^(yes|ok|okay|do it|install it|go ahead|sure|yep|si|si por favor)$",
-        r"^(option|choice|number|pick|numero)\s*\d*",
-        r"^(the\s+)?(first|second|third|top|1st|2nd|3rd)\s*(one|option|result)?$",
-        r"^(for\s+)?(windows|linux|mac)\s*(version|one)?",
-        r"^install\s+it",
-        r"^that\s+one",
-    ]
-    import re
-    return any(re.match(p, text.strip(), re.IGNORECASE) for p in patterns)
-```
+**Section 3 — Phase 7.3: Process Faculty**
+- core/process_faculty.py exists
+- ProcessFaculty can be instantiated
+- system_info() returns success
+- system_info() returns hostname
+- list_processes() returns at least 1 process
+- kill_process with invalid PID returns failure gracefully
+- run_command("echo test7") returns success
+- run_command stdout contains "test7"
+- Tools registered: list_processes, system_info, kill_process, run_command
 
----
+**Section 4 — Phase 7.4: Package Faculty**
+- core/package_faculty.py exists
+- PackageFaculty can be instantiated
+- Package manager detected (not "unknown")
+- search returns PackageResult
+- format_result returns non-empty string
+- Tools registered: search_packages, list_packages, install_package,
+  remove_package, launch_app
 
-## Task 3 — help [topic] Card Treatment
+**Section 5 — Phase 7.5: Voice Listener**
+- voice/__init__.py exists
+- voice/listener.py exists
+- voice/README.md exists
+- VoiceListener instantiates with default model_size "base"
+- SAMPLE_RATE == 16000
+- MIN_SPEECH_SECONDS == 0.5
+- VoiceListener has run method
+- VoiceListener has transcribe method
 
-**Problem:** help my-profile, help faculties, help tools etc.
-return plain text — no card rendering.
+**Section 6 — Phase 7.6: Authentication & Login**
+- core/auth.py exists
+- ui/static/login.html exists
+- AuthStore can be instantiated
+- hash_password returns salt:hash format
+- verify_password returns True for correct password
+- verify_password returns False for wrong password
+- authenticate returns record for ZAERA / ETERNALOVE
+- authenticate returns None for wrong password
+- login.html contains INANNA NYX
+- login.html contains POST /login
+- login.html does NOT contain __CURRENT_PHASE__ literally
+  (it must be replaced at serve time, but the template has it)
+  — check that it has the placeholder correctly placed
 
-**Fix in core/help_system.py:**
+**Section 7 — Phase 7.7: UX Polish**
+- ui/server.py contains "OPERATOR FACULTY COMPLETED" or "TOOL EXECUTION COMPLETE"
+- ui/server.py contains "_last_package_context"
+- ui/server.py contains "_detect_package_followup" or "followup"
+- ui/static/index.html contains "proposalPulse"
+- ui/static/index.html contains "inanna_sp" or "sp_state"
+- core/help_system.py returns topic header with "INANNA NYX"
+- Welcome message uses dynamic tool count
 
-Prefix every topic response with a detectable header:
+**Section 8 — Software Registry**
+- core/software_registry.py exists
+- SoftwareRegistry can be instantiated
+- is_installed returns None when not loaded (no blocking)
+- load() runs without error
+- all_entries() returns at least 1 entry after load
 
-```python
-def build_help_response(role: str, topic: str = "") -> str:
-    topic = topic.strip().lower()
-    if topic and topic in HELP_TOPICS:
-        content = HELP_TOPICS[topic]
-        # Add header so buildHelpPanel detects it
-        return f"INANNA NYX — {topic.upper()}\n\n{content}"
-    # ... rest unchanged
-```
+**Section 9 — Tool Count**
+- Total tools registered: exactly 18
+- PACKAGE_TOOL_NAMES contains launch_app
+- FILESYSTEM_TOOL_NAMES contains all 5 file tools
+- PROCESS_TOOL_NAMES contains all 4 process tools
 
-Then in index.html, in buildHelpPanel, detect topic responses:
-```javascript
-const isTopicHelp = text.indexOf('INANNA NYX —') === 0;
-const isFullHelp = text.indexOf('Available Commands') >= 0
-    || text.indexOf('Command Reference') >= 0
-    || (text.indexOf('CONVERSATION') >= 0 && text.indexOf('SESSION') >= 0);
-if (!text || (!isTopicHelp && !isFullHelp)) return null;
-```
+**Section 10 — Full Test Suite**
+- py -3 -m unittest discover -s tests exits with code 0
+- Test count >= 429
 
-For topic responses, render as a single wide card with the
-content formatted as rows, extracting commands from the text.
-
----
-
-## Task 4 — Proposal Pulse Animation
-
-**Problem:** Pending proposals don't attract enough attention.
-
-**Fix in index.html:**
-
-Add CSS:
-```css
-@keyframes proposalPulse {
-  0%, 100% { box-shadow: 0 0 0 0 rgba(224,112,48,.5); }
-  50% { box-shadow: 0 0 0 5px rgba(224,112,48,0); }
-}
-#proposal-panel .sp-badge:not(.hidden) {
-  animation: proposalPulse 1.5s ease-in-out infinite;
-}
-```
-
-Auto-expand PROPOSALS when a new proposal arrives:
-In the WebSocket message handler, when operator message
-contains '[TOOL PROPOSAL]':
-```javascript
-if (text && text.includes('[TOOL PROPOSAL]')) {
-  const panel = document.getElementById('proposal-panel');
-  if (panel && !panel.classList.contains('expanded')) {
-    toggleSection('proposal');
-  }
-}
-```
-
----
-
-## Task 5 — login.html Phase Label
-
-**Problem:** login.html shows "__CURRENT_PHASE__" as literal text.
-
-**Fix in ui/server.py:**
-
-Verify _serve_html applies the __CURRENT_PHASE__ substitution
-to login.html. If not, add:
+### Script structure:
 
 ```python
-def _serve_html(self, file_path: Path) -> None:
-    from identity import phase_banner
-    content = (
-        file_path.read_text(encoding="utf-8")
-        .replace("__WS_PORT__", str(WS_PORT))
-        .replace("__CURRENT_PHASE__", phase_banner())
-    )
-    # ... rest of method
-```
+#!/usr/bin/env python3
+"""
+verify_cycle7.py — Cycle 7 Capability Proof
+Verifies all Phase 7.1-7.8 deliverables.
 
-This should already be working from the base _serve_html method.
-If login.html still shows the literal string, check that LOGIN_PATH
-is served through _serve_html and not directly.
+Usage: py -3 verify_cycle7.py
+Expected: ALL CHECKS PASS
+"""
+import sys
+import tempfile
+import json
+from pathlib import Path
 
----
+sys.path.insert(0, str(Path(__file__).parent / "inanna"))
 
-## Task 6 — Side Panel State Memory
+PASS = 0
+FAIL = 0
+SECTION = ""
 
-**Problem:** Panel sections reset to collapsed on every reconnect.
+def section(name):
+    global SECTION
+    SECTION = name
+    print(f"\n  {name}")
+    print("  " + "-" * (len(name)))
 
-**Fix in index.html:**
+def check(label, value, expected=True):
+    global PASS, FAIL
+    ok = bool(value) == bool(expected) if expected is True or expected is False else value == expected
+    status = "PASS" if ok else "FAIL"
+    if ok:
+        PASS += 1
+    else:
+        FAIL += 1
+        print(f"    [FAIL] {label}")
+        if expected is not True and expected is not False:
+            print(f"           expected: {expected!r}")
+            print(f"           got:      {value!r}")
+        return
+    # Only print fails verbosely; pass is brief
+    print(f"    [pass] {label}")
 
-Add to toggleSection():
-```javascript
-function toggleSection(name) {
-  // existing code...
-  // Save state after toggling
-  saveSectionState();
-}
+# ... all checks ...
 
-function saveSectionState() {
-  const state = {};
-  document.querySelectorAll('[id$="-panel"]').forEach(el => {
-    if (el.classList.contains('sp-section')) {
-      state[el.id] = el.classList.contains('expanded');
-    }
-  });
-  try { sessionStorage.setItem('inanna_sp', JSON.stringify(state)); } catch(e) {}
-}
-
-function restoreSectionState() {
-  try {
-    const state = JSON.parse(sessionStorage.getItem('inanna_sp') || '{}');
-    for (const [id, expanded] of Object.entries(state)) {
-      const panel = document.getElementById(id);
-      if (panel && expanded && !panel.classList.contains('expanded')) {
-        panel.classList.add('expanded');
-        const bodyId = id.replace('-panel', '-body');
-        const body = document.getElementById(bodyId);
-        if (body) body.style.display = '';
-        const toggle = panel.querySelector('.sp-toggle');
-        if (toggle) toggle.textContent = '▾';
-      }
-    }
-  } catch(e) {}
-}
-// Call on DOMContentLoaded
-document.addEventListener('DOMContentLoaded', restoreSectionState);
+if FAIL == 0:
+    print(f"\n  ✦ ALL {PASS} CHECKS PASS — Cycle 7 is complete.")
+    print(f"  Ready for Cycle 8.")
+else:
+    print(f"\n  ✗ {FAIL} check(s) failed. Fix before declaring Cycle 7 complete.")
+    sys.exit(1)
 ```
 
 ---
 
-## Task 7 — Welcome Message: Dynamic Tool Count
+## Part B — Integration Test Runner
 
-**Problem:** Welcome message says "web_search · ping · resolve_host
-· scan_ports" which is outdated (18 tools now registered).
+Enhance inanna/run_integration_tests.py to cover all 9 Use Cases:
 
-**Fix in ui/server.py, in send_initial_state:**
-
-Replace:
-```python
-"Tools available: web_search · ping · resolve_host · scan_ports (all require proposal approval)",
+```
+UC-01: File read, list, write via natural language
+UC-02: Package install via natural language (winget)
+UC-03: System status query
+UC-04: (Voice — skip, deferred)
+UC-05: Document read summary (basic)
+UC-06: Web search with summary
+UC-07: Process list and system info
+UC-08: INANNA explains herself
+UC-09: Profile system persistence
 ```
 
-With:
-```python
-f"Tools available: {len(self.operator.PERMITTED_TOOLS)} tools registered"
-f" · type 'tool-registry' to see all",
-```
+For each UC, add a WebSocket test that:
+1. Sends the natural language input
+2. Waits for the response
+3. Checks the response contains expected content
+4. Reports PASS/FAIL
+
+---
+
+## Part C — Fix any failures found
+
+After running verify_cycle7.py, if any checks fail, fix them
+before reporting completion. Common expected failures:
+- Software registry entry count on minimal systems
+- Process faculty psutil availability
+
+---
+
+## Part D — Update identity.py
+
+CURRENT_PHASE = "Cycle 7 - Phase 7.8 - The Capability Proof"
+
+---
+
+## Part E — Cycle 7 Completion Record
+
+Create: docs/cycle7_completion.md
+
+Document:
+- All Phase 7.1-7.8 completion dates
+- Final test count (431+)
+- verify_cycle7.py check count and result
+- Known gaps/deferred items (voice activation, NixOS deployment)
+- What Cycle 8 will build
 
 ---
 
 ## Permitted file changes
 
-inanna/main.py                      <- MODIFY if needed for follow-up routing
-inanna/ui/server.py                 <- MODIFY: Tasks 1, 2, 5, 7
-inanna/ui/static/index.html         <- MODIFY: Tasks 3, 4, 6
-inanna/core/help_system.py          <- MODIFY: Task 3
-inanna/identity.py                  <- MODIFY: CURRENT_PHASE
-inanna/tests/test_commands.py       <- MODIFY: update tools line assertion
-inanna/tests/test_identity.py       <- MODIFY: update phase assertion
-
----
-
-## What You Are NOT Building
-
-- No new tools or capabilities
-- No voice changes
-- No database schema changes
-- No new HTML pages
-- No auth changes
-- No changes to the login page design
+inanna/verify_cycle7.py              <- NEW
+inanna/run_integration_tests.py      <- MODIFY (expand UC coverage)
+inanna/identity.py                   <- MODIFY
+inanna/ui/server.py                  <- MODIFY (only if verify fails)
+docs/cycle7_completion.md            <- NEW
 
 ---
 
 ## Definition of Done
 
-- [ ] CROWN no longer says "I cannot execute" after tool runs
-- [ ] Follow-up commands route correctly within 3 turns
-- [ ] help [topic] responses render with detectable header
-- [ ] Pending proposals auto-expand and pulse
-- [ ] login.html shows correct phase
-- [ ] Side panel collapse state persists across reconnect
-- [ ] Welcome message shows dynamic tool count
-- [ ] All 429+ tests pass: py -3 -m unittest discover -s tests
-- [ ] Pushed as cycle7-phase7-complete
+- [ ] verify_cycle7.py exists and runs
+- [ ] ALL checks in verify_cycle7.py pass
+- [ ] run_integration_tests.py covers UC-01 through UC-09
+- [ ] docs/cycle7_completion.md written
+- [ ] CURRENT_PHASE updated
+- [ ] All unit tests pass: py -3 -m unittest discover -s tests
+- [ ] Pushed as cycle7-phase8-complete
 
 ---
 
 ## Handoff
 
-Commit: cycle7-phase7-complete
+Commit: cycle7-phase8-complete
 Push immediately to origin/main.
-Report: docs/implementation/CYCLE7_PHASE7_REPORT.md
-Stop. Do not begin Phase 7.8 without new CURRENT_PHASE.md.
+Report: docs/implementation/CYCLE7_PHASE8_REPORT.md
+
+After this commit, Cycle 7 is declared complete.
+The next CURRENT_PHASE.md will open Cycle 8.
+
+---
+
+## What Cycle 8 Will Build
+
+Cycle 8 — The Connected Intelligence:
+  8.1  Document Faculty     read/write PDF, DOCX, TXT
+  8.2  Email Faculty        local email (msmtp + notmuch)
+  8.3  Calendar Faculty     local calendar (vdir/khal)
+  8.4  Browser Faculty      open URLs, read page content
+  8.5  Telegram Integration send/receive messages
+  8.6  LibreOffice Bridge   open/edit/save documents
+
+Each Faculty follows the same pattern established in Cycle 7:
+governance-first, proposal for destructive operations,
+observation for read operations.
 
 ---
 
 *Written by: Claude (Command Center)*
 *Guardian approval: ZAERA*
 *Date: 2026-04-21*
-*Polish is not cosmetic.*
-*It is the difference between a system that works*
-*and a system that feels sovereign.*
-*INANNA does not disclaim. She acts.*
-*INANNA does not repeat herself. She listens.*
-*INANNA does not forget. She remembers.*
+*Cycle 7 ends where it promised to end:*
+*with proof.*
+*Every Phase verified.*
+*Every tool tested.*
+*Every capability confirmed.*
+*INANNA knows what she can do.*
+*Now she does it.*
