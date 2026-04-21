@@ -1,632 +1,645 @@
-# CURRENT PHASE: Cycle 7 - Phase 7.2 - The File System Faculty
+# CURRENT PHASE: Cycle 7 - Phase 7.3 - The Process Faculty
 **Status: ACTIVE**
 **Authorized by: ZAERA (Guardian) + Claude (Command Center)**
 **Date opened: 2026-04-21**
 **Cycle: 7 - NYXOS: The Sovereign Intelligence Operating System**
-**Replaces: Cycle 7 Phase 7.1 - The NixOS Configuration (COMPLETE)**
+**Replaces: Cycle 7 Phase 7.2 - The File System Faculty (COMPLETE)**
 
 ---
 
 ## Agent Roles for This Phase
 
 ARCHITECT:  Command Center (Claude) — this document
-BUILDER:    Codex — implement file system tools and Faculty
+BUILDER:    Codex — implement process tools and faculty
 TESTER:     Codex — unit tests + integration verification
 VERIFIER:   Command Center — confirm after push
 
 BUILDER forbidden from:
   - Modifying web UI (index.html, console.html)
   - Changing governance architecture
-  - Adding tools not listed here
+  - Touching filesystem_faculty.py
 
 ---
 
 ## What This Phase Is
 
-Phase 7.1 gave INANNA a NixOS body.
-Phase 7.2 gives INANNA hands.
+Phase 7.2 gave INANNA hands — the ability to read and write files.
+Phase 7.3 gives INANNA eyes into the running system.
 
-The File System Faculty is the first OS-level capability:
-INANNA can read files, list directories, search for files,
-get file metadata, and write files — all governed by proposals.
+The Process Faculty allows INANNA to:
+  - See what processes are running on your machine
+  - See how much CPU and memory each process uses
+  - Get overall system health (CPU, RAM, disk, uptime)
+  - Kill a process — always with proposal approval
+  - Run a shell command — always with proposal approval
 
 After this phase, you can say:
-  "INANNA, read the file at ~/documents/notes.txt"
-  "INANNA, list the files in my Downloads folder"
-  "INANNA, find all Python files in ~/code"
-  "INANNA, what is the size of ~/data/report.pdf?"
+  "INANNA, what is using all my memory?"
+  "INANNA, how is the system doing?"
+  "INANNA, show me all Python processes"
+  "INANNA, kill the process called firefox" (requires approval)
+  "INANNA, run echo hello" (requires approval)
 
-Every file write requires proposal approval.
-Every file read outside safe paths requires proposal approval.
-File deletes are FORBIDDEN — not implemented, not proposed.
-
-This is the principle: capability with governance.
-Power does not come before law.
+Every destructive operation requires proposal approval.
+Process listing and system info require no approval.
+This is the principle: observation is free, action requires consent.
 
 ---
 
 ## What You Are Building
 
-### Task 1 - inanna/core/filesystem_faculty.py
+### Task 1 - inanna/core/process_faculty.py
 
-Create: inanna/core/filesystem_faculty.py
+Create: inanna/core/process_faculty.py
 
 ```python
 from __future__ import annotations
 import os
-import stat
+import sys
+import time
+import platform
 from dataclasses import dataclass, field
-from datetime import datetime
-from pathlib import Path
 from typing import Optional
 
 
-# Paths that are always readable without proposal
-# (safe, non-sensitive locations)
-SAFE_READ_PATHS = [
-    Path.home(),                     # user's home directory
-    Path("/tmp"),                    # temp directory
-    Path.cwd(),                      # current working directory
-]
-
-# Paths that are NEVER accessible regardless of approval
-FORBIDDEN_PATHS = [
-    Path("/etc/shadow"),
-    Path("/etc/passwd"),
-    Path("/root"),
-]
-
-MAX_READ_BYTES = 512 * 1024  # 512KB max file read
-MAX_SEARCH_RESULTS = 50
-MAX_LIST_ENTRIES = 100
-
-
 @dataclass
-class FileInfo:
-    path: str
+class ProcessRecord:
+    pid: int
     name: str
-    size_bytes: int
-    size_human: str
-    is_dir: bool
-    is_file: bool
-    modified_at: str
-    created_at: str
-    permissions: str
-    extension: str
+    status: str          # running | sleeping | stopped | zombie
+    cpu_percent: float
+    memory_mb: float
+    memory_percent: float
+    username: str
+    started_at: str
+    cmdline: str         # truncated command line
 
 
 @dataclass
-class FileSystemResult:
+class SystemInfo:
+    platform: str
+    hostname: str
+    uptime_seconds: int
+    uptime_human: str
+    cpu_count: int
+    cpu_percent: float
+    ram_total_gb: float
+    ram_used_gb: float
+    ram_percent: float
+    disk_total_gb: float
+    disk_used_gb: float
+    disk_percent: float
+    python_version: str
+
+
+@dataclass
+class ProcessResult:
     success: bool
-    operation: str      # read | list | search | info | write
-    path: str
-    content: Optional[str] = None
-    entries: list[FileInfo] = field(default_factory=list)
-    info: Optional[FileInfo] = None
+    operation: str       # list | info | kill | system | run
+    query: str
+    records: list[ProcessRecord] = field(default_factory=list)
+    system_info: Optional[SystemInfo] = None
+    stdout: str = ""
+    stderr: str = ""
+    returncode: Optional[int] = None
     error: Optional[str] = None
-    truncated: bool = False
-    bytes_read: int = 0
+    count: int = 0
 
 
-class FileSystemFaculty:
+class ProcessFaculty:
     """
-    Governed file system operations for INANNA NYX.
-    All write operations require proposal approval.
-    Read operations from safe paths are allowed directly.
-    Read operations from non-safe paths require proposal approval.
-    Delete operations are not implemented.
+    Governed process and system operations for INANNA NYX.
+
+    Observation operations (no approval required):
+      list_processes, system_info
+
+    Action operations (ALWAYS require proposal approval):
+      kill_process, run_command
+
+    Cross-platform: works on Windows, Linux (NixOS), macOS.
+    Graceful fallback if psutil is not installed.
     """
 
-    def is_safe_read(self, path: Path) -> bool:
-        """Returns True if path is within a safe read zone."""
+    HAS_PSUTIL = False
+
+    def __init__(self) -> None:
         try:
-            resolved = path.resolve()
-            for safe in SAFE_READ_PATHS:
+            import psutil  # noqa: F401
+            ProcessFaculty.HAS_PSUTIL = True
+        except ImportError:
+            ProcessFaculty.HAS_PSUTIL = False
+
+    def _format_uptime(self, seconds: int) -> str:
+        if seconds < 60:
+            return f"{seconds}s"
+        if seconds < 3600:
+            return f"{seconds // 60}m {seconds % 60}s"
+        h = seconds // 3600
+        m = (seconds % 3600) // 60
+        return f"{h}h {m}m"
+
+    def list_processes(
+        self,
+        filter_name: str = "",
+        sort_by: str = "memory",  # memory | cpu | name | pid
+        limit: int = 20,
+    ) -> ProcessResult:
+        if not self.HAS_PSUTIL:
+            return self._fallback_list()
+        import psutil
+        try:
+            records = []
+            for proc in psutil.process_iter(
+                ["pid", "name", "status", "cpu_percent",
+                 "memory_info", "memory_percent", "username",
+                 "create_time", "cmdline"]
+            ):
                 try:
-                    resolved.relative_to(safe.resolve())
-                    return True
-                except ValueError:
+                    info = proc.info
+                    name = info.get("name") or ""
+                    if filter_name and filter_name.lower() not in name.lower():
+                        continue
+                    mem_info = info.get("memory_info")
+                    mem_mb = round(mem_info.rss / 1024 / 1024, 1) if mem_info else 0.0
+                    cmdline = info.get("cmdline") or []
+                    cmd = " ".join(cmdline)[:80] if cmdline else name
+                    create_time = info.get("create_time") or 0
+                    try:
+                        started = time.strftime(
+                            "%H:%M", time.localtime(create_time)
+                        )
+                    except Exception:
+                        started = "?"
+                    records.append(ProcessRecord(
+                        pid=info.get("pid") or 0,
+                        name=name,
+                        status=info.get("status") or "?",
+                        cpu_percent=round(info.get("cpu_percent") or 0.0, 1),
+                        memory_mb=mem_mb,
+                        memory_percent=round(info.get("memory_percent") or 0.0, 1),
+                        username=info.get("username") or "?",
+                        started_at=started,
+                        cmdline=cmd,
+                    ))
+                except (psutil.NoSuchProcess, psutil.AccessDenied):
                     continue
-            return False
-        except Exception:
-            return False
 
-    def is_forbidden(self, path: Path) -> bool:
-        """Returns True if path is forbidden regardless of approval."""
+            # Sort
+            if sort_by == "cpu":
+                records.sort(key=lambda r: r.cpu_percent, reverse=True)
+            elif sort_by == "name":
+                records.sort(key=lambda r: r.name.lower())
+            elif sort_by == "pid":
+                records.sort(key=lambda r: r.pid)
+            else:  # memory default
+                records.sort(key=lambda r: r.memory_mb, reverse=True)
+
+            total = len(records)
+            records = records[:limit]
+
+            return ProcessResult(
+                True, "list", filter_name or "all",
+                records=records, count=total,
+            )
+        except Exception as e:
+            return ProcessResult(False, "list", filter_name, error=str(e))
+
+    def _fallback_list(self) -> ProcessResult:
+        """Fallback when psutil is not available — use OS commands."""
+        import subprocess
         try:
-            resolved = path.resolve()
-            for forbidden in FORBIDDEN_PATHS:
-                try:
-                    resolved.relative_to(forbidden.resolve())
-                    return True
-                except ValueError:
-                    if resolved == forbidden.resolve():
-                        return True
-            return False
-        except Exception:
-            return True  # fail safe
+            if sys.platform == "win32":
+                result = subprocess.run(
+                    ["tasklist", "/FO", "CSV", "/NH"],
+                    capture_output=True, text=True, timeout=10
+                )
+                records = []
+                for line in result.stdout.strip().splitlines()[:20]:
+                    parts = [p.strip('"') for p in line.split('","')]
+                    if len(parts) >= 5:
+                        try:
+                            mem_kb = int(parts[4].replace(",","").replace(" K","").strip())
+                        except Exception:
+                            mem_kb = 0
+                        records.append(ProcessRecord(
+                            pid=int(parts[1]) if parts[1].isdigit() else 0,
+                            name=parts[0], status="running",
+                            cpu_percent=0.0,
+                            memory_mb=round(mem_kb / 1024, 1),
+                            memory_percent=0.0,
+                            username="?", started_at="?",
+                            cmdline=parts[0],
+                        ))
+                return ProcessResult(True, "list", "all", records=records, count=len(records))
+            else:
+                result = subprocess.run(
+                    ["ps", "aux", "--sort=-%mem"],
+                    capture_output=True, text=True, timeout=10
+                )
+                records = []
+                for line in result.stdout.strip().splitlines()[1:21]:
+                    parts = line.split(None, 10)
+                    if len(parts) >= 11:
+                        records.append(ProcessRecord(
+                            pid=int(parts[1]) if parts[1].isdigit() else 0,
+                            name=parts[10][:40],
+                            status="?",
+                            cpu_percent=float(parts[2]) if parts[2].replace('.','').isdigit() else 0.0,
+                            memory_mb=0.0,
+                            memory_percent=float(parts[3]) if parts[3].replace('.','').isdigit() else 0.0,
+                            username=parts[0][:16],
+                            started_at=parts[8],
+                            cmdline=parts[10][:80],
+                        ))
+                return ProcessResult(True, "list", "all", records=records, count=len(records))
+        except Exception as e:
+            return ProcessResult(False, "list", "all", error=str(e))
 
-    def _human_size(self, size_bytes: int) -> str:
-        for unit in ("B", "KB", "MB", "GB"):
-            if size_bytes < 1024:
-                return f"{size_bytes:.1f} {unit}"
-            size_bytes /= 1024
-        return f"{size_bytes:.1f} TB"
+    def system_info(self) -> ProcessResult:
+        if not self.HAS_PSUTIL:
+            return self._fallback_system_info()
+        import psutil
+        try:
+            boot_time = psutil.boot_time()
+            uptime = int(time.time() - boot_time)
+            cpu = psutil.cpu_percent(interval=0.5)
+            ram = psutil.virtual_memory()
+            disk = psutil.disk_usage("/")
+            info = SystemInfo(
+                platform=platform.system() + " " + platform.release(),
+                hostname=platform.node(),
+                uptime_seconds=uptime,
+                uptime_human=self._format_uptime(uptime),
+                cpu_count=psutil.cpu_count(),
+                cpu_percent=cpu,
+                ram_total_gb=round(ram.total / 1024**3, 1),
+                ram_used_gb=round(ram.used / 1024**3, 1),
+                ram_percent=ram.percent,
+                disk_total_gb=round(disk.total / 1024**3, 1),
+                disk_used_gb=round(disk.used / 1024**3, 1),
+                disk_percent=disk.percent,
+                python_version=sys.version.split()[0],
+            )
+            return ProcessResult(True, "system", "info", system_info=info)
+        except Exception as e:
+            return ProcessResult(False, "system", "info", error=str(e))
 
-    def _file_info(self, path: Path) -> FileInfo:
-        st = path.stat()
-        return FileInfo(
-            path=str(path),
-            name=path.name,
-            size_bytes=st.st_size,
-            size_human=self._human_size(st.st_size),
-            is_dir=path.is_dir(),
-            is_file=path.is_file(),
-            modified_at=datetime.fromtimestamp(st.st_mtime).strftime(
-                "%Y-%m-%d %H:%M"
-            ),
-            created_at=datetime.fromtimestamp(st.st_ctime).strftime(
-                "%Y-%m-%d %H:%M"
-            ),
-            permissions=oct(stat.S_IMODE(st.st_mode)),
-            extension=path.suffix.lower(),
+    def _fallback_system_info(self) -> ProcessResult:
+        info = SystemInfo(
+            platform=platform.system() + " " + platform.release(),
+            hostname=platform.node(),
+            uptime_seconds=0,
+            uptime_human="unknown",
+            cpu_count=os.cpu_count() or 1,
+            cpu_percent=0.0,
+            ram_total_gb=0.0,
+            ram_used_gb=0.0,
+            ram_percent=0.0,
+            disk_total_gb=0.0,
+            disk_used_gb=0.0,
+            disk_percent=0.0,
+            python_version=sys.version.split()[0],
         )
+        return ProcessResult(True, "system", "info", system_info=info)
 
-    def read_file(self, path_str: str) -> FileSystemResult:
-        path = Path(path_str).expanduser().resolve()
-        if self.is_forbidden(path):
-            return FileSystemResult(
-                False, "read", path_str,
-                error="Access denied: forbidden path."
+    def kill_process(self, pid: int) -> ProcessResult:
+        """
+        Kill a process by PID.
+        ALWAYS requires proposal approval before calling.
+        """
+        if not self.HAS_PSUTIL:
+            return ProcessResult(
+                False, "kill", str(pid),
+                error="psutil not available. Install: pip install psutil"
             )
-        if not path.exists():
-            return FileSystemResult(
-                False, "read", path_str,
-                error=f"File not found: {path}"
-            )
-        if not path.is_file():
-            return FileSystemResult(
-                False, "read", path_str,
-                error=f"Not a file: {path}"
-            )
+        import psutil
         try:
-            raw = path.read_bytes()
-            truncated = len(raw) > MAX_READ_BYTES
-            if truncated:
-                raw = raw[:MAX_READ_BYTES]
+            proc = psutil.Process(pid)
+            name = proc.name()
+            proc.terminate()
             try:
-                content = raw.decode("utf-8")
-            except UnicodeDecodeError:
-                content = raw.decode("latin-1", errors="replace")
-            return FileSystemResult(
-                True, "read", path_str,
-                content=content,
-                truncated=truncated,
-                bytes_read=len(raw),
+                proc.wait(timeout=3)
+            except psutil.TimeoutExpired:
+                proc.kill()
+            return ProcessResult(
+                True, "kill", str(pid),
+                stdout=f"Process {name} (pid {pid}) terminated.",
             )
-        except PermissionError:
-            return FileSystemResult(
-                False, "read", path_str,
-                error="Permission denied."
+        except psutil.NoSuchProcess:
+            return ProcessResult(
+                False, "kill", str(pid),
+                error=f"No process with pid {pid}."
             )
-        except Exception as e:
-            return FileSystemResult(
-                False, "read", path_str,
-                error=str(e)
-            )
-
-    def list_dir(self, path_str: str) -> FileSystemResult:
-        path = Path(path_str).expanduser().resolve()
-        if self.is_forbidden(path):
-            return FileSystemResult(
-                False, "list", path_str,
-                error="Access denied: forbidden path."
-            )
-        if not path.exists():
-            return FileSystemResult(
-                False, "list", path_str,
-                error=f"Directory not found: {path}"
-            )
-        if not path.is_dir():
-            return FileSystemResult(
-                False, "list", path_str,
-                error=f"Not a directory: {path}"
-            )
-        try:
-            entries = []
-            for item in sorted(path.iterdir()):
-                if len(entries) >= MAX_LIST_ENTRIES:
-                    break
-                try:
-                    entries.append(self._file_info(item))
-                except (PermissionError, OSError):
-                    continue
-            return FileSystemResult(
-                True, "list", path_str,
-                entries=entries,
-                truncated=len(entries) == MAX_LIST_ENTRIES,
-            )
-        except PermissionError:
-            return FileSystemResult(
-                False, "list", path_str,
-                error="Permission denied."
+        except psutil.AccessDenied:
+            return ProcessResult(
+                False, "kill", str(pid),
+                error=f"Access denied: cannot kill pid {pid}."
             )
         except Exception as e:
-            return FileSystemResult(
-                False, "list", path_str,
-                error=str(e)
-            )
+            return ProcessResult(False, "kill", str(pid), error=str(e))
 
-    def file_info(self, path_str: str) -> FileSystemResult:
-        path = Path(path_str).expanduser().resolve()
-        if self.is_forbidden(path):
-            return FileSystemResult(
-                False, "info", path_str,
-                error="Access denied: forbidden path."
-            )
-        if not path.exists():
-            return FileSystemResult(
-                False, "info", path_str,
-                error=f"Path not found: {path}"
-            )
-        try:
-            return FileSystemResult(
-                True, "info", path_str,
-                info=self._file_info(path),
-            )
-        except Exception as e:
-            return FileSystemResult(
-                False, "info", path_str,
-                error=str(e)
-            )
-
-    def search_files(
-        self, directory: str, pattern: str
-    ) -> FileSystemResult:
-        base = Path(directory).expanduser().resolve()
-        if self.is_forbidden(base):
-            return FileSystemResult(
-                False, "search", directory,
-                error="Access denied: forbidden path."
-            )
-        if not base.exists():
-            return FileSystemResult(
-                False, "search", directory,
-                error=f"Directory not found: {base}"
-            )
-        try:
-            entries = []
-            for match in base.rglob(pattern):
-                if len(entries) >= MAX_SEARCH_RESULTS:
-                    break
-                try:
-                    entries.append(self._file_info(match))
-                except (PermissionError, OSError):
-                    continue
-            return FileSystemResult(
-                True, "search", directory,
-                entries=entries,
-                truncated=len(entries) == MAX_SEARCH_RESULTS,
-            )
-        except Exception as e:
-            return FileSystemResult(
-                False, "search", directory,
-                error=str(e)
-            )
-
-    def write_file(
-        self, path_str: str, content: str, overwrite: bool = False
-    ) -> FileSystemResult:
+    def run_command(
+        self, command: str, timeout: int = 30
+    ) -> ProcessResult:
         """
-        Write a file. ALWAYS requires proposal approval before calling.
-        This method is called ONLY after the proposal has been approved.
+        Run a shell command.
+        ALWAYS requires proposal approval before calling.
         """
-        path = Path(path_str).expanduser().resolve()
-        if self.is_forbidden(path):
-            return FileSystemResult(
-                False, "write", path_str,
-                error="Access denied: forbidden path."
-            )
-        if path.exists() and not overwrite:
-            return FileSystemResult(
-                False, "write", path_str,
-                error=f"File already exists: {path}. Use overwrite=True to replace."
-            )
+        import subprocess
         try:
-            path.parent.mkdir(parents=True, exist_ok=True)
-            path.write_text(content, encoding="utf-8")
-            return FileSystemResult(
-                True, "write", path_str,
-                bytes_read=len(content.encode("utf-8")),
+            result = subprocess.run(
+                command,
+                shell=True,
+                capture_output=True,
+                text=True,
+                timeout=timeout,
             )
-        except PermissionError:
-            return FileSystemResult(
-                False, "write", path_str,
-                error="Permission denied."
+            return ProcessResult(
+                result.returncode == 0,
+                "run", command,
+                stdout=result.stdout[:4096],
+                stderr=result.stderr[:1024],
+                returncode=result.returncode,
+            )
+        except subprocess.TimeoutExpired:
+            return ProcessResult(
+                False, "run", command,
+                error=f"Command timed out after {timeout}s."
             )
         except Exception as e:
-            return FileSystemResult(
-                False, "write", path_str,
-                error=str(e)
-            )
+            return ProcessResult(False, "run", command, error=str(e))
 
-    def format_result(self, result: FileSystemResult) -> str:
-        """Format a FileSystemResult for display in the conversation."""
+    def format_result(self, result: ProcessResult) -> str:
         if not result.success:
-            return f"fs > error: {result.error}"
-
-        if result.operation == "read":
-            lines = [
-                f"fs > read: {result.path}",
-                f"     size: {result.bytes_read} bytes",
-            ]
-            if result.truncated:
-                lines.append("     (truncated to 512KB)")
-            lines.append("")
-            lines.append(result.content or "")
-            return "\n".join(lines)
+            return f"proc > error: {result.error}"
 
         if result.operation == "list":
-            lines = [f"fs > list: {result.path}",
-                     f"     {len(result.entries)} entries"
-                     + (" (showing first 100)" if result.truncated else ""),
-                     ""]
-            for e in result.entries:
-                icon = "📁" if e.is_dir else "📄"
+            lines = [
+                f"proc > processes ({result.count} total"
+                + (f", showing top {len(result.records)}" if result.count > len(result.records) else "")
+                + f", sorted by {'memory' if True else '?'})",
+                f"{'PID':>7}  {'NAME':<28}  {'CPU':>5}  {'MEM':>8}  {'STATUS':<10}",
+                "─" * 65,
+            ]
+            for r in result.records:
                 lines.append(
-                    f"  {icon}  {e.name:<40} {e.size_human:>8}  {e.modified_at}"
+                    f"{r.pid:>7}  {r.name[:28]:<28}  "
+                    f"{r.cpu_percent:>4.1f}%  "
+                    f"{r.memory_mb:>6.1f}MB  {r.status:<10}"
                 )
             return "\n".join(lines)
 
-        if result.operation == "search":
-            lines = [
-                f"fs > search results in {result.path}",
-                f"     {len(result.entries)} matches"
-                + (" (showing first 50)" if result.truncated else ""),
-                ""
-            ]
-            for e in result.entries:
-                lines.append(f"  {e.path}")
+        if result.operation == "system":
+            s = result.system_info
+            if not s:
+                return "proc > no system info"
+            bar = lambda pct: ("█" * int(pct / 10)).ljust(10) + f" {pct:.0f}%"
+            return (
+                f"proc > system info\n"
+                f"  host:     {s.hostname}\n"
+                f"  platform: {s.platform}\n"
+                f"  uptime:   {s.uptime_human}\n"
+                f"  python:   {s.python_version}\n"
+                f"\n"
+                f"  CPU ({s.cpu_count} cores)  {bar(s.cpu_percent)}\n"
+                f"  RAM {s.ram_used_gb:.1f}/{s.ram_total_gb:.1f}GB  {bar(s.ram_percent)}\n"
+                f"  DISK {s.disk_used_gb:.1f}/{s.disk_total_gb:.1f}GB  {bar(s.disk_percent)}"
+            )
+
+        if result.operation == "kill":
+            return f"proc > {result.stdout}"
+
+        if result.operation == "run":
+            lines = [f"proc > run: {result.query}",
+                     f"     exit: {result.returncode}"]
+            if result.stdout:
+                lines.append("")
+                lines.append(result.stdout.rstrip())
+            if result.stderr:
+                lines.append(f"stderr: {result.stderr.rstrip()[:200]}")
             return "\n".join(lines)
 
-        if result.operation == "info":
-            e = result.info
-            if not e:
-                return "fs > no info available"
-            kind = "directory" if e.is_dir else "file"
-            return (
-                f"fs > info: {result.path}\n"
-                f"     type: {kind}\n"
-                f"     size: {e.size_human} ({e.size_bytes} bytes)\n"
-                f"     modified: {e.modified_at}\n"
-                f"     created: {e.created_at}\n"
-                f"     permissions: {e.permissions}"
-            )
-
-        if result.operation == "write":
-            return (
-                f"fs > written: {result.path}\n"
-                f"     {result.bytes_read} bytes written"
-            )
-
-        return f"fs > {result.operation}: {result.path}"
+        return f"proc > {result.operation}: done"
 ```
 
-### Task 2 - Register file system tools in tools.json
+### Task 2 - Register process tools in tools.json
 
 Add to inanna/config/tools.json:
 
 ```json
 {
-  "name": "read_file",
-  "description": "Read the contents of a file",
-  "requires_approval": true,
-  "enabled": true,
-  "safe_paths_skip_approval": true,
-  "parameters": {
-    "path": "File path to read (supports ~ for home directory)"
-  }
-},
-{
-  "name": "list_dir",
-  "description": "List files and directories in a folder",
+  "name": "list_processes",
+  "description": "List running processes sorted by memory or CPU",
   "requires_approval": false,
   "enabled": true,
   "parameters": {
-    "path": "Directory path to list"
+    "filter": "Optional name filter (e.g. python, firefox)",
+    "sort": "Sort by: memory (default), cpu, name, pid",
+    "limit": "Max results to show (default 20)"
   }
 },
 {
-  "name": "file_info",
-  "description": "Get metadata about a file or directory",
+  "name": "system_info",
+  "description": "Get system health: CPU, RAM, disk, uptime",
   "requires_approval": false,
   "enabled": true,
-  "parameters": {
-    "path": "Path to inspect"
-  }
+  "parameters": {}
 },
 {
-  "name": "search_files",
-  "description": "Search for files matching a pattern",
-  "requires_approval": false,
-  "enabled": true,
-  "parameters": {
-    "directory": "Directory to search in",
-    "pattern": "Glob pattern (e.g. *.py, *.txt, report*)"
-  }
-},
-{
-  "name": "write_file",
-  "description": "Write content to a file",
+  "name": "kill_process",
+  "description": "Terminate a running process by PID",
   "requires_approval": true,
   "enabled": true,
   "parameters": {
-    "path": "File path to write",
-    "content": "Content to write",
-    "overwrite": "Whether to overwrite existing file (default: false)"
+    "pid": "Process ID to terminate"
+  }
+},
+{
+  "name": "run_command",
+  "description": "Execute a shell command",
+  "requires_approval": true,
+  "enabled": true,
+  "parameters": {
+    "command": "Shell command to run",
+    "timeout": "Timeout in seconds (default 30)"
   }
 }
 ```
 
-Note on `safe_paths_skip_approval`:
-  - list_dir, file_info, search_files: never require approval
-  - read_file: approval required unless path is within SAFE_READ_PATHS
-  - write_file: ALWAYS requires approval regardless of path
+### Task 3 - Wire ProcessFaculty into server.py and main.py
 
-### Task 3 - Wire FileSystemFaculty into server.py and main.py
-
-Instantiate FileSystemFaculty at startup:
+Instantiate at startup:
 ```python
-from core.filesystem_faculty import FileSystemFaculty
-fs_faculty = FileSystemFaculty()
+from core.process_faculty import ProcessFaculty
+process_faculty = ProcessFaculty()
 ```
 
-Handle file system tool results in _run_tool():
-
+Handle in _run_tool():
 ```python
-if tool_name == "read_file":
-    result = fs_faculty.read_file(args.get("path", ""))
+if tool_name == "list_processes":
+    result = process_faculty.list_processes(
+        filter_name=args.get("filter", ""),
+        sort_by=args.get("sort", "memory"),
+        limit=int(args.get("limit", 20)),
+    )
     return ToolResult(
-        tool="read_file",
-        query=args.get("path", ""),
+        tool="list_processes",
+        query=args.get("filter", "all"),
         success=result.success,
-        data={"content": result.content, "truncated": result.truncated},
+        data={"count": result.count},
         error=result.error,
-        formatted=fs_faculty.format_result(result),
+        formatted=process_faculty.format_result(result),
     )
 
-# Same pattern for list_dir, file_info, search_files, write_file
+if tool_name == "system_info":
+    result = process_faculty.system_info()
+    return ToolResult(
+        tool="system_info", query="system",
+        success=result.success,
+        data={},
+        error=result.error,
+        formatted=process_faculty.format_result(result),
+    )
+
+if tool_name == "kill_process":
+    pid = int(args.get("pid", 0))
+    result = process_faculty.kill_process(pid)
+    return ToolResult(
+        tool="kill_process", query=str(pid),
+        success=result.success,
+        data={},
+        error=result.error,
+        formatted=process_faculty.format_result(result),
+    )
+
+if tool_name == "run_command":
+    result = process_faculty.run_command(
+        args.get("command", ""),
+        timeout=int(args.get("timeout", 30)),
+    )
+    return ToolResult(
+        tool="run_command",
+        query=args.get("command", ""),
+        success=result.success,
+        data={"returncode": result.returncode},
+        error=result.error,
+        formatted=process_faculty.format_result(result),
+    )
 ```
 
-### Task 4 - Natural language parsing in NAMMU / OperatorFaculty
+### Task 4 - Add psutil to requirements.txt
 
-When INANNA receives "read the file at ~/notes.txt" or
-"list my Downloads folder", the OPERATOR Faculty must
-extract the path and call the appropriate tool.
+Add to inanna/requirements.txt:
+```
+psutil>=5.9
+```
+
+psutil is the cross-platform process and system monitoring library.
+It works on Windows, Linux (NixOS), and macOS.
+If not installed, ProcessFaculty falls back to OS commands gracefully.
+
+### Task 5 - Domain hints for process faculty
 
 Add to governance_signals.json domain_hints:
 ```json
-"filesystem": [
-  "read file", "open file", "show file", "list directory",
-  "list folder", "what files", "search files", "find files",
-  "file size", "file info", "write file", "save file",
-  "create file", "what is in", "show me"
+"process": [
+  "process", "processes", "running", "memory usage",
+  "cpu usage", "system info", "system health", "uptime",
+  "kill process", "terminate", "what is using", "ram",
+  "disk space", "how is the system", "performance"
 ]
 ```
 
-The OperatorFaculty uses these hints to route filesystem
-requests to the correct tool.
+### Task 6 - Update help_system.py
 
-### Task 5 - Update help_system.py
-
-Add filesystem commands to the help system:
-
-Add to HELP_COMMON (all users):
+Add to HELP_COMMON:
 ```
-  FILES (speak naturally or use commands)
-    "read the file at ~/notes.txt"
-    "list my Documents folder"
-    "find all .py files in ~/code"
-    "what is the size of ~/report.pdf"
-    "write a file called ideas.txt with this content..."
-    (all file writes require approval)
+  SYSTEM & PROCESSES
+    "how is the system doing?"
+    "what is using all my memory?"
+    "show me python processes"
+    "kill process 1234" (requires approval)
+    "run echo hello" (requires approval)
 ```
 
-Add topic "files" to HELP_TOPICS:
-```
-files — File system operations
+Add topic "processes" to HELP_TOPICS with full guidance.
 
-  INANNA can read, list, search, and write files.
-  Speak naturally or use direct commands.
+### Task 7 - Update identity.py
 
-  Read a file:    "read the file at ~/path/to/file.txt"
-  List a folder:  "list the files in ~/Documents"
-  Find files:     "find all .txt files in ~/notes"
-  File info:      "what is the size of ~/report.pdf"
-  Write a file:   "write a file called todo.txt with..."
+CURRENT_PHASE = "Cycle 7 - Phase 7.3 - The Process Faculty"
 
-  Governance:
-    - list, info, search: no approval required
-    - read: approval required for paths outside home directory
-    - write: ALWAYS requires approval
-    - delete: not available (by design)
+### Task 8 - Tests
 
-  Max file read: 512 KB
-  Max search results: 50 files
-  Max directory listing: 100 entries
-```
-
-### Task 6 - Update identity.py
-
-CURRENT_PHASE = "Cycle 7 - Phase 7.2 - The File System Faculty"
-
-### Task 7 - Tests
-
-Create inanna/tests/test_filesystem_faculty.py:
-  - FileSystemFaculty instantiates
-  - is_safe_read() returns True for home directory
-  - is_safe_read() returns True for subdirs of home
-  - is_safe_read() returns False for /etc
-  - is_forbidden() returns True for /etc/shadow
-  - is_forbidden() returns False for ~/notes.txt
-  - read_file() returns error for nonexistent file
-  - read_file() reads a temp file correctly
-  - read_file() truncates files over 512KB
-  - list_dir() lists a temp directory
-  - list_dir() returns error for nonexistent directory
-  - file_info() returns info for existing file
-  - file_info() returns error for nonexistent path
-  - search_files() finds files matching pattern
-  - write_file() writes content to temp file
-  - write_file() refuses to overwrite without flag
-  - write_file() returns error for forbidden path
-  - format_result() formats read result correctly
-  - format_result() formats list result correctly
-  - format_result() formats error correctly
+Create inanna/tests/test_process_faculty.py:
+  - ProcessFaculty instantiates
+  - system_info() returns ProcessResult with success=True
+  - system_info() returns SystemInfo with hostname
+  - system_info() returns cpu_count > 0
+  - system_info() format_result includes "system info"
+  - list_processes() returns ProcessResult with success=True
+  - list_processes() returns at least 1 record
+  - list_processes() filter works (filter="python" returns fewer)
+  - list_processes() format_result includes "PID"
+  - kill_process() with invalid pid returns success=False
+  - run_command("echo hello") returns success=True
+  - run_command("echo hello") stdout contains "hello"
+  - run_command with invalid command returns failure gracefully
+  - format_result() for list shows process table header
+  - format_result() for system shows CPU line
+  - format_result() for error shows "proc > error"
+  - _format_uptime(0) returns "0s"
+  - _format_uptime(90) returns "1m 30s"
+  - _format_uptime(3700) returns "1h 1m"
+  - ProcessFaculty works without psutil (fallback)
 
 Update test_identity.py: update CURRENT_PHASE assertion.
-Update test_commands.py: add read_file, list_dir, etc.
+Update test_commands.py: add list_processes, system_info,
+  kill_process, run_command.
 
 ---
 
 ## Permitted file changes
 
-inanna/identity.py                      <- MODIFY: CURRENT_PHASE
-inanna/main.py                          <- MODIFY: wire FileSystemFaculty
-inanna/config/tools.json                <- MODIFY: add 5 fs tools
-inanna/config/governance_signals.json   <- MODIFY: add filesystem hints
+inanna/identity.py                      <- MODIFY: update CURRENT_PHASE
+inanna/main.py                          <- MODIFY: wire ProcessFaculty
+inanna/requirements.txt                 <- MODIFY: add psutil
+inanna/config/tools.json                <- MODIFY: add 4 process tools
+inanna/config/governance_signals.json   <- MODIFY: add process hints
 inanna/core/
-  filesystem_faculty.py                 <- NEW
-  help_system.py                        <- MODIFY: add files section
+  process_faculty.py                    <- NEW
+  help_system.py                        <- MODIFY: add processes section
   state.py                              <- MODIFY: update phase
 inanna/ui/
-  server.py                             <- MODIFY: wire FileSystemFaculty
+  server.py                             <- MODIFY: wire ProcessFaculty
 inanna/tests/
-  test_filesystem_faculty.py            <- NEW
+  test_process_faculty.py               <- NEW
   test_identity.py                      <- MODIFY: update phase
-  test_commands.py                      <- MODIFY: add fs tools
+  test_commands.py                      <- MODIFY: add process tools
 
 ---
 
 ## What You Are NOT Building
 
-- No file deletion (by design — permanent data safety)
-- No file move or rename (Phase 7.3 via process tools)
-- No binary file handling beyond truncated read
-- No directory creation as a standalone command
-  (directories are created implicitly by write_file)
+- No process suspension or pause (kill only)
+- No process priority adjustment (nice/renice)
+- No network connections per process (Phase 7.x)
+- No process tree visualization
 - No changes to index.html or console.html
 - No voice integration (Phase 7.5)
+- run_command does NOT allow sudo or root commands
+  — if the command requires elevation, it will fail
+  gracefully with Access Denied
 
 ---
 
 ## Definition of Done
 
-- [ ] core/filesystem_faculty.py with all 5 operations
-- [ ] FileSystemFaculty wired into server.py and main.py
-- [ ] 5 new tools in tools.json
-- [ ] filesystem hints in governance_signals.json
-- [ ] help_system.py updated with files section
+- [ ] core/process_faculty.py with all 4 operations
+- [ ] ProcessFaculty gracefully handles missing psutil
+- [ ] 4 new tools in tools.json (13 total)
+- [ ] process domain hints in governance_signals.json
+- [ ] psutil in requirements.txt
+- [ ] help_system.py updated with processes section
 - [ ] CURRENT_PHASE updated
 - [ ] All tests pass: py -3 -m unittest discover -s tests
 - [ ] Pushed to origin/main immediately
@@ -635,19 +648,18 @@ inanna/tests/
 
 ## Handoff
 
-Commit: cycle7-phase2-complete
+Commit: cycle7-phase3-complete
 Push immediately to origin/main.
-Report: docs/implementation/CYCLE7_PHASE2_REPORT.md
-Stop. Do not begin Phase 7.3 without new CURRENT_PHASE.md.
+Report: docs/implementation/CYCLE7_PHASE3_REPORT.md
+Stop. Do not begin Phase 7.4 without new CURRENT_PHASE.md.
 
 ---
 
 *Written by: Claude (Command Center)*
 *Guardian approval: ZAERA*
 *Date: 2026-04-21*
-*INANNA gains hands.*
-*She can read. She can list. She can search. She can write.*
-*Not blindly — with your word.*
-*Every file write is a proposal.*
-*Every file delete is impossible.*
+*INANNA gains eyes into the running system.*
+*She can see what breathes and what strains.*
+*She can quiet what harms — with your word.*
+*Observation is free. Action requires consent.*
 *That is the law.*
