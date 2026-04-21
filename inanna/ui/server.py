@@ -29,6 +29,7 @@ from core.nammu_memory import (
 from core.orchestration import OrchestrationEngine
 from core.operator import OperatorFaculty
 from core.profile import NotificationStore, ProfileManager
+from core.process_faculty import ProcessFaculty
 from core.process_monitor import ProcessMonitor
 from core.proposal import Proposal
 from core.reflection import ReflectiveMemory
@@ -59,6 +60,7 @@ from main import (
     build_body_summary,
     build_faculty_registry_payload,
     build_filesystem_audit_entry,
+    build_process_audit_entry,
     build_grounding_prefix,
     build_history_report,
     build_organizational_context_report,
@@ -97,6 +99,7 @@ from main import (
     complete_orchestration_resolution as complete_orchestration_backend_resolution,
     default_profile_field_value,
     detect_filesystem_tool_action,
+    detect_process_tool_action,
     deliver_pending_notifications,
     execute_tool_request,
     finalize_auto_memory,
@@ -269,6 +272,7 @@ class InterfaceServer:
         self.guardian = GuardianFaculty()
         self.operator = OperatorFaculty()
         self.filesystem_faculty = FileSystemFaculty()
+        self.process_faculty = ProcessFaculty()
         self.process_monitor = ProcessMonitor(self.server_start_time)
         self.governance = GovernanceLayer(engine=self.engine)
         self.classifier = IntentClassifier(
@@ -639,6 +643,52 @@ class InterfaceServer:
                         "query": str(filesystem_action["query"]),
                         "tool": str(filesystem_action["tool"]),
                         "params": dict(filesystem_action.get("params", {})),
+                    }
+                },
+                "approve",
+            )
+            responses = list(outcome["operator_payloads"])
+            if outcome["assistant_text"]:
+                responses.append({"type": "assistant", "text": outcome["assistant_text"]})
+            return {"responses": responses}
+
+        process_action = detect_process_tool_action(
+            text,
+            self.process_faculty,
+        )
+        if process_action is not None:
+            self._record_routing_decision("operator", text)
+            self._record_governance_decision(
+                "tool",
+                str(process_action.get("reason", "Governed process tool use.")),
+                text,
+            )
+            if bool(process_action.get("requires_proposal", False)):
+                created = create_tool_use_proposal(
+                    proposal=self.proposal,
+                    session=self.session,
+                    user_input=text,
+                    tool=str(process_action["tool"]),
+                    query=str(process_action["query"]),
+                    params=dict(process_action.get("params", {})),
+                )
+                return {
+                    "response": {
+                        "type": "operator",
+                        "text": (
+                            f'tool proposed: {process_action["tool"]} - '
+                            f'"{process_action["query"]}"'
+                        ),
+                    },
+                    "proposal": {**created, "line": created["tool_line"]},
+                }
+            outcome = self.complete_tool_resolution(
+                {
+                    "payload": {
+                        "original_input": text,
+                        "query": str(process_action["query"]),
+                        "tool": str(process_action["tool"]),
+                        "params": dict(process_action.get("params", {})),
                     }
                 },
                 "approve",
@@ -2584,13 +2634,18 @@ class InterfaceServer:
                 params,
                 self.operator,
                 filesystem_faculty=self.filesystem_faculty,
+                process_faculty=self.process_faculty,
             )
             self.faculty_monitor.record_call(
                 "operator",
                 (time.monotonic() - t0) * 1000,
                 result.success,
             )
-            audit_entry = build_network_audit_entry(result) or build_filesystem_audit_entry(result)
+            audit_entry = (
+                build_network_audit_entry(result)
+                or build_filesystem_audit_entry(result)
+                or build_process_audit_entry(result)
+            )
             if audit_entry is not None:
                 append_audit_event(
                     self.session_audit,

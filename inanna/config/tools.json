@@ -103,6 +103,51 @@
         "overwrite"
       ],
       "enabled": true
+    },
+    "list_processes": {
+      "display_name": "List Processes",
+      "description": "List running processes sorted by memory or CPU.",
+      "category": "process",
+      "requires_approval": false,
+      "requires_privilege": "converse",
+      "parameters": [
+        "filter",
+        "sort",
+        "limit"
+      ],
+      "enabled": true
+    },
+    "system_info": {
+      "display_name": "System Info",
+      "description": "Get system health: CPU, RAM, disk, uptime.",
+      "category": "process",
+      "requires_approval": false,
+      "requires_privilege": "converse",
+      "parameters": [],
+      "enabled": true
+    },
+    "kill_process": {
+      "display_name": "Kill Process",
+      "description": "Terminate a running process by PID.",
+      "category": "process",
+      "requires_approval": true,
+      "requires_privilege": "converse",
+      "parameters": [
+        "pid"
+      ],
+      "enabled": true
+    },
+    "run_command": {
+      "display_name": "Run Command",
+      "description": "Execute a shell command.",
+      "category": "process",
+      "requires_approval": true,
+      "requires_privilege": "converse",
+      "parameters": [
+        "command",
+        "timeout"
+      ],
+      "enabled": true
     }
   }
 }

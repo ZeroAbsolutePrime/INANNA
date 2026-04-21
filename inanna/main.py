@@ -36,6 +36,12 @@ from core.profile import (
     UserProfile,
     utc_now,
 )
+from core.process_faculty import (
+    ProcessFaculty,
+    ProcessRecord as FacultyProcessRecord,
+    ProcessResult as FacultyProcessResult,
+    SystemInfo as FacultySystemInfo,
+)
 from core.process_monitor import ProcessMonitor
 from core.proposal import Proposal
 from core.realm import DEFAULT_REALM, RealmConfig, RealmManager
@@ -236,6 +242,29 @@ FILESYSTEM_PATTERN_ALIASES = {
     "pdf": "*.pdf",
     ".pdf": "*.pdf",
 }
+PROCESS_TOOL_NAMES = {
+    "list_processes",
+    "system_info",
+    "kill_process",
+    "run_command",
+}
+PROCESS_HINT_FALLBACKS = (
+    "process",
+    "processes",
+    "running",
+    "memory usage",
+    "cpu usage",
+    "system info",
+    "system health",
+    "uptime",
+    "kill process",
+    "terminate",
+    "what is using",
+    "ram",
+    "disk space",
+    "how is the system",
+    "performance",
+)
 
 
 def get_active_realm_name() -> str:
@@ -260,6 +289,25 @@ def load_filesystem_domain_hints(
 
     cleaned = [str(item).strip().lower() for item in hints if str(item).strip()]
     return cleaned or list(FILESYSTEM_HINT_FALLBACKS)
+
+
+def load_process_domain_hints(
+    signals_path: Path = FILESYSTEM_SIGNAL_PATH,
+) -> list[str]:
+    try:
+        payload = json.loads(signals_path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return list(PROCESS_HINT_FALLBACKS)
+
+    domain_hints = payload.get("domain_hints", {})
+    if not isinstance(domain_hints, dict):
+        return list(PROCESS_HINT_FALLBACKS)
+    hints = domain_hints.get("process", [])
+    if not isinstance(hints, list):
+        return list(PROCESS_HINT_FALLBACKS)
+
+    cleaned = [str(item).strip().lower() for item in hints if str(item).strip()]
+    return cleaned or list(PROCESS_HINT_FALLBACKS)
 
 
 def normalize_request_fragment(value: str) -> str:
@@ -315,6 +363,14 @@ def build_tool_request_query(tool_name: str, params: dict[str, Any]) -> str:
         directory = str(params.get("directory", "")).strip()
         pattern = str(params.get("pattern", "")).strip()
         return f"{directory} | {pattern}".strip(" |")
+    if tool_name == "list_processes":
+        return str(params.get("filter", "")).strip() or "all"
+    if tool_name == "system_info":
+        return "system"
+    if tool_name == "kill_process":
+        return str(params.get("pid", "")).strip()
+    if tool_name == "run_command":
+        return str(params.get("command", "")).strip()
     if tool_name in FILESYSTEM_TOOL_NAMES:
         return str(params.get("path", "")).strip()
     return str(params.get("query", "")).strip()
@@ -467,6 +523,134 @@ def detect_filesystem_tool_action(
         **request,
         "requires_proposal": requires_proposal,
         "persistent_trusted_tools": persistent_trusted_tools,
+    }
+
+
+def extract_process_tool_request(
+    text: str,
+    hints: list[str] | None = None,
+) -> dict[str, Any] | None:
+    normalized = str(text or "").strip()
+    lowered = normalized.lower()
+    active_hints = hints or load_process_domain_hints()
+    hint_match = any(hint in lowered for hint in active_hints)
+    if not hint_match and not re.match(r"^(show|list|kill|terminate|run|what is using|how is the system)\b", lowered):
+        return None
+
+    run_match = re.match(
+        r"^(?:run(?:\s+command)?|execute(?:\s+command)?)\s+(?P<command>.+)$",
+        normalized,
+        flags=re.IGNORECASE | re.DOTALL,
+    )
+    if run_match:
+        params = {
+            "command": normalize_request_fragment(run_match.group("command")),
+            "timeout": 30,
+        }
+        return {
+            "tool": "run_command",
+            "params": params,
+            "query": build_tool_request_query("run_command", params),
+            "reason": "Shell command execution requires governed tool use.",
+        }
+
+    kill_match = re.match(
+        r"^(?:kill|terminate)(?:\s+the)?(?:\s+process)?(?:\s+pid)?\s+(?P<pid>\d+)\b",
+        normalized,
+        flags=re.IGNORECASE,
+    )
+    if kill_match:
+        params = {"pid": int(kill_match.group("pid"))}
+        return {
+            "tool": "kill_process",
+            "params": params,
+            "query": build_tool_request_query("kill_process", params),
+            "reason": "Process termination requires governed tool use.",
+        }
+
+    if any(
+        phrase in lowered
+        for phrase in (
+            "how is the system",
+            "system info",
+            "system health",
+            "uptime",
+            "disk space",
+            "performance",
+        )
+    ):
+        params: dict[str, Any] = {}
+        return {
+            "tool": "system_info",
+            "params": params,
+            "query": build_tool_request_query("system_info", params),
+            "reason": "System inspection routed to OPERATOR tool use.",
+        }
+
+    if "what is using" in lowered and ("memory" in lowered or "ram" in lowered):
+        params = {"filter": "", "sort": "memory", "limit": 20}
+        return {
+            "tool": "list_processes",
+            "params": params,
+            "query": build_tool_request_query("list_processes", params),
+            "reason": "Process inspection routed to OPERATOR tool use.",
+        }
+
+    if "what is using" in lowered and "cpu" in lowered:
+        params = {"filter": "", "sort": "cpu", "limit": 20}
+        return {
+            "tool": "list_processes",
+            "params": params,
+            "query": build_tool_request_query("list_processes", params),
+            "reason": "Process inspection routed to OPERATOR tool use.",
+        }
+
+    list_match = re.match(
+        r"^(?:show|list)(?:\s+me)?(?:\s+all)?\s+(?P<filter>.+?)\s+process(?:es)?$",
+        normalized,
+        flags=re.IGNORECASE,
+    )
+    if list_match:
+        params = {
+            "filter": normalize_request_fragment(list_match.group("filter")),
+            "sort": "memory",
+            "limit": 20,
+        }
+        return {
+            "tool": "list_processes",
+            "params": params,
+            "query": build_tool_request_query("list_processes", params),
+            "reason": "Process inspection routed to OPERATOR tool use.",
+        }
+
+    if lowered in {"list processes", "show processes", "show me processes"}:
+        params = {"filter": "", "sort": "memory", "limit": 20}
+        return {
+            "tool": "list_processes",
+            "params": params,
+            "query": build_tool_request_query("list_processes", params),
+            "reason": "Process inspection routed to OPERATOR tool use.",
+        }
+
+    return None
+
+
+def process_request_requires_proposal(process_request: dict[str, Any]) -> bool:
+    tool_name = str(process_request.get("tool", "")).strip().lower()
+    return tool_name in {"kill_process", "run_command"}
+
+
+def detect_process_tool_action(
+    text: str,
+    process_faculty: ProcessFaculty | None = None,
+) -> dict[str, Any] | None:
+    del process_faculty
+    request = extract_process_tool_request(text)
+    if request is None:
+        return None
+    return {
+        **request,
+        "requires_proposal": process_request_requires_proposal(request),
     }
 
 
@@ -2753,6 +2937,38 @@ def serialize_file_info(info: FileInfo) -> dict[str, object]:
     }
 
 
+def serialize_process_record(record: FacultyProcessRecord) -> dict[str, object]:
+    return {
+        "pid": record.pid,
+        "name": record.name,
+        "status": record.status,
+        "cpu_percent": record.cpu_percent,
+        "memory_mb": record.memory_mb,
+        "memory_percent": record.memory_percent,
+        "username": record.username,
+        "started_at": record.started_at,
+        "cmdline": record.cmdline,
+    }
+
+
+def serialize_system_info(info: FacultySystemInfo) -> dict[str, object]:
+    return {
+        "platform": info.platform,
+        "hostname": info.hostname,
+        "uptime_seconds": info.uptime_seconds,
+        "uptime_human": info.uptime_human,
+        "cpu_count": info.cpu_count,
+        "cpu_percent": info.cpu_percent,
+        "ram_total_gb": info.ram_total_gb,
+        "ram_used_gb": info.ram_used_gb,
+        "ram_percent": info.ram_percent,
+        "disk_total_gb": info.disk_total_gb,
+        "disk_used_gb": info.disk_used_gb,
+        "disk_percent": info.disk_percent,
+        "python_version": info.python_version,
+    }
+
+
 def build_filesystem_tool_result(
     tool_name: str,
     fs_result: FileSystemResult,
@@ -2777,6 +2993,32 @@ def build_filesystem_tool_result(
         success=fs_result.success,
         data=data,
         error=str(fs_result.error or ""),
+    )
+
+
+def build_process_tool_result(
+    tool_name: str,
+    process_result: FacultyProcessResult,
+    process_faculty: ProcessFaculty,
+) -> ToolResult:
+    data: dict[str, Any] = {
+        "formatted": process_faculty.format_result(process_result),
+        "operation": process_result.operation,
+        "count": process_result.count,
+        "stdout": process_result.stdout,
+        "stderr": process_result.stderr,
+        "returncode": process_result.returncode,
+    }
+    if process_result.records:
+        data["records"] = [serialize_process_record(record) for record in process_result.records]
+    if process_result.system_info is not None:
+        data["system_info"] = serialize_system_info(process_result.system_info)
+    return ToolResult(
+        tool=tool_name,
+        query=process_result.query,
+        success=process_result.success,
+        data=data,
+        error=str(process_result.error or ""),
     )
 
 
@@ -2812,14 +3054,47 @@ def run_filesystem_tool(
     return build_filesystem_tool_result(tool_name, result, filesystem_faculty)
 
 
+def run_process_tool(
+    process_faculty: ProcessFaculty,
+    tool_name: str,
+    params: dict[str, Any],
+) -> ToolResult:
+    if tool_name == "list_processes":
+        result = process_faculty.list_processes(
+            filter_name=str(params.get("filter", "")),
+            sort_by=str(params.get("sort", "memory")),
+            limit=int(params.get("limit", 20) or 20),
+        )
+    elif tool_name == "system_info":
+        result = process_faculty.system_info()
+    elif tool_name == "kill_process":
+        result = process_faculty.kill_process(int(params.get("pid", 0) or 0))
+    elif tool_name == "run_command":
+        result = process_faculty.run_command(
+            str(params.get("command", "")),
+            timeout=int(params.get("timeout", 30) or 30),
+        )
+    else:
+        result = FacultyProcessResult(
+            success=False,
+            operation=tool_name,
+            query=str(params.get("filter", "") or params.get("command", "") or params.get("pid", "")),
+            error=f"Unknown process tool: {tool_name}",
+        )
+    return build_process_tool_result(tool_name, result, process_faculty)
+
+
 def execute_tool_request(
     tool_name: str,
     params: dict[str, Any],
     operator: OperatorFaculty,
     filesystem_faculty: FileSystemFaculty | None = None,
+    process_faculty: ProcessFaculty | None = None,
 ) -> ToolResult:
     if tool_name in FILESYSTEM_TOOL_NAMES:
         return run_filesystem_tool(filesystem_faculty or FileSystemFaculty(), tool_name, params)
+    if tool_name in PROCESS_TOOL_NAMES:
+        return run_process_tool(process_faculty or ProcessFaculty(), tool_name, params)
     return operator.execute(tool_name, params)
 
 
@@ -2896,7 +3171,74 @@ def build_filesystem_context_lines(result: ToolResult) -> list[str]:
     ]
 
 
+def build_process_context_lines(result: ToolResult) -> list[str]:
+    if not result.success:
+        return [
+            f"tool result ({result.tool}) query: {result.query}",
+            f"error: {result.error or 'unknown process error'}",
+        ]
+
+    if result.tool == "list_processes":
+        records = list(result.data.get("records", []))
+        preview = []
+        for item in records[:10]:
+            if isinstance(item, dict):
+                preview.append(
+                    f"{item.get('name', '?')}:{item.get('pid', 0)} "
+                    f"cpu={item.get('cpu_percent', 0)} mem={item.get('memory_mb', 0)}"
+                )
+        lines = [
+            f"tool result ({result.tool}) query: {result.query}",
+            f"count: {result.data.get('count', len(records))}",
+        ]
+        if preview:
+            lines.append("process_preview: " + "; ".join(preview))
+        return lines
+
+    if result.tool == "system_info":
+        info = result.data.get("system_info", {})
+        if isinstance(info, dict):
+            return [
+                f"tool result ({result.tool}) host: {info.get('hostname', 'unknown')}",
+                f"platform: {info.get('platform', 'unknown')}",
+                f"uptime: {info.get('uptime_human', 'unknown')}",
+                f"cpu_percent: {info.get('cpu_percent', 0)}",
+                f"ram_percent: {info.get('ram_percent', 0)}",
+                f"disk_percent: {info.get('disk_percent', 0)}",
+            ]
+
+    if result.tool == "kill_process":
+        return [
+            f"tool result ({result.tool}) pid: {result.query}",
+            f"message: {result.data.get('stdout', '') or result.error or 'no output'}",
+        ]
+
+    if result.tool == "run_command":
+        lines = [
+            f"tool result ({result.tool}) command: {result.query}",
+            f"returncode: {result.data.get('returncode', 0)}",
+        ]
+        stdout = str(result.data.get("stdout", "")).strip()
+        stderr = str(result.data.get("stderr", "")).strip()
+        if stdout:
+            lines.append(f"stdout: {stdout[:4000]}")
+        if stderr:
+            lines.append(f"stderr: {stderr[:1000]}")
+        return lines
+
+    return [
+        f"tool result ({result.tool}) query: {result.query}",
+        str(result.data.get("formatted", "")),
+    ]
+
+
 def build_tool_result_text(result: ToolResult) -> str:
+    if result.tool in PROCESS_TOOL_NAMES:
+        return str(
+            result.data.get("formatted")
+            or f"proc > error: {result.error or 'Unknown process error.'}"
+        )
+
     if result.tool in FILESYSTEM_TOOL_NAMES:
         return str(
             result.data.get("formatted")
@@ -2961,6 +3303,9 @@ def build_tool_result_text(result: ToolResult) -> str:
 
 
 def build_tool_context_lines(result: ToolResult) -> list[str]:
+    if result.tool in PROCESS_TOOL_NAMES:
+        return build_process_context_lines(result)
+
     if result.tool in FILESYSTEM_TOOL_NAMES:
         return build_filesystem_context_lines(result)
 
@@ -3127,6 +3472,40 @@ def build_filesystem_audit_entry(result: ToolResult) -> dict[str, object] | None
     return details
 
 
+def build_process_audit_entry(result: ToolResult) -> dict[str, object] | None:
+    if result.tool not in PROCESS_TOOL_NAMES:
+        return None
+
+    query = str(result.query).strip()
+    result_text = result.error or "unknown"
+    details: dict[str, object] = {
+        "tool": result.tool,
+        "query": query,
+    }
+
+    if result.tool == "list_processes":
+        result_text = f"{int(result.data.get('count', 0))} processes"
+        details["count"] = int(result.data.get("count", 0))
+    elif result.tool == "system_info":
+        info = result.data.get("system_info", {})
+        if isinstance(info, dict):
+            result_text = (
+                f"cpu {info.get('cpu_percent', 0)}% "
+                f"ram {info.get('ram_percent', 0)}% "
+                f"disk {info.get('disk_percent', 0)}%"
+            )
+            details["hostname"] = str(info.get("hostname", ""))
+    elif result.tool == "kill_process":
+        result_text = str(result.data.get("stdout") or result.error or "terminated")
+    elif result.tool == "run_command":
+        result_text = f"exit {result.data.get('returncode', result.error or 'unknown')}"
+        details["returncode"] = result.data.get("returncode")
+
+    details["result"] = result_text
+    details["summary"] = f"{result.tool} {query} -> {result_text}"
+    return details
+
+
 def build_tool_registry_report(payload: dict[str, object]) -> str:
     tools = list(payload.get("tools", []))
     total = int(payload.get("total", len(tools)))
@@ -3244,6 +3623,7 @@ def complete_tool_resolution(
     user_log: UserLog | None = None,
     faculty_monitor: FacultyMonitor | None = None,
     filesystem_faculty: FileSystemFaculty | None = None,
+    process_faculty: ProcessFaculty | None = None,
     session_audit: list[dict[str, object]] | None = None,
     active_realm_name: str = "",
     conversation_state: dict[str, int] | None = None,
@@ -3269,10 +3649,15 @@ def complete_tool_resolution(
             params,
             operator,
             filesystem_faculty=filesystem_faculty,
+            process_faculty=process_faculty,
         )
         if faculty_monitor is not None:
             faculty_monitor.record_call("operator", (time.monotonic() - t0) * 1000, result.success)
-        audit_entry = build_network_audit_entry(result) or build_filesystem_audit_entry(result)
+        audit_entry = (
+            build_network_audit_entry(result)
+            or build_filesystem_audit_entry(result)
+            or build_process_audit_entry(result)
+        )
         if audit_entry is not None:
             append_audit_event(
                 session_audit,
@@ -3409,6 +3794,7 @@ def handle_command(
     config: Config,
     operator: OperatorFaculty | None = None,
     filesystem_faculty: FileSystemFaculty | None = None,
+    process_faculty: ProcessFaculty | None = None,
     guardian: GuardianFaculty | None = None,
     guardian_metrics: dict[str, int] | None = None,
     nammu_dir: Path | None = None,
@@ -3429,6 +3815,7 @@ def handle_command(
     normalized = command.strip()
     guardian_metrics = ensure_guardian_metrics(guardian_metrics)
     filesystem_faculty = filesystem_faculty or FileSystemFaculty()
+    process_faculty = process_faculty or ProcessFaculty()
     current_user = session_state.get("active_user") if session_state else None
     original_user = session_state.get("original_user") if session_state else None
     guardian_user = session_state.get("guardian_user") if session_state else None
@@ -4469,6 +4856,7 @@ def handle_command(
                 user_log=user_log,
                 faculty_monitor=faculty_monitor,
                 filesystem_faculty=filesystem_faculty,
+                process_faculty=process_faculty,
                 session_audit=session_audit,
                 active_realm_name=active_realm_name,
                 conversation_state=conversation_state,
@@ -4725,6 +5113,68 @@ def handle_command(
             user_log=user_log,
             faculty_monitor=faculty_monitor,
             filesystem_faculty=filesystem_faculty,
+            process_faculty=process_faculty,
+            session_audit=session_audit,
+            active_realm_name=active_realm_name,
+            conversation_state=conversation_state,
+            reflective_memory=reflective_memory,
+        )
+
+    process_action = detect_process_tool_action(
+        normalized,
+        process_faculty,
+    )
+    if process_action is not None:
+        append_routing_decision(
+            routing_log,
+            session,
+            "operator",
+            normalized,
+            nammu_dir=nammu_dir,
+        )
+        append_governance_event(
+            resolve_nammu_dir(session, nammu_dir),
+            session.session_id,
+            "tool",
+            str(process_action.get("reason", "Governed process tool use.")),
+            normalized[:60],
+        )
+        if bool(process_action.get("requires_proposal", False)):
+            created = create_tool_use_proposal(
+                proposal=proposal,
+                session=session,
+                user_input=normalized,
+                tool=str(process_action["tool"]),
+                query=str(process_action["query"]),
+                params=dict(process_action.get("params", {})),
+            )
+            return (
+                f'operator > tool proposed: {process_action["tool"]} - "{process_action["query"]}"\n'
+                'Type "approve" to execute or "reject" to cancel.\n'
+                f"{created['tool_line']}"
+            )
+        return complete_tool_resolution(
+            {
+                "payload": {
+                    "original_input": normalized,
+                    "query": str(process_action["query"]),
+                    "tool": str(process_action["tool"]),
+                    "params": dict(process_action.get("params", {})),
+                }
+            },
+            "approve",
+            session,
+            proposal,
+            memory,
+            engine,
+            startup_context,
+            operator or OperatorFaculty(),
+            guardian_metrics,
+            active_token=active_token,
+            user_log=user_log,
+            faculty_monitor=faculty_monitor,
+            filesystem_faculty=filesystem_faculty,
+            process_faculty=process_faculty,
             session_audit=session_audit,
             active_realm_name=active_realm_name,
             conversation_state=conversation_state,
@@ -4817,6 +5267,7 @@ def handle_command(
                 user_log=user_log,
                 faculty_monitor=faculty_monitor,
                 filesystem_faculty=filesystem_faculty,
+                process_faculty=process_faculty,
                 session_audit=session_audit,
                 active_realm_name=active_realm_name,
                 conversation_state=conversation_state,
@@ -4997,6 +5448,7 @@ def main() -> None:
     guardian = GuardianFaculty()
     operator = OperatorFaculty()
     filesystem_faculty = FileSystemFaculty()
+    process_faculty = ProcessFaculty()
     governance = GovernanceLayer(engine=engine)
     sync_profile_grounding(engine, profile_manager, guardian_user, guardian_token, reflective_memory)
     classifier = IntentClassifier(
@@ -5106,6 +5558,7 @@ def main() -> None:
             config=config,
             operator=operator,
             filesystem_faculty=filesystem_faculty,
+            process_faculty=process_faculty,
             guardian=guardian,
             guardian_metrics=guardian_metrics,
             nammu_dir=NAMMU_DIR,

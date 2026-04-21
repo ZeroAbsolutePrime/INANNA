@@ -34,6 +34,13 @@ HELP_COMMON = """𒀭 INANNA NYX — Available Commands
     "write a file called ideas.txt with this content..."
     (all file writes require approval)
 
+  SYSTEM & PROCESSES
+    "how is the system doing?"
+    "what is using all my memory?"
+    "show me python processes"
+    "kill process 1234" (requires approval)
+    "run echo hello" (requires approval)
+
   SESSION
     whoami                        Show who you are logged in as
     logout                        End your session
@@ -171,7 +178,8 @@ HELP_TOPICS = {
   CROWN      Primary conversational voice. Warm, honest, relational.
   ANALYST    Structured reasoning. Analysis, comparison, logic.
   OPERATOR   Tool execution. web_search, ping, scan_ports, resolve_host,
-             read_file, list_dir, file_info, search_files, write_file.
+             read_file, list_dir, file_info, search_files, write_file,
+             list_processes, system_info, kill_process, run_command.
   GUARDIAN   System observation. Health, audit, inspection.
   SENTINEL   Security Faculty. CVE analysis, threat reasoning.
              Uses qwen2.5-14b-instruct for deeper security reasoning.
@@ -185,7 +193,7 @@ HELP_TOPICS = {
   help [topic]       Show details on a specific topic
 
   Topics: my-profile, governance-trust, inanna-reflect,
-          faculties, tools, files, memory, realms, departments""",
+          faculties, tools, files, processes, memory, realms, departments""",
 
     "tools": """tools — Available tools (all require proposal approval)
 
@@ -193,6 +201,12 @@ HELP_TOPICS = {
   ping [host]          Check if a host is reachable
   resolve_host [host]  Resolve hostname to IP address
   scan_ports [host]    Scan ports 1-100 on a host
+
+  Observation tools may run without approval.
+  Governance:
+    - web_search, ping, resolve_host, scan_ports: approval required
+    - list_processes, system_info: no approval required
+    - kill_process, run_command: approval required
 
   To trust a tool permanently: governance-trust [tool_name]
   To see registered tools: tool-registry""",
@@ -217,6 +231,26 @@ HELP_TOPICS = {
   Max file read: 512 KB
   Max search results: 50 files
   Max directory listing: 100 entries""",
+
+    "processes": """processes вЂ” Process and system operations
+
+  INANNA can inspect the running system and, with approval,
+  act on processes or run a shell command.
+
+  System health:    "how is the system doing?"
+  Process list:     "show me python processes"
+  Memory pressure:  "what is using all my memory?"
+  Kill by pid:      "kill process 1234"
+  Run command:      "run echo hello"
+
+  Governance:
+    - list_processes, system_info: no approval required
+    - kill_process: ALWAYS requires approval
+    - run_command: ALWAYS requires approval
+    - elevation is not allowed through run_command
+
+  Process observation is for readable system truth.
+  Process action remains governed.""",
 
     "memory": """memory — How INANNA remembers
 

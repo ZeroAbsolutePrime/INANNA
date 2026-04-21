@@ -17,6 +17,7 @@ from core.memory import Memory
 from core.nammu import IntentClassifier
 from core.operator import OperatorFaculty, ToolResult
 from core.profile import NotificationStore, ProfileManager
+from core.process_faculty import ProcessFaculty, ProcessRecord, ProcessResult, SystemInfo
 from core.process_monitor import ProcessMonitor
 from core.proposal import Proposal
 from core.realm import RealmManager
@@ -1114,6 +1115,124 @@ class CommandTests(unittest.TestCase):
         self.assertIn('operator > tool proposed: write_file - "', result)
         self.assertEqual(proposal.pending_count(), 1)
 
+    def test_process_observation_executes_without_proposal(self) -> None:
+        (
+            session,
+            memory,
+            proposal,
+            state_report,
+            _engine,
+            analyst,
+            classifier,
+            routing_log,
+            startup_context,
+            config,
+        ) = self.make_runtime()
+        engine = FlakySummaryEngine()
+        process_faculty = ProcessFaculty()
+        fake_result = ProcessResult(
+            success=True,
+            operation="list",
+            query="python",
+            records=[
+                ProcessRecord(
+                    pid=1234,
+                    name="python.exe",
+                    status="running",
+                    cpu_percent=12.5,
+                    memory_mb=256.0,
+                    memory_percent=3.0,
+                    username="ZAERA",
+                    started_at="10:15",
+                    cmdline="python app.py",
+                )
+            ],
+            count=1,
+        )
+
+        with patch.object(process_faculty, "list_processes", return_value=fake_result):
+            result = handle_command(
+                "show me python processes",
+                session,
+                memory,
+                proposal,
+                state_report,
+                engine,
+                analyst,
+                classifier,
+                routing_log,
+                startup_context,
+                config,
+                process_faculty=process_faculty,
+            )
+
+        self.assertIn("proc > processes", result)
+        self.assertIn("python.exe", result)
+        self.assertIn("model unavailable to summarize", result)
+        self.assertEqual(proposal.pending_count(), 0)
+
+    def test_run_command_request_creates_governed_tool_proposal(self) -> None:
+        (
+            session,
+            memory,
+            proposal,
+            state_report,
+            engine,
+            analyst,
+            classifier,
+            routing_log,
+            startup_context,
+            config,
+        ) = self.make_runtime()
+
+        result = handle_command(
+            "run echo hello",
+            session,
+            memory,
+            proposal,
+            state_report,
+            engine,
+            analyst,
+            classifier,
+            routing_log,
+            startup_context,
+            config,
+        )
+
+        self.assertIn('operator > tool proposed: run_command - "echo hello"', result)
+        self.assertEqual(proposal.pending_count(), 1)
+
+    def test_kill_process_request_creates_governed_tool_proposal(self) -> None:
+        (
+            session,
+            memory,
+            proposal,
+            state_report,
+            engine,
+            analyst,
+            classifier,
+            routing_log,
+            startup_context,
+            config,
+        ) = self.make_runtime()
+
+        result = handle_command(
+            "kill process 1234",
+            session,
+            memory,
+            proposal,
+            state_report,
+            engine,
+            analyst,
+            classifier,
+            routing_log,
+            startup_context,
+            config,
+        )
+
+        self.assertIn('operator > tool proposed: kill_process - "1234"', result)
+        self.assertEqual(proposal.pending_count(), 1)
+
     def test_crown_response_with_reflect_tag_creates_reflection_proposal(self) -> None:
         (
             session,
@@ -1389,13 +1508,18 @@ class CommandTests(unittest.TestCase):
             config,
         )
 
-        self.assertIn("tool-registry > Registered tools (9 total):", result)
+        self.assertIn("tool-registry > Registered tools (13 total):", result)
         self.assertIn("FILESYSTEM", result)
         self.assertIn("Read File [enabled]", result)
         self.assertIn("List Directory [enabled]", result)
         self.assertIn("File Info [enabled]", result)
         self.assertIn("Search Files [enabled]", result)
         self.assertIn("Write File [enabled]", result)
+        self.assertIn("PROCESS", result)
+        self.assertIn("List Processes [enabled]", result)
+        self.assertIn("System Info [enabled]", result)
+        self.assertIn("Kill Process [enabled]", result)
+        self.assertIn("Run Command [enabled]", result)
         self.assertIn("INFORMATION", result)
         self.assertIn("Web Search [enabled]", result)
         self.assertIn("Privilege: converse", result)

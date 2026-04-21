@@ -116,6 +116,10 @@ class IdentityTests(unittest.TestCase):
         self.assertIn("file_info", tools)
         self.assertIn("search_files", tools)
         self.assertIn("write_file", tools)
+        self.assertIn("list_processes", tools)
+        self.assertIn("system_info", tools)
+        self.assertIn("kill_process", tools)
+        self.assertIn("run_command", tools)
 
     def test_guardian_codes_list_system_healthy(self) -> None:
         codes = list_guardian_codes()
@@ -126,8 +130,8 @@ class IdentityTests(unittest.TestCase):
     def test_current_phase_constant_matches_phase_banner(self) -> None:
         self.assertEqual(CURRENT_PHASE, phase_banner())
 
-    def test_current_phase_names_file_system_faculty(self) -> None:
-        self.assertIn("File System Faculty", CURRENT_PHASE)
+    def test_current_phase_names_process_faculty(self) -> None:
+        self.assertIn("Process Faculty", CURRENT_PHASE)
 
     def test_cycle2_summary_describes_completed_kernel(self) -> None:
         self.assertIn("NAMMU Kernel", CYCLE2_SUMMARY)
@@ -159,6 +163,7 @@ class IdentityTests(unittest.TestCase):
         self.assertIn("NYXOS", CYCLE7_PREVIEW)
         self.assertIn("NixOS system service", CYCLE7_PREVIEW)
         self.assertIn("file system tools", CYCLE7_PREVIEW)
+        self.assertIn("process management", CYCLE7_PREVIEW)
         self.assertIn("Whisper + Piper TTS", CYCLE7_PREVIEW)
 
 

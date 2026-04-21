@@ -130,6 +130,23 @@
       "create file",
       "what is in",
       "show me"
+    ],
+    "process": [
+      "process",
+      "processes",
+      "running",
+      "memory usage",
+      "cpu usage",
+      "system info",
+      "system health",
+      "uptime",
+      "kill process",
+      "terminate",
+      "what is using",
+      "ram",
+      "disk space",
+      "how is the system",
+      "performance"
     ]
   }
 }

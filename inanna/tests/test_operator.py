@@ -23,6 +23,10 @@ class OperatorFacultyTests(unittest.TestCase):
                 "file_info",
                 "search_files",
                 "write_file",
+                "list_processes",
+                "system_info",
+                "kill_process",
+                "run_command",
             },
         )
         self.assertEqual(
@@ -58,6 +62,18 @@ class OperatorFacultyTests(unittest.TestCase):
                 "requires_approval": True,
                 "requires_privilege": "converse",
                 "parameters": ["path"],
+                "enabled": True,
+            },
+        )
+        self.assertEqual(
+            operator.get_tool_definition("list_processes"),
+            {
+                "display_name": "List Processes",
+                "description": "List running processes sorted by memory or CPU.",
+                "category": "process",
+                "requires_approval": False,
+                "requires_privilege": "converse",
+                "parameters": ["filter", "sort", "limit"],
                 "enabled": True,
             },
         )
