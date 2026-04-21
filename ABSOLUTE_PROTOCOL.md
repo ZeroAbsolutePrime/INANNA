@@ -90,3 +90,34 @@ A phase is not active until both have confirmed.
 
 *Last updated by: Claude (Command Center)*
 *Phase at time of writing: Phase 0 — Foundation Active*
+
+
+---
+
+## Integration Test Protocol (MANDATORY)
+
+After every cycle completion, before declaring the cycle complete
+and before beginning the next cycle, ZAERA must run the
+Integration Test Protocol defined in:
+
+  docs/integration_test_protocol.md
+
+All Category 1-5 tests must pass. Failures are not optional.
+A cycle with failing integration tests is NOT complete.
+
+The integration test results must be documented in the cycle
+completion record (docs/cycleN_completion.md).
+
+This requirement was added after Cycle 6, following the discovery
+that the system passed 319 unit tests while simultaneously failing
+to connect to the model, blocking innocent questions as identity
+attacks, and not knowing its own capabilities.
+
+Unit tests verify code. Integration tests verify experience.
+Both are required.
+
+---
+
+*Integration test protocol added: 2026-04-21*
+*Authored by: Claude (Command Center)*
+*Approved by: ZAERA (Guardian)*
