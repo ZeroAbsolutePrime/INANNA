@@ -2428,6 +2428,24 @@ class InterfaceServer:
             topic = parts[1] if len(parts) > 1 else ""
             help_text = build_help_response(role, topic)
             await self.broadcast({"type": "system", "text": help_text})
+        elif command_name == "software":
+            parts = raw_cmd.strip().split(None, 1)
+            filt = parts[1].strip().lower() if len(parts) > 1 else ""
+            self.software_registry.load(force=True)
+            entries = self.software_registry.all_entries()
+            if filt:
+                entries = [e for e in entries if filt in e.name.lower() or filt in e.pkg_id.lower()]
+            entries_sorted = sorted(entries, key=lambda e: e.name.lower())
+            records = [{"name": e.name, "version": e.version, "pkg_id": e.pkg_id, "installed": True} for e in entries_sorted]
+            header = f"software > {len(entries_sorted)} installed" + (f" matching '{filt}'" if filt else "") + "\n(click [ launch ] to open)"
+            await self.broadcast({
+                "type": "operator",
+                "text": header,
+                "tool_result": {
+                    "tool": "list_packages",
+                    "data": {"records": records, "formatted": header}
+                }
+            })
         elif command_name in {"approve", "reject"}:
             resolved = await asyncio.to_thread(
                 self.resolve_proposal, command_name, payload.get("proposal_id")

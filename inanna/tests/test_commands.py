@@ -552,6 +552,7 @@ class CommandTests(unittest.TestCase):
                 "forget",
                 "exit",
                 "help",
+                "software",
             ),
         )
         self.assertEqual(
@@ -563,7 +564,7 @@ class CommandTests(unittest.TestCase):
                 "create-realm, realm-context, switch-user, assign-realm, unassign-realm, my-log, user-log, invite, join, invites, "
                 "admin-surface, tool-registry, faculty-registry, network-status, process-status, history, proposal-history, routing-log, nammu-log, "
                 "memory-log, body, status, diagnostics, guardian-dismiss, "
-                "guardian-clear-events, approve, reject, forget, exit, help"
+                "guardian-clear-events, approve, reject, forget, exit, help, software"
             ),
         )
 

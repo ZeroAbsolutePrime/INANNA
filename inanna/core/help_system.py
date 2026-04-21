@@ -57,6 +57,14 @@ HELP_COMMON = """𒀭 INANNA NYX — Available Commands
     Memories are written automatically.
     Say "remember this" to explicitly approve a memory.
 
+
+  SOFTWARE
+    software                      List all installed software with launch buttons
+    software [name]               Filter by name (e.g. "software firefox")
+    "list installed software"     Same via natural language
+    "open firefox"                Launch any installed app (requires approval)
+    "search for a text editor"    Search available packages with install buttons
+    "install vlc"                 Install software (requires approval)
   Type "help [command]" for details on any specific command.
 """
 

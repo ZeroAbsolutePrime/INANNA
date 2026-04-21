@@ -134,6 +134,7 @@ STARTUP_COMMANDS = (
     "forget",
     "exit",
     "help",
+    "software",
 )
 AUTO_MEMORY_TURN_THRESHOLD = 20
 
@@ -746,7 +747,7 @@ def extract_package_tool_request(
     search_term_match = any(term in lowered for term in PACKAGE_SEARCH_TERMS)
 
     if not hint_match and not search_term_match and not re.match(
-        r"^(?:install|remove|uninstall|search|find|list|show|what packages|what software|what is installed|launch|open|start|run)\b",
+        r"^(?:install|remove|uninstall|search|find|list|show|what packages|what software|what is installed|what do i have|installed|my software|my apps|launch|open|start|run)\b",
         prefix_stripped,
     ):
         return None
@@ -811,6 +812,16 @@ def extract_package_tool_request(
         "list packages",
         "show packages",
         "show me packages",
+        "show installed",
+        "list installed",
+        "list installed software",
+        "show installed software",
+        "what do i have installed",
+        "show me what is installed",
+        "installed software",
+        "installed apps",
+        "my installed apps",
+        "my software",
     }:
         params = {"filter": ""}
         return {
@@ -821,8 +832,8 @@ def extract_package_tool_request(
         }
 
     list_match = re.match(
-        r"^(?:list|show)(?:\s+me)?(?:\s+the)?\s+(?:installed\s+)?packages(?:\s+(?P<filter>.+))?$",
-        normalized,
+        r"^(?:list|show)(?:\s+me)?(?:\s+the)?(?:\s+installed)?\s+(?:packages?|software|apps?|applications?|programs?)(?:\s+(?P<filter>.+))?$",
+        prefix_stripped,
         flags=re.IGNORECASE,
     )
     if list_match:
