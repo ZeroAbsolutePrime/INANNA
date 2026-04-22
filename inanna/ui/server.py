@@ -525,6 +525,9 @@ class InterfaceServer:
                 await self._process_onboarding_input(text)
                 await self.broadcast_state()
                 return
+            # Strip leading slash — users may type /help, /status etc.
+            if text.startswith('/'):
+                text = text[1:]
             lowered = text.lower()
             command_name = lowered.split(" ", 1)[0]
             if command_name in set(STARTUP_COMMANDS) - {"analyse"}:
