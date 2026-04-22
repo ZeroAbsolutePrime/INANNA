@@ -18,12 +18,12 @@ from websockets.exceptions import ConnectionClosed
 
 from config import Config
 from core.auth import AuthStore
-from core.browser_workflows import BrowserWorkflows
-from core.calendar_workflows import CalendarWorkflows
+from core.browser_workflows import BrowserComprehension, BrowserWorkflows
+from core.calendar_workflows import CalendarComprehension, CalendarWorkflows
 from core.communication_workflows import CommunicationWorkflows
 from core.constitutional_filter import ConstitutionalFilter
 from core.desktop_faculty import DesktopFaculty
-from core.document_workflows import DocumentWorkflows
+from core.document_workflows import DocumentComprehension, DocumentWorkflows
 from core.email_workflows import EmailWorkflows
 from core.filesystem_faculty import FileSystemFaculty
 from core.governance import GovernanceLayer
@@ -39,7 +39,7 @@ from core.nammu_memory import (
 )
 from core.nammu_profile import save_operator_profile
 from core.orchestration import OrchestrationEngine
-from core.operator import OperatorFaculty
+from core.operator import OperatorFaculty, ToolResult
 from core.package_faculty import PackageFaculty
 from core.software_registry import SoftwareRegistry
 from core.profile import NotificationStore, ProfileManager
@@ -172,6 +172,84 @@ from main import (
     unassign_profile_membership,
     update_nammu_profile_after_tool,
 )
+
+
+CROWN_INSTRUCTIONS = {
+    "email": (
+        "INBOX DATA (real, from Thunderbird - no hallucination):\n"
+        "{summary}\n"
+        "---\n"
+        "Present this to the operator naturally.\n"
+        "Rules:\n"
+        "- Speak conversationally, not as a list\n"
+        "- Mention urgent items first\n"
+        "- Suggest a next action if obvious\n"
+        "- Use the operator's language if detectable\n"
+        "- DO NOT invent any email content not shown above\n"
+        "- DO NOT add fictional senders, subjects, or bodies"
+    ),
+    "document": (
+        "DOCUMENT DATA (read directly from file, no hallucination):\n"
+        "{summary}\n"
+        "---\n"
+        "Summarise the document briefly.\n"
+        "Mention title, format, size, and key points.\n"
+        "DO NOT invent content not shown above.\n"
+        "If the operator wants more detail, they can ask."
+    ),
+    "calendar": (
+        "CALENDAR DATA (from Thunderbird, no hallucination):\n"
+        "{summary}\n"
+        "---\n"
+        "Present events naturally.\n"
+        "If 0 events: explain the Google Calendar sync situation clearly.\n"
+        "DO NOT invent events not shown above."
+    ),
+    "browser": (
+        "WEB CONTENT (fetched live, no hallucination):\n"
+        "{summary}\n"
+        "---\n"
+        "Summarise what the page contains.\n"
+        "For searches: summarise the results, not just list them.\n"
+        "DO NOT invent content not shown above.\n"
+        "DO NOT reproduce large chunks of text verbatim."
+    ),
+}
+
+
+def extract_tool_comprehension(result: ToolResult) -> tuple[str | None, str]:
+    try:
+        if result.tool in {"email_read_inbox", "email_search"} and result.success:
+            emails = result.data.get("emails", [])
+            if isinstance(emails, list) and emails:
+                params_payload = result.data.get("params", {})
+                if not isinstance(params_payload, dict):
+                    params_payload = {}
+                comprehension = build_comprehension(
+                    emails,
+                    period=str(params_payload.get("period", "") or ""),
+                    urgency_filter=bool(params_payload.get("urgency_only", False)),
+                )
+                return comprehension.to_crown_context(), "email"
+
+        if result.tool == "doc_read" and result.success:
+            comprehension = result.data.get("comprehension")
+            if isinstance(comprehension, DocumentComprehension):
+                return comprehension.to_crown_context(), "document"
+
+        if result.tool in {"calendar_today", "calendar_upcoming", "calendar_read_ics"} and result.success:
+            comprehension = result.data.get("comprehension")
+            if isinstance(comprehension, CalendarComprehension):
+                return comprehension.to_crown_context(), "calendar"
+
+        if result.tool in {"browser_read", "browser_search"} and result.success:
+            comprehension = result.data.get("comprehension")
+            if isinstance(comprehension, BrowserComprehension):
+                return comprehension.to_crown_context(), "browser"
+    except Exception:
+        return None, ""
+
+    return None, ""
 
 APP_ROOT = Path(__file__).resolve().parent.parent
 STATIC_ROOT = Path(__file__).resolve().parent / "static"
@@ -3564,21 +3642,10 @@ class InterfaceServer:
             # so it summarizes the result instead of disclaiming inability
             tool_result_lines = build_tool_context_lines(result)
             tool_result_summary = "\n".join(tool_result_lines)
-            is_email_comprehension = False
-            if result.tool in {"email_read_inbox", "email_search"} and result.success:
-                emails = result.data.get("emails", [])
-                if isinstance(emails, list) and emails:
-                    params_payload = result.data.get("params", {})
-                    if not isinstance(params_payload, dict):
-                        params_payload = {}
-                    comprehension = build_comprehension(
-                        emails,
-                        period=str(params_payload.get("period", "") or ""),
-                        urgency_filter=bool(params_payload.get("urgency_only", False)),
-                    )
-                    tool_result_summary = comprehension.to_crown_context()
-                    tool_result_lines = [tool_result_summary]
-                    is_email_comprehension = True
+            comprehension_ctx, comprehension_domain = extract_tool_comprehension(result)
+            if comprehension_ctx:
+                tool_result_summary = comprehension_ctx
+                tool_result_lines = [tool_result_summary]
             if result.tool == "search_packages" and result.success:
                 self._last_package_context = {
                     "tool": "search_packages",
@@ -3600,19 +3667,9 @@ class InterfaceServer:
                 and '\n' not in tool_result_summary.strip()
             )
 
-            if is_email_comprehension:
-                tool_instruction = (
-                    f"INBOX DATA (real, from Thunderbird - no hallucination):\n"
-                    f"{tool_result_summary}\n"
-                    f"---\n"
-                    f"Present this to the operator naturally.\n"
-                    f"Rules:\n"
-                    f"- Speak conversationally, not as a list\n"
-                    f"- Mention urgent items first\n"
-                    f"- Suggest a next action if obvious\n"
-                    f"- Use the operator's language if detectable\n"
-                    f"- DO NOT invent any email content not shown above\n"
-                    f"- DO NOT add fictional senders, subjects, or bodies"
+            if comprehension_domain in CROWN_INSTRUCTIONS:
+                tool_instruction = CROWN_INSTRUCTIONS[comprehension_domain].format(
+                    summary=tool_result_summary
                 )
             elif result_is_empty:
                 tool_instruction = (

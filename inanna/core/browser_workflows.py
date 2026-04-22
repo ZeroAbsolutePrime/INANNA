@@ -20,6 +20,7 @@ Governance:
 from __future__ import annotations
 
 import re
+from collections import Counter
 from dataclasses import dataclass, field
 from urllib.parse import quote, urlparse
 
@@ -61,6 +62,45 @@ class BrowserActionResult:
     output: str = ""
     consequential: bool = False
     error: str | None = None
+
+
+@dataclass
+class BrowserComprehension:
+    """Structured summary of a fetched web page or search result."""
+
+    url: str = ""
+    title: str = ""
+    word_count: int = 0
+    is_search: bool = False
+    query: str = ""
+    excerpt: str = ""
+    key_topics: list[str] = field(default_factory=list)
+    is_pdf: bool = False
+    status_code: int = 0
+    error: str | None = None
+
+    def to_crown_context(self) -> str:
+        if self.error:
+            return f"browser > error: {self.error}"
+        if self.is_search:
+            lines = [
+                f"WEB SEARCH: {self.query!r}",
+                f"Results from: {self.url}",
+                "",
+                f"CONTENT ({self.word_count} words):",
+                self.excerpt,
+            ]
+            return "\n".join(line for line in lines if line is not None)
+
+        lines = [
+            f"WEB PAGE: {self.title or self.url}",
+            f"URL: {self.url}",
+            f"Size: {self.word_count} words",
+        ]
+        if self.key_topics:
+            lines.append(f"Topics: {', '.join(self.key_topics[:5])}")
+        lines.extend(["", "CONTENT:", self.excerpt])
+        return "\n".join(line for line in lines if line is not None)
 
 
 FORBIDDEN_URL_PATTERNS = [
@@ -122,6 +162,54 @@ def _extract_links_from_html(html: str) -> list[str]:
         return links
     except Exception:
         return []
+
+
+def build_browser_comprehension(
+    record: PageRecord,
+    query: str = "",
+    is_search: bool = False,
+) -> BrowserComprehension:
+    """Build deterministic browser comprehension from a page record."""
+
+    if not record.success:
+        return BrowserComprehension(error=record.error or "Unknown error")
+
+    content = str(record.content or "")
+    lines = [line.strip() for line in content.splitlines() if line.strip()]
+    excerpt_lines: list[str] = []
+    total_chars = 0
+    for line in lines:
+        if total_chars >= 400:
+            break
+        remaining = max(0, 400 - total_chars)
+        excerpt_lines.append(line[:remaining])
+        total_chars += len(excerpt_lines[-1])
+    excerpt = "\n".join(excerpt_lines).strip()[:400]
+
+    topic_candidates = re.findall(r"\b[A-Z][a-z]{2,}\b", content[:2000])
+    counts = Counter(topic_candidates)
+    key_topics = [
+        word
+        for word, _ in counts.most_common(8)
+        if word.lower()
+        not in {"the", "this", "that", "with", "from", "your", "have", "will", "are", "for"}
+    ][:6]
+
+    lowered_title = str(record.title or "").lower()
+    lowered_content = content.lower()
+    is_pdf = "pdf" in lowered_title or content.startswith("[PDF at") or "application/pdf" in lowered_content
+
+    return BrowserComprehension(
+        url=record.url,
+        title=record.title,
+        word_count=record.word_count,
+        is_search=is_search,
+        query=query,
+        excerpt=excerpt,
+        key_topics=key_topics,
+        is_pdf=is_pdf,
+        status_code=record.status_code,
+    )
 
 
 class BrowserDirectFetcher:
@@ -305,13 +393,16 @@ class BrowserWorkflows:
         self.fetcher = BrowserDirectFetcher()
         self.playwright = PlaywrightBrowser()
 
-    def read_page(self, url: str, js: bool = False) -> PageRecord:
+    def read_page(self, url: str, js: bool = False) -> tuple[PageRecord, BrowserComprehension]:
         if js and self.playwright.is_available():
-            return self.playwright.fetch_js(url)
-        return self.fetcher.fetch(url)
+            record = self.playwright.fetch_js(url)
+        else:
+            record = self.fetcher.fetch(url)
+        return record, build_browser_comprehension(record)
 
-    def search_web(self, query: str) -> PageRecord:
-        return self.fetcher.search(query)
+    def search_web(self, query: str) -> tuple[PageRecord, BrowserComprehension]:
+        record = self.fetcher.search(query)
+        return record, build_browser_comprehension(record, query=query, is_search=True)
 
     def open_in_browser(self, url: str, browser: str = "firefox") -> BrowserActionResult:
         normalized_url = str(url or "").strip()

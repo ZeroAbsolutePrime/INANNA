@@ -8,6 +8,7 @@ from tempfile import TemporaryDirectory
 from unittest.mock import Mock, patch
 
 from core.browser_workflows import (
+    BrowserComprehension,
     BrowserDirectFetcher,
     BrowserWorkflows,
     PageRecord,
@@ -127,9 +128,11 @@ class BrowserWorkflowTests(unittest.TestCase):
     def test_search_web_uses_fetcher(self) -> None:
         expected = PageRecord(url="search:test", title="Search", content="body", word_count=1)
         with patch.object(self.workflows.fetcher, "search", return_value=expected) as search_mock:
-            result = self.workflows.search_web("test")
+            result, comprehension = self.workflows.search_web("test")
 
         self.assertEqual(result, expected)
+        self.assertIsInstance(comprehension, BrowserComprehension)
+        self.assertTrue(comprehension.is_search)
         search_mock.assert_called_once_with("test")
 
 

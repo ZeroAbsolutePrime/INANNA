@@ -5,7 +5,7 @@ import os
 import re
 import threading
 import time
-from dataclasses import MISSING
+from dataclasses import MISSING, asdict, is_dataclass
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -17,6 +17,7 @@ from config import Config
 from core.body import BodyInspector, BodyReport
 from core.browser_workflows import (
     BrowserActionResult,
+    BrowserComprehension,
     BrowserWorkflows,
     PageRecord,
 )
@@ -5333,7 +5334,9 @@ def build_document_tool_result(
                 "word_count": record.word_count,
                 "page_count": record.page_count,
                 "sheet_names": list(record.sheet_names),
-                "comprehension": {
+                "record": record,
+                "comprehension": comprehension or DocumentComprehension(),
+                "comprehension_data": {
                     "title": comprehension.title if comprehension else "",
                     "format": comprehension.format if comprehension else "",
                     "word_count": comprehension.word_count if comprehension else 0,
@@ -5368,6 +5371,7 @@ def build_browser_tool_result(
     record: PageRecord | BrowserActionResult,
     browser_workflows: BrowserWorkflows,
     query: str,
+    comprehension: BrowserComprehension | None = None,
 ) -> ToolResult:
     if isinstance(record, PageRecord):
         formatted = (
@@ -5386,6 +5390,8 @@ def build_browser_tool_result(
                 "links": list(record.links),
                 "word_count": record.word_count,
                 "status_code": record.status_code,
+                "record": record,
+                "comprehension": comprehension or BrowserComprehension(),
                 "formatted": formatted,
             },
             error=record.error,
@@ -5413,12 +5419,12 @@ def run_browser_tool(
 ) -> ToolResult:
     if tool_name == "browser_read":
         url = str(params.get("url", "")).strip()
-        result = browser_workflows.read_page(url, js=bool(params.get("js", False)))
-        return build_browser_tool_result(tool_name, result, browser_workflows, url)
+        record, comprehension = browser_workflows.read_page(url, js=bool(params.get("js", False)))
+        return build_browser_tool_result(tool_name, record, browser_workflows, url, comprehension)
     if tool_name == "browser_search":
         query = str(params.get("query", "")).strip()
-        result = browser_workflows.search_web(query)
-        return build_browser_tool_result(tool_name, result, browser_workflows, query)
+        record, comprehension = browser_workflows.search_web(query)
+        return build_browser_tool_result(tool_name, record, browser_workflows, query, comprehension)
     if tool_name == "browser_open":
         url = str(params.get("url", "")).strip()
         browser_name = str(params.get("browser", "firefox") or "firefox").strip().lower()
@@ -5487,13 +5493,15 @@ def build_calendar_tool_result(
             "source": result.source,
             "events": [event.__dict__.copy() for event in result.events],
             "todos": [todo.__dict__.copy() for todo in result.todos],
+            "calendar_result": result,
+            "comprehension": comprehension,
             "total_events": comprehension.total_events,
             "period_label": comprehension.period_label,
             "has_remote_calendar": comprehension.has_remote_calendar,
             "today_events": [event.__dict__.copy() for event in comprehension.today_events],
             "upcoming_events": [event.__dict__.copy() for event in comprehension.upcoming_events],
             "overdue_todos": [todo.__dict__.copy() for todo in comprehension.overdue_todos],
-            "comprehension": {
+            "comprehension_data": {
                 "total_events": comprehension.total_events,
                 "period_label": comprehension.period_label,
                 "source": comprehension.source,
@@ -6267,11 +6275,24 @@ def build_faculty_registry_payload(faculty_monitor: FacultyMonitor) -> dict[str,
 
 
 def build_tool_result_payload(result: ToolResult) -> dict[str, object]:
+    def _serialize(value: Any) -> Any:
+        if isinstance(value, datetime):
+            return value.isoformat()
+        if isinstance(value, Path):
+            return str(value)
+        if is_dataclass(value):
+            return {key: _serialize(item) for key, item in asdict(value).items()}
+        if isinstance(value, dict):
+            return {str(key): _serialize(item) for key, item in value.items()}
+        if isinstance(value, (list, tuple)):
+            return [_serialize(item) for item in value]
+        return value
+
     return {
         "tool": result.tool,
         "query": result.query,
         "success": result.success,
-        "data": dict(result.data),
+        "data": _serialize(dict(result.data)),
         "error": result.error,
     }
 
