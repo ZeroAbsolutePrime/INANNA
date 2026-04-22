@@ -9,10 +9,12 @@ from typing import Any
 
 
 LM_URL = "http://localhost:1234/v1/chat/completions"
-MODEL_PRIMARY = "qwen2.5-14b-instruct"
-MODEL_FALLBACK = "qwen2.5-7b-instruct-1m"
-TIMEOUT_PRIMARY = 25   # seconds — 14B Q3_K_S needs ~20s on current hardware
-TIMEOUT_FALLBACK = 12  # seconds — 7B fallback
+# NOTE: On slow hardware, use 7B as primary (faster than 14B)
+# On DGX Spark, swap back to 14B as primary
+MODEL_PRIMARY = "qwen2.5-7b-instruct-1m"    # faster on current hardware
+MODEL_FALLBACK = "qwen2.5-14b-instruct"      # slower but more accurate
+TIMEOUT_PRIMARY = 20   # seconds — 7B on slow CPU/shared VRAM
+TIMEOUT_FALLBACK = 35  # seconds — 14B fallback
 
 NAMMU_EMAIL_PROMPT = """You are NAMMU, the intent extraction core of INANNA NYX.
 Your only job: read the operator message and return a JSON intent object.

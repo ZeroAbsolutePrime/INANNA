@@ -1269,6 +1269,66 @@ def extract_email_tool_request(
             if tool_request is not None and str(tool_request.get("tool", "")) in EMAIL_TOOL_NAMES:
                 return tool_request
 
+    # "anything from X?" / "something from X?" — natural email search
+    anything_from_match = re.match(
+        r"^(?:anything|something|news|emails?|messages?|mail)\s+from\s+(?P<sender>[\w\s\-.]+?)\s*\??$",
+        prefix_stripped, flags=re.IGNORECASE,
+    )
+    if anything_from_match:
+        sender = normalize_request_fragment(anything_from_match.group("sender"))
+        app = DEFAULT_EMAIL_CLIENT
+        params = {"query": sender, "app": app}
+        return {
+            "tool": "email_search",
+            "params": params,
+            "query": f"Search for emails from {sender}",
+            "reason": "Natural language email search (regex fallback)",
+        }
+
+    # "check email from X" / "look for X email"
+    check_from_match = re.match(
+        r"^(?:check|look\s+for|find|show\s+me)\s+(?:email|mail|message)?\s*from\s+(?P<sender>[\w\s\-]+?)\??$",
+        prefix_stripped, flags=re.IGNORECASE,
+    )
+    if check_from_match:
+        sender = normalize_request_fragment(check_from_match.group("sender"))
+        params = {"subject_or_sender": sender, "app": DEFAULT_EMAIL_CLIENT}
+        return {
+            "tool": "email_read_message",
+            "params": params,
+            "query": f"Read email from {sender}",
+            "reason": "Natural language email read (regex fallback)",
+        }
+
+    # "urgent emails?" / "urgentes?" / "important emails?"
+    urgent_match = re.match(
+        r"^(?:urgent|important|critical|urgentes?|importantes?)(?:\s+(?:emails?|mail|messages?))?\s*\??$",
+        prefix_stripped, flags=re.IGNORECASE,
+    )
+    if urgent_match:
+        params = {"app": DEFAULT_EMAIL_CLIENT, "urgency_only": True, "output_format": "summary"}
+        return {
+            "tool": "email_read_inbox",
+            "params": params,
+            "query": "Read inbox — urgent only",
+            "reason": "Urgency email filter (regex fallback)",
+        }
+
+    # "last N emails" / "N últimos emails"
+    last_n_match = re.match(
+        r"^(?:last|latest|recent|últimos?|recientes?)\s+(?P<n>\d+)\s+(?:emails?|mail|messages?)\??$",
+        prefix_stripped, flags=re.IGNORECASE,
+    )
+    if last_n_match:
+        n = int(last_n_match.group("n"))
+        params = {"app": DEFAULT_EMAIL_CLIENT, "max_emails": n, "output_format": "list"}
+        return {
+            "tool": "email_read_inbox",
+            "params": params,
+            "query": f"Read last {n} emails",
+            "reason": "Email count request (regex fallback)",
+        }
+
     # "do I have emails from X" / "any emails from X" -> search
     have_emails_match = re.match(
         r"^(?:do\s+i\s+have|any|have\s+i\s+(?:got|received)?)\s+(?:any\s+)?(?:new\s+)?emails?\s+from\s+(?P<sender>.+?)(?:\s+in\s+(?P<app>.+))?$",
