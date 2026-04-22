@@ -1,441 +1,301 @@
-# CURRENT PHASE: Cycle 8 - Phase 8.7 - NixOS Backend
+# CURRENT PHASE: Cycle 8 - Phase 8.8 - The Capability Proof
 **Status: ACTIVE**
 **Authorized by: ZAERA (Guardian) + Claude (Command Center)**
-**Date opened: 2026-04-22**
+**Date: 2026-04-22**
 **Cycle: 8 - The Desktop Bridge**
-**Replaces: Cycle 8 Phase 8.6 - Calendar Faculty (COMPLETE)**
+**Replaces: Cycle 8 Phase 8.7 - NixOS Backend (COMPLETE)**
 
 ---
 
 ## MANDATORY READING — in this exact order
 
-1. docs/platform_architecture.md   ← ESSENTIAL for this phase
+1. docs/platform_architecture.md
 2. docs/cycle8_master_plan.md
-3. docs/implementation/CURRENT_PHASE.md (this file)
-4. CODEX_DOCTRINE.md
-5. ABSOLUTE_PROTOCOL.md
-
----
-
-## Current System State (discovered before writing this phase)
-
-LinuxAtspiBackend: FULLY IMPLEMENTED in core/desktop_faculty.py
-  - open_app()    via xdg-open / subprocess
-  - read_window() via pyatspi.Registry.getDesktop()
-  - click()       via pyatspi queryAction().doAction()
-  - type_text()   via xdotool / ydotool fallback
-  - screenshot()  via scrot / gnome-screenshot fallback
-  All 5 operations complete. No stub — real code.
-
-NixOS directory: nixos/
-  configuration.nix  (1462 bytes — current, missing Cycle 8 deps)
-  inanna-nyx.service (460 bytes)
-  install.sh         (989 bytes)
-  README.md          (1203 bytes)
-
-Current NixOS config gaps (configuration.nix was written in Cycle 7):
-  MISSING: at-spi2-core, pyatspi
-  MISSING: thunderbird (email), signal-desktop
-  MISSING: libreoffice, firefox (document + browser)
-  MISSING: python libs: python-docx, pymupdf, openpyxl, odfpy
-  MISSING: python libs: icalendar, caldav, httpx, beautifulsoup4
-  MISSING: python libs: playwright (browser automation)
-  MISSING: xdotool, ydotool, scrot (desktop automation tools)
-  MISSING: INANNA_SERVER_URL env var (client → server connection)
-  MISSING: Network security hardening
-
-Tools registered: 41 across 11 categories
-Tests passing: 591
-Phase: Cycle 8 - Phase 8.6 - Calendar Faculty
+3. docs/cycle9_master_plan.md
+4. docs/implementation/CURRENT_PHASE.md (this file)
+5. CODEX_DOCTRINE.md
+6. ABSOLUTE_PROTOCOL.md
 
 ---
 
 ## What This Phase Is
 
-Phase 8.7 brings the NixOS configuration to feature parity
-with everything built in Cycles 7 and 8.
+Phase 8.8 is the final phase of Cycle 8.
+It produces ONE file: inanna/verify_cycle8.py
 
-This phase has TWO parts:
+This script runs on real hardware against real systems
+and proves that every faculty built in Cycle 8 actually works.
+It does not mock anything. It is the truth test.
 
-### Part A — NixOS Client Configuration
+When verify_cycle8.py passes, Cycle 8 is officially complete.
+The commit message will be: cycle8-complete
+A permanent record is written to: docs/cycle8_complete.md
 
-Update nixos/configuration.nix to include ALL dependencies
-for the NixOS client laptop (ZAERA's machine when she moves
-from Windows to NixOS).
+---
 
-This is the machine that:
-  - Connects to the DGX Spark server (browser → :8080/:8081)
-  - Runs the Desktop Faculty (AT-SPI2 accessibility)
-  - Has local apps INANNA can reach: Thunderbird, Signal,
-    LibreOffice, Firefox
+## Current System State (audited before writing this phase)
 
-The config must be complete, bootable, and correct.
+Tools: 41 across 11 categories
+  browser:       3  (browser_read, browser_search, browser_open)
+  calendar:      3  (calendar_today, calendar_upcoming, calendar_read_ics)
+  communication: 3  (comm_read_messages, comm_send_message, comm_list_contacts)
+  desktop:       5  (open_app, read_window, click, type, screenshot)
+  document:      4  (doc_read, doc_write, doc_open, doc_export_pdf)
+  email:         5  (read_inbox, read_message, search, compose, reply)
+  filesystem:    5  (read_file, write_file, list_dir, search_files, file_info)
+  information:   1  (web_search)
+  network:       3  (ping, resolve_host, scan_ports)
+  package:       5  (search, list, install, remove, launch)
+  process:       4  (list, run_command, system_info, kill)
 
-### Part B — NixOS Server Configuration
+Tests passing: 611
 
-Update nixos/configuration.nix (or create a separate
-nixos/server.nix) for the DGX Spark server deployment.
+Faculty modules: all import cleanly
+  DesktopFaculty, EmailWorkflows, DocumentWorkflows,
+  BrowserWorkflows, CalendarWorkflows, CommunicationWorkflows,
+  extract_intent, SoftwareRegistry
 
-This is the machine that:
-  - Runs INANNA NYX Core (HTTP :8080, WebSocket :8081)
-  - Loads the LLM models (CROWN, NAMMU, SENTINEL, ANALYST)
-  - Serves multiple clients
+NixOS files: client.nix, server.nix, configuration.nix present
+
+Server starts in ~4.7s. Both ports :8080, :8081 confirmed.
 
 ---
 
 ## What You Are Building
 
-### Task 1 — nixos/client.nix (NEW — NixOS client config)
+### Task 1 — inanna/verify_cycle8.py
 
-Create: nixos/client.nix
+Create: inanna/verify_cycle8.py
 
-This is the complete NixOS configuration for ZAERA's client
-laptop. It replaces configuration.nix for client machines.
+This is the comprehensive capability proof for Cycle 8.
+It runs end-to-end tests against real systems on this machine.
+No mocking. Real operations. Real results.
 
-The file must include:
+The script must:
+  - Run with: py -3 verify_cycle8.py
+  - Print each check as PASS / FAIL / SKIP with reason
+  - Print a final summary: X/Y checks passed
+  - Exit code 0 if all pass (or all non-skipped pass)
+  - Exit code 1 if any check fails
+  - Write results to: docs/implementation/CYCLE8_PROOF.md
 
-```nix
-{ config, pkgs, lib, ... }:
-
-{
-  # ── SYSTEM ────────────────────────────────────────────────────
-  system.stateVersion = "25.11";
-  networking.hostName = "inanna-client";
-  time.timeZone = "Europe/Madrid";   # ZAERA's timezone
-
-  # ── BOOT ──────────────────────────────────────────────────────
-  boot.loader.systemd-boot.enable = true;
-  boot.loader.efi.canTouchEfiVariables = true;
-
-  # ── USER ──────────────────────────────────────────────────────
-  users.users.zaera = {
-    isNormalUser = true;
-    description = "ZAERA - Guardian";
-    extraGroups = [ "networkmanager" "wheel" "audio" "video" "input" ];
-    home = "/home/zaera";
-    shell = pkgs.bash;
-  };
-
-  # ── DESKTOP (Wayland + GNOME) ─────────────────────────────────
-  services.xserver.enable = true;
-  services.xserver.displayManager.gdm.enable = true;
-  services.xserver.desktopManager.gnome.enable = true;
-  services.xserver.displayManager.gdm.wayland = true;
-
-  # ── AT-SPI2 — Desktop Faculty requirement ─────────────────────
-  # Enables INANNA's LinuxAtspiBackend to read application windows
-  # via the accessibility tree. Required for all Desktop Faculty ops.
-  services.gnome.at-spi2-core.enable = true;
-
-  # ── SYSTEM PACKAGES ───────────────────────────────────────────
-  environment.systemPackages = with pkgs; [
-    # Core system tools
-    git curl wget
-
-    # Python runtime
-    python311
-    python311Packages.pip
-
-    # ── INANNA client Python dependencies ────────────────────────
-    # WebSocket + HTTP
-    python311Packages.websockets
-    python311Packages.aiohttp
-    python311Packages.httpx
-
-    # Email Faculty (Thunderbird MBOX reader)
-    # (mailbox module is stdlib — no extra package)
-
-    # Document Faculty
-    python311Packages.python-docx
-    python311Packages.pymupdf          # PDF reading
-    python311Packages.openpyxl         # XLSX reading
-    # odfpy: may need overlay if not in nixpkgs
-    # python311Packages.odfpy
-
-    # Browser Faculty
-    python311Packages.beautifulsoup4
-    python311Packages.lxml
-
-    # Calendar Faculty
-    python311Packages.icalendar
-    # python311Packages.caldav          # optional
-
-    # ── AT-SPI2 Python bindings ───────────────────────────────────
-    at-spi2-core                        # system library
-    python311Packages.pyatspi           # Python bindings for AT-SPI2
-
-    # ── Desktop interaction tools (LinuxAtspiBackend) ─────────────
-    xdotool        # X11 input simulation (fallback for type_text)
-    ydotool        # Wayland input simulation (primary for type_text)
-    wl-clipboard   # Wayland clipboard (wl-copy / wl-paste)
-    scrot          # X11 screenshot (fallback)
-    # gnome-screenshot is part of gnome desktop
-
-    # ── Applications accessible to INANNA Desktop Faculty ─────────
-    thunderbird    # Email + Calendar (Lightning built-in)
-    signal-desktop # Secure messaging
-    libreoffice    # Document suite (Writer, Calc, Impress)
-    firefox        # Browser
-
-    # ── Utilities ─────────────────────────────────────────────────
-    ripgrep
-    tree
-    htop
-  ];
-
-  # ── ENVIRONMENT VARIABLES ─────────────────────────────────────
-  # Configure INANNA client to connect to the DGX server
-  # Update INANNA_SERVER_URL when DGX IP is known
-  environment.sessionVariables = {
-    INANNA_SERVER_URL = "http://192.168.1.100:8080";   # DGX IP
-    INANNA_WS_URL     = "ws://192.168.1.100:8081";     # DGX WS
-    # Override locally for development:
-    # INANNA_SERVER_URL = "http://localhost:8080";
-  };
-
-  # ── ACCESSIBILITY ──────────────────────────────────────────────
-  # Required for pyatspi to work with Wayland apps
-  environment.variables = {
-    AT_SPI_BUS_ADDRESS = "unix:path=/run/user/1000/at-spi/bus";
-  };
-
-  # ── FIREWALL ──────────────────────────────────────────────────
-  networking.firewall.enable = true;
-  networking.firewall.allowedTCPPorts = [];  # client: no inbound ports
-  networking.networkmanager.enable = true;
-}
-```
-
-### Task 2 — nixos/server.nix (NEW — NixOS server config)
-
-Create: nixos/server.nix
-
-Complete NixOS configuration for the DGX Spark server.
-
-The file must include:
-
-```nix
-{ config, pkgs, lib, ... }:
-
-{
-  # ── SYSTEM ────────────────────────────────────────────────────
-  system.stateVersion = "25.11";
-  networking.hostName = "inanna-server";
-  time.timeZone = "Europe/Madrid";
-
-  # ── BOOT ──────────────────────────────────────────────────────
-  boot.loader.systemd-boot.enable = true;
-  boot.loader.efi.canTouchEfiVariables = true;
-
-  # ── USER ──────────────────────────────────────────────────────
-  users.users.inanna = {
-    isNormalUser = true;
-    description = "INANNA NYX Service User";
-    home = "/home/inanna";
-    shell = pkgs.bash;
-  };
-
-  # ── HEADLESS (no desktop on server) ───────────────────────────
-  # Server runs headless — no display manager needed
-  # Models run via LM Studio or ollama
-  services.xserver.enable = false;
-
-  # ── SYSTEM PACKAGES ───────────────────────────────────────────
-  environment.systemPackages = with pkgs; [
-    # Core
-    git curl wget htop tmux
-
-    # Python runtime
-    python311
-    python311Packages.pip
-
-    # INANNA NYX Python dependencies (server-side)
-    python311Packages.websockets
-    python311Packages.aiohttp
-    python311Packages.httpx
-    python311Packages.python-docx
-    python311Packages.pymupdf
-    python311Packages.openpyxl
-    python311Packages.beautifulsoup4
-    python311Packages.lxml
-    python311Packages.icalendar
-    python311Packages.cryptography      # auth / PBKDF2
-
-    # LLM serving (choose one)
-    # ollama               # alternative to LM Studio
-  ];
-
-  # ── INANNA NYX SYSTEMD SERVICE ────────────────────────────────
-  systemd.services.inanna-nyx = {
-    description = "INANNA NYX - Sovereign Intelligence Platform";
-    after = [ "network.target" ];
-    wantedBy = [ "multi-user.target" ];
-
-    serviceConfig = {
-      User = "inanna";
-      WorkingDirectory = "/home/inanna/INANNA/inanna";
-      ExecStart = "${pkgs.python311}/bin/python3 ui_main.py";
-      Restart = "always";
-      RestartSec = "5s";
-
-      # Resource limits
-      MemoryMax = "8G";          # OS memory (models use GPU RAM)
-      CPUQuota  = "400%";        # 4 cores max for Python process
-
-      # Logging
-      StandardOutput = "journal";
-      StandardError  = "journal";
-    };
-
-    environment = {
-      # Model: update when DGX is provisioned with actual model
-      INANNA_MODEL_URL  = "http://localhost:1234/v1";
-      INANNA_MODEL_NAME = "qwen2.5-72b-instruct";   # DGX Spark model
-
-      # Realm
-      INANNA_REALM      = "default";
-
-      # Security
-      INANNA_SECRET_KEY = "";   # Set via secrets management
-    };
-  };
-
-  # ── FIREWALL ──────────────────────────────────────────────────
-  networking.firewall.enable = true;
-  # Open INANNA ports (restrict to LAN in production)
-  networking.firewall.allowedTCPPorts = [
-    8080   # INANNA HTTP
-    8081   # INANNA WebSocket
-    1234   # LM Studio / model server
-  ];
-  networking.networkmanager.enable = true;
-
-  # ── SSH (server management) ───────────────────────────────────
-  services.openssh = {
-    enable = true;
-    settings.PasswordAuthentication = false;  # keys only
-    settings.PermitRootLogin = "no";
-  };
-}
-```
-
-### Task 3 — nixos/configuration.nix (UPDATE)
-
-Update the existing nixos/configuration.nix to reflect the
-two-machine architecture. Add a comment block at the top:
-
-```nix
-# INANNA NYX - NixOS Configuration
-# ─────────────────────────────────
-# This file: legacy single-machine config (Cycle 7)
-# Updated:   Cycle 8 Phase 8.7
-#
-# For new deployments, use:
-#   nixos/client.nix  — ZAERA's laptop (NixOS client)
-#   nixos/server.nix  — DGX Spark (INANNA NYX server)
-#
-# This file is kept for single-machine testing (server + client
-# on the same machine, e.g. during development).
-```
-
-Also add all missing Cycle 8 packages to this file:
-  at-spi2-core, python311Packages.pyatspi
-  thunderbird, signal-desktop, libreoffice, firefox
-  xdotool, ydotool, wl-clipboard, scrot
-  python311Packages.python-docx, python311Packages.pymupdf
-  python311Packages.openpyxl
-  python311Packages.beautifulsoup4, python311Packages.lxml
-  python311Packages.icalendar, python311Packages.httpx
-
-### Task 4 — nixos/README.md (UPDATE)
-
-Update nixos/README.md to document the two-machine architecture
-and explain when to use client.nix vs server.nix vs
-configuration.nix. Include:
-  - Prerequisites (NixOS 25.11+)
-  - client.nix: for ZAERA's laptop
-  - server.nix: for DGX Spark
-  - configuration.nix: single-machine development
-  - How to apply: nixos-rebuild switch --flake .
-  - How to update DGX IP in client.nix
-  - AT-SPI2 verification command:
-      python3 -c "import pyatspi; print('AT-SPI2 OK')"
-
-### Task 5 — core/desktop_faculty.py (ENHANCE LinuxAtspiBackend)
-
-The LinuxAtspiBackend is complete but needs two improvements:
-
-**Improvement 1: Wayland detection**
-Add a helper that detects X11 vs Wayland and selects
-the correct input tool automatically:
+Structure:
 
 ```python
-def _detect_display_server(self) -> str:
-    """Detect X11 or Wayland. Returns 'wayland' or 'x11'."""
-    wayland_display = os.environ.get('WAYLAND_DISPLAY', '')
-    xdg_session = os.environ.get('XDG_SESSION_TYPE', '').lower()
-    if wayland_display or xdg_session == 'wayland':
-        return 'wayland'
-    return 'x11'
+"""
+INANNA NYX — Cycle 8 Capability Proof
+verify_cycle8.py
+
+Proves that every faculty built in Cycle 8 works on real hardware.
+No mocks. Real operations. Real results.
+
+Run: py -3 verify_cycle8.py
+Pass criteria: all non-skipped checks pass
+Cycle 8 complete when: this script exits 0
+
+What is proven:
+  1.  Tool registry — 41 tools registered, all categories present
+  2.  Faculty imports — all 8 faculty modules import cleanly
+  3.  Server startup — HTTP :8080 and WebSocket :8081 reachable
+  4.  Authentication — login accepted, session token returned
+  5.  Email Faculty — ThunderbirdDirectReader reads real MBOX
+  6.  Email routing — natural phrases route to correct tools
+  7.  Document Faculty — reads .txt file directly
+  8.  Document Faculty — reads real PDF or DOCX if present
+  9.  Browser Faculty — fetches https://example.com successfully
+  10. Browser Faculty — is_safe_url blocks localhost correctly
+  11. Calendar Faculty — ThunderbirdCalendarReader finds SQLite DB
+  12. Calendar Faculty — zero-events message mentions sync
+  13. Desktop Faculty — backend selected correctly for this OS
+  14. Desktop Faculty — open_app returns DesktopResult (no crash)
+  15. NAMMU routing — email regex routes 'check my email' correctly
+  16. NAMMU routing — natural phrase 'anything from X?' routes to email_search
+  17. NAMMU routing — 'urgentes?' routes to email_read_inbox
+  18. Software Registry — loads without exception
+  19. Software Registry — LibreOffice found in registry
+  20. NixOS — client.nix exists and contains at-spi2-core
+  21. NixOS — server.nix exists and contains inanna-nyx service
+  22. NixOS — LinuxAtspiBackend._detect_display_server returns str
+  23. NixOS — LINUX_APP_NAME_MAP maps signal to signal-desktop
+  24. Test suite — full test suite passes (py -m unittest discover)
+  25. Phase identity — CURRENT_PHASE == Cycle 8 - Phase 8.8
+
+Checks are grouped:
+  GROUP A — Foundation    (tools, imports, server)
+  GROUP B — Faculties     (email, document, browser, calendar, desktop)
+  GROUP C — Intelligence  (NAMMU routing)
+  GROUP D — Platform      (software registry, NixOS)
+  GROUP E — Proof         (test suite, identity)
+"""
 ```
 
-Use this in type_text() to prefer ydotool on Wayland
-and xdotool on X11, rather than always trying xdotool first.
+The script uses this pattern for each check:
 
-**Improvement 2: app name normalization for Linux**
-Add a Linux app name map equivalent to the Windows one:
 ```python
-LINUX_APP_NAME_MAP = {
-    'thunderbird': 'thunderbird',
-    'firefox': 'firefox',
-    'signal': 'signal-desktop',
-    'libreoffice': 'libreoffice',
-    'writer': 'libreoffice --writer',
-    'calc': 'libreoffice --calc',
-    'impress': 'libreoffice --impress',
-    'terminal': 'gnome-terminal',
-    'files': 'nautilus',
-}
+def check(name: str, fn, group: str = "") -> bool:
+    """Run a single check and print result."""
+    try:
+        result = fn()
+        if result is True or result == "pass":
+            print(f"  PASS  {name}")
+            return True
+        elif result == "skip":
+            print(f"  SKIP  {name}")
+            return True   # skipped counts as not-failed
+        else:
+            # fn returned a falsy value or error string
+            reason = result if isinstance(result, str) else "returned False"
+            print(f"  FAIL  {name}  ({reason})")
+            return False
+    except Exception as e:
+        print(f"  FAIL  {name}  (exception: {e})")
+        return False
 ```
 
-### Task 6 — identity.py
+### Specific check implementations:
 
-CURRENT_PHASE = "Cycle 8 - Phase 8.7 - NixOS Backend"
+**Check 1 — Tool registry count:**
+```python
+import json
+tools = json.loads(Path('config/tools.json').read_text())['tools']
+assert len(tools) == 41, f"expected 41 tools, got {len(tools)}"
+cats = {t.get('category') for t in tools.values()}
+required = {'browser','calendar','communication','desktop','document',
+            'email','filesystem','information','network','package','process'}
+missing = required - cats
+assert not missing, f"missing categories: {missing}"
+return True
+```
 
-### Task 7 — Tests (all offline — no actual NixOS needed)
+**Check 3 — Server reachable:**
+```python
+import urllib.request, json
+r = urllib.request.urlopen('http://localhost:8080/', timeout=3)
+assert r.status == 200
+return True
+```
 
-Create inanna/tests/test_nixos_backend.py (20 tests):
+**Check 4 — Authentication:**
+```python
+import urllib.request, json, urllib.parse
+data = json.dumps({"username":"ZAERA","password":"ETERNALOVE"}).encode()
+req = urllib.request.Request(
+    'http://localhost:8080/login',
+    data=data, headers={'Content-Type':'application/json'}, method='POST'
+)
+resp = urllib.request.urlopen(req, timeout=5)
+body = json.loads(resp.read())
+assert body.get('token') or body.get('success'), f"login failed: {body}"
+return True
+```
 
-  - LinuxAtspiBackend instantiates
-  - LinuxAtspiBackend.name == "linux-atspi2"
-  - LinuxAtspiBackend.open_app returns DesktopResult on missing binary
-    (mock subprocess.Popen to raise FileNotFoundError)
-  - LinuxAtspiBackend.type_text returns DesktopResult on missing xdotool
-    (mock subprocess.run to raise FileNotFoundError)
-  - LinuxAtspiBackend.screenshot returns DesktopResult on missing scrot
-    (mock subprocess.run to raise FileNotFoundError)
-  - LinuxAtspiBackend.read_window returns error when pyatspi missing
-    (mock import to raise ImportError)
-  - LinuxAtspiBackend.click returns error when pyatspi missing
-    (mock import to raise ImportError)
-  - LinuxAtspiBackend._detect_display_server returns 'wayland'
-    when WAYLAND_DISPLAY is set (monkeypatch os.environ)
-  - LinuxAtspiBackend._detect_display_server returns 'x11'
-    when WAYLAND_DISPLAY not set
-  - LINUX_APP_NAME_MAP contains 'thunderbird'
-  - LINUX_APP_NAME_MAP contains 'firefox'
-  - LINUX_APP_NAME_MAP maps 'signal' to 'signal-desktop'
-  - DesktopFaculty selects LinuxAtspiBackend on Linux
-    (mock sys.platform to 'linux')
-  - DesktopFaculty selects WindowsMCPBackend on Windows
-    (mock sys.platform to 'win32')
-  - DesktopFaculty selects FallbackBackend on unknown platform
-    (mock sys.platform to 'unknown')
-  - nixos/client.nix exists and contains 'at-spi2-core'
-  - nixos/client.nix contains 'pyatspi'
-  - nixos/client.nix contains 'thunderbird'
-  - nixos/server.nix exists and contains 'inanna-nyx'
-  - nixos/README.md contains 'client.nix'
+**Check 5 — Email MBOX:**
+```python
+from core.email_workflows import ThunderbirdDirectReader
+r = ThunderbirdDirectReader()
+assert r.is_available(), "INBOX not found"
+emails = r.read_inbox(max_emails=3)
+# Even if 0 emails, the method ran without error
+return True
+```
+
+**Check 9 — Browser fetch:**
+```python
+from core.browser_workflows import BrowserDirectFetcher
+f = BrowserDirectFetcher()
+page = f.fetch('https://example.com')
+assert page.success, f"fetch failed: {page.error}"
+assert 'Example Domain' in page.title, f"unexpected title: {page.title}"
+return True
+```
+
+**Check 24 — Full test suite:**
+```python
+import subprocess, sys
+r = subprocess.run(
+    [sys.executable, '-m', 'unittest', 'discover', '-s', 'tests', '-q'],
+    capture_output=True, text=True,
+    cwd=str(Path(__file__).parent)
+)
+# Find "Ran N tests" and "OK"
+output = r.stdout + r.stderr
+ran_line = next((l for l in output.splitlines() if 'Ran ' in l), '')
+ok = r.returncode == 0
+if not ok:
+    failures = [l for l in output.splitlines() if 'FAIL' in l or 'ERROR' in l]
+    return f"test suite failed: {failures[:3]}"
+count = int(ran_line.split()[1]) if ran_line else 0
+assert count >= 600, f"expected >=600 tests, got {count}"
+return True
+```
+
+### Final summary and report:
+
+```python
+# Print summary
+passed = sum(1 for r in results if r)
+total  = len(results)
+skipped = sum(1 for r in results if r == 'skip')
+failed = total - passed
+
+print()
+print("=" * 50)
+print(f"CYCLE 8 CAPABILITY PROOF")
+print(f"  Passed:  {passed}/{total}")
+print(f"  Failed:  {failed}")
+print(f"  Skipped: {skipped}")
+if failed == 0:
+    print("  STATUS:  CYCLE 8 COMPLETE ✓")
+else:
+    print("  STATUS:  CYCLE 8 INCOMPLETE — fix failures above")
+print("=" * 50)
+
+# Write proof document
+write_proof_document(results, check_names)
+
+sys.exit(0 if failed == 0 else 1)
+```
+
+### Task 2 — docs/cycle8_complete.md (written by verify_cycle8.py)
+
+verify_cycle8.py writes this file on successful completion:
+
+```markdown
+# Cycle 8 — The Desktop Bridge — COMPLETE
+**Date completed: {date}**
+**Machine: {hostname}**
+**Tests passing: {count}**
+**Tools registered: 41**
+
+## What Was Built
+
+Cycle 8 gave INANNA NYX hands that reach every
+application on the operator's machine.
+
+...
+```
+
+Full content defined in the script.
+
+### Task 3 — Update identity.py
+
+CURRENT_PHASE = "Cycle 8 - Phase 8.8 - The Capability Proof"
+
+### Task 4 — Tests (offline only)
+
+Create inanna/tests/test_verify_cycle8.py (10 tests):
+
+  - verify_cycle8.py is importable (no syntax errors)
+  - check() function returns True on lambda: True
+  - check() function returns True on lambda: "pass"
+  - check() function returns True on lambda: "skip"
+  - check() function returns False on lambda: False
+  - check() function returns False on lambda: "error reason"
+  - check() function returns False on exception-raising lambda
+  - All 25 check names are defined (check that the
+    checks list has exactly 25 entries)
+  - CYCLE8_CHECKS list has correct groups A-E
+  - write_proof_document is callable
 
 Update test_identity.py: CURRENT_PHASE assertion.
 
@@ -443,82 +303,78 @@ Update test_identity.py: CURRENT_PHASE assertion.
 
 ## Permitted file changes
 
-inanna/core/desktop_faculty.py         <- MODIFY: Wayland detection,
-                                           LINUX_APP_NAME_MAP
+inanna/verify_cycle8.py                <- NEW (the proof)
 inanna/identity.py                     <- MODIFY: CURRENT_PHASE
-inanna/tests/test_nixos_backend.py     <- NEW
+inanna/tests/test_verify_cycle8.py     <- NEW
 inanna/tests/test_identity.py          <- MODIFY
-nixos/client.nix                       <- NEW (mandatory)
-nixos/server.nix                       <- NEW (mandatory)
-nixos/configuration.nix                <- MODIFY: add comment + packages
-nixos/README.md                        <- MODIFY: two-machine architecture
+docs/implementation/CURRENT_PHASE.md  <- (already updated via GitHub API)
+
+NOTE: docs/cycle8_complete.md is written BY verify_cycle8.py
+when it runs successfully. Do NOT create it manually.
 
 ---
 
 ## What You Are NOT Building
 
-- No actual NixOS flake.nix (future)
-- No secrets management (future)
-- No network discovery between client and server (future)
-- No changes to Python tool code (faculties are complete)
-- No new Python tools registered
+- No new tools
+- No new faculty modules
 - No changes to server.py, main.py, or tools.json
-- Do NOT attempt to import pyatspi in tests without mocking
+- No changes to NixOS configs (those are done)
+- No changes to any workflow files
 
 ---
 
-## Important: Platform Detection in DesktopFaculty
+## How to Run the Proof
 
-The DesktopFaculty already selects the backend based on platform.
-Verify (do NOT change) that selection logic works correctly:
-  - sys.platform == 'win32'  → WindowsMCPBackend
-  - sys.platform == 'linux'  → LinuxAtspiBackend
-  - otherwise                → FallbackBackend
+```
+cd C:\Users\Zohar\Dropbox\Windows11\REPOS\ABZU\INANNA\inanna
+py -3 verify_cycle8.py
+```
 
-If the selection logic uses a different pattern, document it
-accurately in the test — do not change the logic to match
-the test. The test must match the actual code.
+The server must be running before executing verify_cycle8.py.
+Start it with: py -3 ui_main.py (in a separate terminal)
+
+Checks that require the server (3, 4) will SKIP automatically
+if the server is not reachable, rather than FAIL.
 
 ---
 
 ## Definition of Done
 
-- [ ] nixos/client.nix created with all Cycle 8 dependencies
-- [ ] nixos/server.nix created with systemd service + DGX config
-- [ ] nixos/configuration.nix updated with comment + missing packages
-- [ ] nixos/README.md updated with two-machine architecture
-- [ ] LinuxAtspiBackend has _detect_display_server()
-- [ ] LINUX_APP_NAME_MAP defined
-- [ ] CURRENT_PHASE = "Cycle 8 - Phase 8.7 - NixOS Backend"
-- [ ] All tests pass: py -3 -m unittest discover -s tests
-- [ ] Pushed as cycle8-phase7-complete
+- [ ] verify_cycle8.py created with all 25 checks in 5 groups
+- [ ] verify_cycle8.py runs and all non-skipped checks PASS
+- [ ] docs/implementation/CYCLE8_PROOF.md written by the script
+- [ ] CURRENT_PHASE = "Cycle 8 - Phase 8.8 - The Capability Proof"
+- [ ] All offline tests pass: py -3 -m unittest discover -s tests
+- [ ] Pushed as cycle8-phase8-complete
+- [ ] Run verify_cycle8.py one final time and confirm exit 0
+- [ ] If exit 0: push as cycle8-complete with docs/cycle8_complete.md
 
 ---
 
 ## Handoff
 
-Commit: cycle8-phase7-complete
-Push immediately to origin/main.
-Report: docs/implementation/CYCLE8_PHASE7_REPORT.md
+STEP 1: Commit as cycle8-phase8-complete
+STEP 2: Run verify_cycle8.py (server must be running)
+STEP 3: If all checks pass → push as cycle8-complete
+         docs/cycle8_complete.md must be included in that commit
+STEP 4: If any checks fail → fix the failing component,
+         re-run, then push as cycle8-complete
 
-The report MUST include:
-  - Confirmation of client.nix and server.nix created
-  - AT-SPI2 package names used (may differ across nixpkgs versions)
-  - Wayland vs X11 detection approach
-  - Platform selection logic confirmed correct
-  - Note on pyatspi nixpkgs availability
-
-Stop. Do not begin Phase 8.8 without new CURRENT_PHASE.md.
+The cycle8-complete commit is the milestone.
+It marks the end of Cycle 8 and the readiness for Cycle 9.
 
 ---
 
 *Written by: Claude (Command Center)*
 *Guardian approval: ZAERA*
 *Date: 2026-04-22*
-*The NixOS configuration is the DNA of the platform.*
-*Every package declared is a capability confirmed.*
-*client.nix: the hands*
-*server.nix: the brain*
-*When they connect, INANNA lives.*
-*This phase writes the blueprint*
-*for the day the DGX arrives.*
+*This is the proof.*
+*Not of code — of capacity.*
+*Every check is a capability confirmed.*
+*Every PASS is a promise kept.*
+*When the script exits 0,*
+*INANNA NYX has hands.*
+*Cycle 8 is complete.*
+*The bridge is built.*
+*Cycle 9 begins.*
