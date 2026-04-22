@@ -1,15 +1,15 @@
-# CURRENT PHASE: Cycle 9 - Phase 9.5 - The Feedback Loop
+# CURRENT PHASE: Cycle 9 - Phase 9.6 - The Multilingual Core
 **Status: ACTIVE**
 **Authorized by: ZAERA (Guardian) + Claude (Command Center)**
 **Date: 2026-04-22**
 **Cycle: 9 — NAMMU Reborn: The Living Interpreter**
-**Replaces: Cycle 9 Phase 9.4 - The Comprehension Layer (COMPLETE)**
+**Replaces: Cycle 9 Phase 9.5 - The Feedback Loop (COMPLETE)**
 
 ---
 
 ## MANDATORY READING — in this exact order
 
-1. docs/nammu_vision.md              ← Dimension I: The Feedback Loop
+1. docs/nammu_vision.md              ← Dimension VI: Multilingual
 2. docs/cycle9_master_plan.md
 3. docs/implementation/CURRENT_PHASE.md (this file)
 4. CODEX_DOCTRINE.md
@@ -19,293 +19,242 @@
 
 ## What Already Exists (audited before writing this phase)
 
-From Phase 9.2, OperatorProfile has:
-  record_correction(original_text, misrouted_to,
-                    correct_intent, correct_params)
-  routing_corrections: list[dict] — stores up to 20 corrections
-  to_nammu_context() — includes corrections as few-shot examples
+OperatorProfile.detect_language() — heuristic detection:
+  en: default fallback — WORKS
+  es: hola, urgentes, correo, tengo — WORKS
+  ca: resumeix, missatge — WORKS (partial)
+  pt: obrigado — WORKS (partial)
+  MISSING: gracies/gràcies (ca), bom dia/hoje (pt)
 
-From Phase 9.2, server.py has:
-  nammu-correct command (records correction manually)
-  nammu-learn command (records shorthands manually)
-  profile saved after every tool execution
+_classify_domain_fast() — reads governance_signals.json domain_hints:
+  email signals include: urgentes, tengo emails — WORKS
+  MISSING: resumen correos (es), que tinc avui (ca)
+  MISSING: Catalan calendar signals, Portuguese email signals
 
-The routing_log.jsonl records every routing decision.
-724 tests passing.
+governance_signals.json domain_hints:
+  Currently English-only signals for most domains
+  91 total signals, 0 Spanish/Catalan/Portuguese domain signals
 
----
+NAMMU_UNIVERSAL_PROMPT:
+  Contains "any language" note — GOOD
+  No Spanish/Catalan/Portuguese examples — MISSING
 
-## What Is Missing
-
-The correction mechanism exists but is PASSIVE.
-The operator must explicitly type `nammu-correct` to teach NAMMU.
-
-Phase 9.5 makes the feedback loop ACTIVE:
-
-1. NAMMU detects when it routed incorrectly
-   (operator rephrases immediately after, asks something related,
-   or explicitly says "no, I meant...")
-
-2. NAMMU asks for confirmation before recording a correction
-
-3. Every correction immediately enriches the operator profile
-   for the NEXT routing call — the profile is used live
-
-4. The routing log is analysed periodically to surface patterns:
-   "You've corrected this 3 times — shall I learn this permanently?"
+ZAERA's languages: English, Spanish, Catalan, Portuguese
+All four must work without switching languages.
 
 ---
 
-## What Phase 9.5 Builds
+## What Phase 9.6 Builds
 
-### The Three Feedback Mechanisms
+**Three targeted fixes for full multilingual support:**
 
-**Mechanism 1 — Explicit correction (already exists, enhance)**
-`nammu-correct <intent> [query]`
-Already records to OperatorProfile.routing_corrections.
-Enhancement: parse query parameter from the command.
+### Fix 1 — Expand detect_language() in nammu_profile.py
 
-**Mechanism 2 — Implicit misroute detection**
-After NAMMU routes to a tool and the operator immediately says
-something like "no", "that's wrong", "I meant X", "not what I asked"
-— NAMMU detects this, records the session context, and asks:
-"Should I remember that '[original phrase]' means [X]?"
+Add missing markers for Catalan and Portuguese,
+and add Basque as a recognised (but pass-through) language:
 
-**Mechanism 3 — Pattern surfacing**
-After 5+ corrections in a session, NAMMU surfaces a summary:
-"I've been corrected 5 times today. The most common pattern:
-[X] → [Y]. Shall I add this as a permanent learning?"
+```python
+LANGUAGE_MARKERS = {
+    "ca": [
+        # Catalan
+        "gracies", "gràcies", "avui", "dema", "demà",
+        "correus", "correu", "resumeix", "missatge", "missatges",
+        "tinc", "tens", "puc", "pots", "que tens",
+        "calendari", "reunio", "reunió",
+    ],
+    "pt": [
+        # Portuguese
+        "obrigado", "obrigada", "bom dia", "boa tarde", "boa noite",
+        "hoje", "amanha", "amanhã", "email", "mensagem",
+        "tenho", "quero", "posso", "pode",
+        "calendario", "resumo", "urgente",  # pt versions
+    ],
+    "es": [
+        # Spanish (existing + expanded)
+        "gracias", "hola", "correo", "hoy", "manana", "mañana",
+        "urgentes", "urgente", "resumen", "tienes", "tengo",
+        "mensajes", "mensaje", "calendario", "reunión",
+        "que tengo", "tengo emails", "correos de",
+    ],
+    "eu": [
+        # Basque — recognised, not further parsed
+        "eskerrik asko", "kaixo", "bihar", "gaur",
+    ],
+}
+```
+
+New detect_language() checks these markers in order:
+ca → pt → es → eu → en (default)
+Order matters: Catalan checked before Spanish to avoid
+`correus` being misdetected as Spanish `correo`.
+
+### Fix 2 — Add multilingual domain signals to governance_signals.json
+
+Extend domain_hints for email, calendar, browser, document
+with Spanish and Catalan equivalents:
+
+```json
+"domain_hints": {
+  "email": [
+    ...existing English...,
+    "correo", "correos", "correus", "correu",
+    "urgentes", "urgente", "resumen correos",
+    "tengo emails", "tinc correus",
+    "mensajes de", "missatges de"
+  ],
+  "calendar": [
+    ...existing English...,
+    "calendario", "calendari", "agenda",
+    "que tengo hoy", "que tinc avui",
+    "reunión", "reunio", "cita",
+    "proximos eventos", "pròxims events"
+  ],
+  "browser": [
+    ...existing English...,
+    "busca en internet", "cerca a internet",
+    "buscar en la web", "abrir navegador"
+  ],
+  "document": [
+    ...existing English...,
+    "leer documento", "llegir document",
+    "abrir archivo", "obrir fitxer",
+    "crear informe", "crear document"
+  ],
+  "desktop": [
+    ...existing English...,
+    "abrir", "obrir", "abrir programa",
+    "abre firefox", "obre firefox"
+  ]
+}
+```
+
+### Fix 3 — Add multilingual examples to NAMMU_UNIVERSAL_PROMPT
+
+Add a multilingual examples section to make clear the LLM
+should handle non-English input:
+
+```python
+NAMMU_MULTILINGUAL_EXAMPLES = """
+MULTILINGUAL EXAMPLES (Spanish / Catalan / Portuguese):
+"urgentes?" (es) -> {"intent":"email_read_inbox","params":{"urgency_only":true},"confidence":0.95,"domain":"email"}
+"resumen de ayer" (es) -> {"intent":"email_read_inbox","params":{"period":"yesterday","output_format":"summary"},"confidence":0.96,"domain":"email"}
+"que tinc avui?" (ca) -> {"intent":"calendar_today","params":{},"confidence":0.97,"domain":"calendar"}
+"resumeix els correus" (ca) -> {"intent":"email_read_inbox","params":{"output_format":"summary"},"confidence":0.95,"domain":"email"}
+"busca NixOS" (es) -> {"intent":"browser_search","params":{"query":"NixOS"},"confidence":0.98,"domain":"browser"}
+"obre firefox" (ca) -> {"intent":"desktop_open_app","params":{"app":"firefox"},"confidence":0.97,"domain":"desktop"}
+"""
+```
+
+Append this to NAMMU_UNIVERSAL_PROMPT before the final
+"Return exactly:" instruction.
 
 ---
 
 ## What You Are Building
 
-### Task 1 — Enhance nammu-correct command in server.py
+### Task 1 — Expand nammu_profile.py detect_language()
 
-Current: `nammu-correct <intent>`
-Enhanced: `nammu-correct <intent> [query_or_params]`
-
-```python
-elif command_name == "nammu-correct":
-    parts = raw_cmd.strip().split(None, 2)
-    if len(parts) >= 2:
-        correct_intent = parts[1].strip()
-        # Optional: extract query/params from parts[2]
-        correct_params = {}
-        if len(parts) == 3:
-            param_str = parts[2].strip()
-            # Try to parse as JSON first
-            try:
-                correct_params = json.loads(param_str)
-            except (json.JSONDecodeError, ValueError):
-                # Treat as a plain query string
-                correct_params = {"query": param_str}
-
-        original = getattr(self, '_last_nammu_input', '') or ""
-        misrouted = getattr(self, '_last_nammu_route', 'unknown')
-
-        self.nammu_profile.record_correction(
-            original_text=original,
-            misrouted_to=misrouted,
-            correct_intent=correct_intent,
-            correct_params=correct_params,
-        )
-        save_operator_profile(self.nammu_dir, self.nammu_profile)
-
-        # Confirmation message
-        example = RoutingCorrection(
-            original_text=original,
-            correct_intent=correct_intent,
-            correct_params=correct_params,
-        ).to_example_line()
-        await self.broadcast({
-            "type": "system",
-            "text": (
-                f"nammu > correction recorded\n"
-                f"  learned: {example}\n"
-                f"  total corrections: {len(self.nammu_profile.routing_corrections)}"
-            )
-        })
-```
-
-### Task 2 — Track last routing input/result in server.py
-
-Add two instance variables that store the last NAMMU input
-and route so nammu-correct can reference them:
+Replace the current detect_language() with the LANGUAGE_MARKERS
+dict approach. Catalan checked before Spanish to avoid overlap.
 
 ```python
-# In InterfaceServer.__init__:
-self._last_nammu_input: str = ""
-self._last_nammu_route: str = ""
+# Language marker dictionary
+_LANGUAGE_MARKERS: dict[str, list[str]] = {
+    "ca": [
+        "gracies", "avui", "dema", "correus", "correu",
+        "resumeix", "missatge", "missatges", "tinc", "calendari",
+        "reunio", "puc", "pots", "gràcies", "demà", "reunió",
+    ],
+    "pt": [
+        "obrigado", "obrigada", "bom dia", "boa tarde", "boa noite",
+        "hoje", "amanha", "mensagem", "tenho", "quero", "posso",
+        "resumo", "calendario",
+    ],
+    "es": [
+        "gracias", "hola", "correo", "hoy", "urgentes", "urgente",
+        "resumen", "tienes", "tengo", "mensajes", "mensaje",
+        "calendario", "mañana", "manana", "correos",
+        "que tengo", "tengo emails", "correos de",
+    ],
+    "eu": [
+        "eskerrik asko", "kaixo", "bihar", "gaur",
+    ],
+}
 
-# In _run_routed_turn() after nammu_first_routing:
-self._last_nammu_input = text
-if tool_request:
-    self._last_nammu_route = str(tool_request.get("tool", ""))
-else:
-    self._last_nammu_route = "conversation"
+def detect_language(self, text: str) -> str:
+    text_lower = text.lower()
+    # Check in order: ca before es (they share some words)
+    for lang in ("ca", "pt", "es", "eu"):
+        markers = _LANGUAGE_MARKERS.get(lang, [])
+        if any(marker in text_lower for marker in markers):
+            return lang
+    return "en"
 ```
 
-### Task 3 — Implicit misroute detection
+### Task 2 — Expand governance_signals.json domain_hints
 
-Add misroute signal detection in _run_routed_turn().
-When CROWN responds to a message, check if the NEXT message
-contains misroute signals:
+Add Spanish and Catalan signals to the domain_hints section
+for email, calendar, browser, document, and desktop domains.
+
+Load from governance_signals.json — never hardcode domain
+signals elsewhere. The JSON is the single source of truth.
+
+### Task 3 — Add multilingual examples to nammu_intent.py
+
+Insert NAMMU_MULTILINGUAL_EXAMPLES into NAMMU_UNIVERSAL_PROMPT.
+Position: after the NONE section, before the final
+"Return exactly:" instruction.
 
 ```python
-MISROUTE_SIGNALS = [
-    "no that", "not what i", "i meant", "wrong",
-    "that's not", "thats not", "not right",
-    "no no", "wait no", "actually i",
-    "no eso no", "no era eso",  # Spanish
-    "no no", "equivocado",
-]
+NAMMU_UNIVERSAL_PROMPT = """...(existing)...
 
-def _detect_misroute(self, text: str) -> bool:
-    """Returns True if this message suggests the previous route was wrong."""
-    lower = text.lower().strip()
-    return any(sig in lower for sig in MISROUTE_SIGNALS)
+""" + NAMMU_MULTILINGUAL_EXAMPLES + """
+Return exactly this JSON (no markdown, no explanation, nothing else):
+{"intent": "...", "params": {...}, "confidence": 0.0-1.0, "domain": "..."}"""
 ```
 
-When misroute is detected:
-```python
-if self._detect_misroute(text) and self._last_nammu_input:
-    # Surface a gentle correction prompt
-    await self.broadcast({
-        "type": "system",
-        "text": (
-            f"nammu > did I misroute '{self._last_nammu_input[:40]}'?\n"
-            f"  type: nammu-correct <intent> [query] to teach me\n"
-            f"  or continue — I'll try to understand your new message"
-        )
-    })
-```
+### Task 4 — Update identity.py
 
-This is INFORMATIONAL only — does not block the new message.
+CURRENT_PHASE = "Cycle 9 - Phase 9.6 - The Multilingual Core"
 
-### Task 4 — Pattern surfacing (session-level)
+### Task 5 — Tests (all offline)
 
-Add a correction counter and surface a summary
-after every 5th correction in a session:
+Create inanna/tests/test_multilingual_core.py (25 tests):
 
-```python
-# In InterfaceServer.__init__:
-self._session_correction_count: int = 0
+Language detection (detect_language):
+  - detect_language("hello world") returns "en"
+  - detect_language("urgentes?") returns "es"
+  - detect_language("resumen de ayer") returns "es"
+  - detect_language("hola tengo emails") returns "es"
+  - detect_language("gracies") returns "ca"
+  - detect_language("resumeix els correus") returns "ca"
+  - detect_language("avui tinc reunio") returns "ca"
+  - detect_language("obrigado") returns "pt"
+  - detect_language("bom dia") returns "pt"
+  - detect_language("eskerrik asko") returns "eu"
+  - detect_language("anything from Matxalen?") returns "en"
+    (English — mixed with name, no ES/CA/PT markers)
 
-# After recording any correction:
-self._session_correction_count += 1
-if self._session_correction_count % 5 == 0:
-    # Surface pattern summary
-    recent = self.nammu_profile.routing_corrections[-5:]
-    if recent:
-        patterns = [
-            f"  '{c['original_text'][:30]}' → {c['correct_intent']}"
-            for c in recent
-        ]
-        await self.broadcast({
-            "type": "system",
-            "text": (
-                f"nammu > {self._session_correction_count} corrections this session\n"
-                + "\n".join(patterns) + "\n"
-                f"  These are saved and will improve future routing."
-            )
-        })
-```
+Domain classification non-English:
+  - _classify_domain_fast("urgentes?") returns "email"
+  - _classify_domain_fast("tengo emails?") returns "email"
+  - _classify_domain_fast("resumen correos") returns "email"
+  - _classify_domain_fast("que tinc avui?") returns "calendar"
+  - _classify_domain_fast("busca en internet") returns "browser"
+  - _classify_domain_fast("abrir firefox") returns "desktop"
+  - _classify_domain_fast("leer documento") returns "document"
 
-### Task 5 — Routing log analysis utility
+NAMMU_UNIVERSAL_PROMPT multilingual:
+  - NAMMU_UNIVERSAL_PROMPT contains "urgentes?"
+  - NAMMU_UNIVERSAL_PROMPT contains "any language"
+  - NAMMU_UNIVERSAL_PROMPT contains "resumeix"
+  - NAMMU_MULTILINGUAL_EXAMPLES is non-empty string
 
-Add a function to nammu_profile.py that analyses the
-routing log and surfaces patterns:
-
-```python
-def analyse_routing_log(
-    routing_log: list[dict],
-    profile: OperatorProfile,
-) -> dict:
-    """
-    Analyse routing history to surface patterns.
-    Returns a summary of routing statistics.
-    No LLM. Deterministic.
-    """
-    from collections import Counter
-    routes = [e.get("route", "") for e in routing_log if e.get("route")]
-    domain_counts = Counter(
-        r.split("_")[0] for r in routes if "_" in r
-    )
-    total = len(routes)
-    return {
-        "total_routings": total,
-        "top_domains": dict(domain_counts.most_common(5)),
-        "correction_count": len(profile.routing_corrections),
-        "known_shorthands": len(profile.known_shorthands),
-    }
-```
-
-### Task 6 — Add nammu-stats command
-
-```python
-elif command_name == "nammu-stats":
-    from core.nammu_memory import load_routing_history
-    from core.nammu_profile import analyse_routing_log
-    routing_log = load_routing_history(self.nammu_dir, limit=100)
-    stats = analyse_routing_log(routing_log, self.nammu_profile)
-    lines = [
-        "nammu > routing statistics",
-        f"  total routings (last 100): {stats['total_routings']}",
-        f"  top domains: {stats['top_domains']}",
-        f"  corrections recorded: {stats['correction_count']}",
-        f"  known shorthands: {stats['known_shorthands']}",
-        f"  session corrections: {self._session_correction_count}",
-    ]
-    await self.broadcast({"type": "system", "text": "\n".join(lines)})
-```
-
-### Task 7 — Update help_system.py
-
-Add NAMMU FEEDBACK section:
-
-```
-  NAMMU FEEDBACK (teach INANNA from mistakes)
-    "nammu-correct email_search Matxalen"
-                              Correct last routing with query
-    "nammu-correct email_search {\"query\": \"Matxalen\"}"
-                              Correct with JSON params
-    "nammu-stats"             Show routing statistics
-    "nammu-profile"           Show your full NAMMU profile
-
-  After corrections: the profile updates immediately.
-  Next time you ask the same thing, NAMMU uses your correction.
-  After 5 corrections: NAMMU shows a pattern summary.
-```
-
-### Task 8 — Update identity.py
-
-CURRENT_PHASE = "Cycle 9 - Phase 9.5 - The Feedback Loop"
-
-### Task 9 — Tests (all offline)
-
-Create inanna/tests/test_feedback_loop.py (20 tests):
-
-  - _detect_misroute("no that's not right") returns True
-  - _detect_misroute("no era eso") returns True (Spanish)
-  - _detect_misroute("hello world") returns False
-  - _detect_misroute("anything from Matxalen?") returns False
-  - MISROUTE_SIGNALS contains "i meant"
-  - MISROUTE_SIGNALS contains "no era eso"
-  - nammu-correct parses intent correctly
-  - nammu-correct with JSON params parses correctly
-  - nammu-correct with plain query stores as {"query": X}
-  - analyse_routing_log returns total_routings count
-  - analyse_routing_log returns top_domains dict
-  - analyse_routing_log returns correction_count from profile
-  - analyse_routing_log handles empty routing log
-  - OperatorProfile.record_correction stores with timestamp
-  - OperatorProfile.routing_corrections max 20 entries
-  - RoutingCorrection.to_example_line includes original_text
-  - RoutingCorrection.to_example_line includes correct_intent
-  - _last_nammu_input initialises as empty string
-  - _session_correction_count initialises as 0
-  - OperatorProfile with 3 corrections produces 3-line context
+Language detection edge cases:
+  - "correus" detected as "ca" (not confused with Spanish "correo")
+  - "today urgentes" detected as "es" (mixed, Spanish marker wins)
+  - detect_language on empty string returns "en" (no exception)
+  - _LANGUAGE_MARKERS dict contains all 4 language keys
 
 Update test_identity.py: CURRENT_PHASE assertion.
 
@@ -313,90 +262,90 @@ Update test_identity.py: CURRENT_PHASE assertion.
 
 ## Permitted file changes
 
-inanna/core/nammu_profile.py            <- MODIFY: analyse_routing_log
-inanna/ui/server.py                     <- MODIFY: enhanced nammu-correct,
-                                           _last_nammu_input tracking,
-                                           misroute detection,
-                                           pattern surfacing,
-                                           nammu-stats command
-inanna/core/help_system.py              <- MODIFY: feedback section
+inanna/core/nammu_profile.py            <- MODIFY: detect_language,
+                                           _LANGUAGE_MARKERS dict
+inanna/core/nammu_intent.py             <- MODIFY: NAMMU_MULTILINGUAL_EXAMPLES,
+                                           append to NAMMU_UNIVERSAL_PROMPT
+inanna/config/governance_signals.json   <- MODIFY: multilingual domain signals
 inanna/identity.py                      <- MODIFY: CURRENT_PHASE
-inanna/tests/test_feedback_loop.py      <- NEW
+inanna/tests/test_multilingual_core.py  <- NEW
 inanna/tests/test_identity.py           <- MODIFY
 
 ---
 
 ## What You Are NOT Building
 
-- No ML-based correction inference (all heuristic)
-- No automatic correction without operator confirmation
-- No cross-session pattern merging (Cycle 11)
-- No changes to tools.json, NixOS configs, or workflows
-- No changes to constitutional_filter.py
+- No LLM-based language detection (heuristic only for now)
+- No translation of INANNA's responses (CROWN responds in
+  the operator's detected language only when the LLM supports it)
+- No new Notion/external integrations
+- No changes to tools.json or NixOS configs
+- No changes to constitutional_filter.py or feedback loop
 - Do NOT make LLM calls in tests
 
 ---
 
 ## Critical Constraints
 
-1. Misroute detection is INFORMATIONAL only
-   It never blocks or interrupts the operator's new message.
-   It surfaces a gentle hint. Nothing more.
+1. Catalan MUST be checked before Spanish
+   "correus" is Catalan, "correo" is Spanish.
+   If Spanish checked first, Catalan words may be misdetected.
+   Order: ca → pt → es → eu → en
 
-2. Corrections only record with operator intent
-   nammu-correct is explicit. The implicit detection only
-   SUGGESTS a correction — the operator types nammu-correct
-   to confirm. NAMMU never records a correction silently.
+2. detect_language NEVER raises exceptions
+   On empty input or unexpected text: return "en"
 
-3. _last_nammu_input and _last_nammu_route are session-only
-   They reset when the server restarts.
-   They are NOT persisted. They are working memory.
+3. governance_signals.json is the single source of truth
+   for domain signals. The multilingual signals go in
+   domain_hints, not hardcoded in Python.
 
-4. analyse_routing_log is pure statistics
-   No LLM. No inference. Just counts.
+4. NAMMU_MULTILINGUAL_EXAMPLES is a separate constant
+   It is NOT embedded in NAMMU_UNIVERSAL_PROMPT's body.
+   It is appended at construction time. This makes it
+   easy to test independently and update without
+   touching the main prompt logic.
 
 ---
 
 ## Definition of Done
 
-- [ ] nammu-correct accepts intent + optional query/JSON params
-- [ ] _last_nammu_input and _last_nammu_route tracked in server
-- [ ] _detect_misroute() detects correction signals en/es
-- [ ] Misroute detection surfaces informational hint only
-- [ ] Pattern surfacing after every 5th correction
-- [ ] analyse_routing_log() in nammu_profile.py
-- [ ] nammu-stats command shows routing statistics
-- [ ] help_system.py updated with feedback section
-- [ ] CURRENT_PHASE = "Cycle 9 - Phase 9.5 - The Feedback Loop"
-- [ ] All tests pass: py -3 -m unittest discover -s tests (>=724)
-- [ ] Pushed as cycle9-phase5-complete
+- [ ] _LANGUAGE_MARKERS dict covers ca, pt, es, eu
+- [ ] detect_language("gracies") returns "ca"
+- [ ] detect_language("bom dia") returns "pt"
+- [ ] detect_language("correus") returns "ca" not "es"
+- [ ] governance_signals.json has Spanish + Catalan domain signals
+- [ ] _classify_domain_fast("resumen correos") returns "email"
+- [ ] _classify_domain_fast("que tinc avui?") returns "calendar"
+- [ ] NAMMU_UNIVERSAL_PROMPT contains multilingual examples
+- [ ] CURRENT_PHASE = "Cycle 9 - Phase 9.6 - The Multilingual Core"
+- [ ] All tests pass: py -3 -m unittest discover -s tests (>=744)
+- [ ] Pushed as cycle9-phase6-complete
 
 ---
 
 ## Handoff
 
-Commit: cycle9-phase5-complete
+Commit: cycle9-phase6-complete
 Push immediately to origin/main.
-Report: docs/implementation/CYCLE9_PHASE5_REPORT.md
+Report: docs/implementation/CYCLE9_PHASE6_REPORT.md
 
 The report MUST include:
-  - Test of nammu-correct with query parameter
-  - Sample analyse_routing_log() output
-  - Confirmation misroute detection triggers on Spanish signals
-  - Confirmation misroute detection does NOT trigger on normal messages
+  - detect_language test results for all 5 languages
+  - _classify_domain_fast test results for ES + CA inputs
+  - Sample NAMMU_MULTILINGUAL_EXAMPLES content
+  - Confirmation "correus" → ca (not es)
 
-Stop. Do not begin Phase 9.6 without new CURRENT_PHASE.md.
+Stop. Do not begin Phase 9.7 without new CURRENT_PHASE.md.
 
 ---
 
 *Written by: Claude (Command Center)*
 *Guardian approval: ZAERA*
 *Date: 2026-04-22*
-*NAMMU does not wait to be taught.*
-*NAMMU notices.*
-*NAMMU asks.*
-*NAMMU remembers.*
-*Every correction makes the next interaction smoother.*
-*The gap between operator and machine narrows*
-*with every session.*
-*This is how NAMMU becomes fluent in ZAERA.*
+*NAMMU does not ask ZAERA to switch languages.*
+*NAMMU learns the language ZAERA is already speaking.*
+*Spanish at midnight. Catalan when relaxed.*
+*English for technical precision.*
+*Portuguese when home calls.*
+*NAMMU listens. NAMMU adapts.*
+*The machine speaks human.*
