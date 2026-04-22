@@ -3227,19 +3227,42 @@ class InterfaceServer:
                 "assistant",
                 f"[OPERATOR] {result.tool} executed. Processing results.",
             )
-            tool_instruction = (
-                f"OPERATOR FACULTY COMPLETED: {result.tool} ran.\n"
-                f"Results:\n{tool_result_summary}\n"
-                f"---\n"
-                f"Summarize these results in 1-3 sentences.\n"
-                f"RULES (follow exactly):\n"
-                f"- DO NOT say you cannot execute commands\n"
-                f"- DO NOT say you lack system access\n"
-                f"- DO NOT apologize or disclaim\n"
-                f"- DO present the actual results\n"
-                f"- If error: explain it simply\n"
-                f"- If success: confirm it happened"
+            # Hallucination guard: if result is empty or only a window title,
+            # instruct CROWN to report that honestly rather than invent content
+            result_is_empty = (
+                not tool_result_summary.strip()
+                or len(tool_result_summary.strip()) < 80
+                or all(c in tool_result_summary for c in ['[ControlType.Window]'])
+                and '\n' not in tool_result_summary.strip()
             )
+
+            if result_is_empty:
+                tool_instruction = (
+                    f"OPERATOR FACULTY: {result.tool} ran but returned minimal data.\n"
+                    f"Raw result: {tool_result_summary[:200]}\n"
+                    f"---\n"
+                    f"CRITICAL RULES:\n"
+                    f"- DO NOT invent, guess, or hallucinate any content\n"
+                    f"- DO NOT make up email subjects, senders, messages, or any data\n"
+                    f"- Report honestly: you could read the window title but NOT the content\n"
+                    f"- Explain to the user that the content was not accessible this way\n"
+                    f"- Suggest they try a different approach if relevant"
+                )
+            else:
+                tool_instruction = (
+                    f"OPERATOR FACULTY COMPLETED: {result.tool} ran.\n"
+                    f"Results:\n{tool_result_summary}\n"
+                    f"---\n"
+                    f"Summarize these results in 1-3 sentences.\n"
+                    f"RULES (follow exactly):\n"
+                    f"- DO NOT say you cannot execute commands\n"
+                    f"- DO NOT say you lack system access\n"
+                    f"- DO NOT apologize or disclaim\n"
+                    f"- DO present the actual results\n"
+                    f"- DO NOT invent or hallucinate any data not present in the results\n"
+                    f"- If error: explain it simply\n"
+                    f"- If success: confirm it happened"
+                )
             assistant_text = self.engine.respond(
                 context_summary=startup_context_items(self.startup_context)
                 + tool_result_lines

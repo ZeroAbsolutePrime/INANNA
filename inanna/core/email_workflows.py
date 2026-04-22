@@ -66,6 +66,189 @@ def normalize_email_app(name: str) -> str:
     return aliases.get(cleaned, DEFAULT_EMAIL_CLIENT)
 
 
+
+# ── THUNDERBIRD DIRECT READER ────────────────────────────────────────
+# Reads directly from Thunderbird's MBOX files — no accessibility tree,
+# no pywinauto, no hallucination possible. Ground truth only.
+
+import mailbox as _mailbox
+import email.header as _email_header
+import glob as _glob
+import os as _os
+
+
+def _decode_header(val: str) -> str:
+    if not val:
+        return ""
+    try:
+        parts = _email_header.decode_header(val)
+        result = []
+        for part, enc in parts:
+            if isinstance(part, bytes):
+                result.append(part.decode(enc or "utf-8", errors="replace"))
+            else:
+                result.append(str(part))
+        return " ".join(result)
+    except Exception:
+        return str(val)
+
+
+def _get_plain_body(msg) -> str:
+    """Extract plain text body from an email message."""
+    if msg.is_multipart():
+        for part in msg.walk():
+            ct = part.get_content_type()
+            cd = str(part.get("Content-Disposition", ""))
+            if ct == "text/plain" and "attachment" not in cd:
+                try:
+                    charset = part.get_content_charset() or "utf-8"
+                    return part.get_payload(decode=True).decode(
+                        charset, errors="replace"
+                    )[:2000]
+                except Exception:
+                    pass
+    else:
+        try:
+            charset = msg.get_content_charset() or "utf-8"
+            payload = msg.get_payload(decode=True)
+            if payload:
+                return payload.decode(charset, errors="replace")[:2000]
+        except Exception:
+            pass
+    return ""
+
+
+def find_thunderbird_inbox() -> str | None:
+    """Auto-discover the Thunderbird INBOX MBOX file path."""
+    appdata = _os.environ.get("APPDATA", "")
+    if not appdata:
+        # Linux/NixOS path
+        home = _os.path.expanduser("~")
+        base = _os.path.join(home, ".thunderbird")
+    else:
+        base = _os.path.join(appdata, "Thunderbird", "Profiles")
+
+    if not _os.path.isdir(base):
+        return None
+
+    # Search for INBOX files in all profiles
+    patterns = [
+        _os.path.join(base, "*", "ImapMail", "*", "INBOX"),
+        _os.path.join(base, "*", "Mail", "Local Folders", "INBOX"),
+    ]
+    for pattern in patterns:
+        matches = _glob.glob(pattern)
+        if matches:
+            # Return the largest INBOX file (most mail)
+            return max(matches, key=lambda p: _os.path.getsize(p))
+    return None
+
+
+class ThunderbirdDirectReader:
+    """
+    Reads Thunderbird email directly from MBOX files.
+    Returns real, structured data — no accessibility tree, no hallucination.
+    """
+
+    def __init__(self, inbox_path: str | None = None) -> None:
+        self.inbox_path = inbox_path or find_thunderbird_inbox()
+
+    def is_available(self) -> bool:
+        return bool(self.inbox_path and _os.path.isfile(self.inbox_path))
+
+    def read_inbox(self, max_emails: int = 15) -> list[EmailRecord]:
+        """Return the most recent emails from the inbox."""
+        if not self.is_available():
+            return []
+        try:
+            mbox = _mailbox.mbox(self.inbox_path)
+            messages = list(mbox)
+            recent = messages[-max_emails:]
+            records = []
+            for msg in reversed(recent):
+                status = msg.get("X-Mozilla-Status", "0001")
+                unread = status == "0000"
+                records.append(EmailRecord(
+                    sender=_decode_header(msg.get("From", ""))[:80],
+                    subject=_decode_header(msg.get("Subject", ""))[:120],
+                    date=msg.get("Date", "")[:40],
+                    unread=unread,
+                    app="thunderbird",
+                ))
+            return records
+        except Exception:
+            return []
+
+    def read_email_by_sender(self, sender_name: str) -> list[EmailRecord]:
+        """Find emails matching sender name."""
+        if not self.is_available():
+            return []
+        sender_name = sender_name.lower()
+        try:
+            mbox = _mailbox.mbox(self.inbox_path)
+            matches = []
+            for msg in mbox:
+                from_val = _decode_header(msg.get("From", "")).lower()
+                if sender_name in from_val:
+                    body = _get_plain_body(msg)
+                    matches.append(EmailRecord(
+                        sender=_decode_header(msg.get("From", ""))[:80],
+                        subject=_decode_header(msg.get("Subject", ""))[:120],
+                        preview=body[:400],
+                        date=msg.get("Date", "")[:40],
+                        app="thunderbird",
+                    ))
+            return matches[-5:]  # last 5 matching
+        except Exception:
+            return []
+
+    def read_email_by_subject(self, subject_query: str) -> list[EmailRecord]:
+        """Find emails matching subject keyword."""
+        if not self.is_available():
+            return []
+        subject_query = subject_query.lower()
+        try:
+            mbox = _mailbox.mbox(self.inbox_path)
+            matches = []
+            for msg in mbox:
+                subj = _decode_header(msg.get("Subject", "")).lower()
+                if subject_query in subj:
+                    body = _get_plain_body(msg)
+                    matches.append(EmailRecord(
+                        sender=_decode_header(msg.get("From", ""))[:80],
+                        subject=_decode_header(msg.get("Subject", ""))[:120],
+                        preview=body[:400],
+                        date=msg.get("Date", "")[:40],
+                        app="thunderbird",
+                    ))
+            return matches[-5:]
+        except Exception:
+            return []
+
+    def search(self, query: str) -> list[EmailRecord]:
+        """Search sender, subject, and body for query."""
+        if not self.is_available():
+            return []
+        query_lower = query.lower()
+        try:
+            mbox = _mailbox.mbox(self.inbox_path)
+            matches = []
+            for msg in mbox:
+                from_val = _decode_header(msg.get("From", "")).lower()
+                subj = _decode_header(msg.get("Subject", "")).lower()
+                body = _get_plain_body(msg).lower()
+                if query_lower in from_val or query_lower in subj or query_lower in body:
+                    matches.append(EmailRecord(
+                        sender=_decode_header(msg.get("From", ""))[:80],
+                        subject=_decode_header(msg.get("Subject", ""))[:120],
+                        preview=_get_plain_body(msg)[:300],
+                        date=msg.get("Date", "")[:40],
+                        app="thunderbird",
+                    ))
+            return matches[-10:]
+        except Exception:
+            return []
+
 class EmailWorkflows:
     """
     Email workflows built on top of the Desktop Faculty primitives.
@@ -77,63 +260,109 @@ class EmailWorkflows:
     def read_inbox(
         self,
         app: str = DEFAULT_EMAIL_CLIENT,
-        max_emails: int = 10,
+        max_emails: int = 15,
     ) -> EmailWorkflowResult:
+        """
+        Read email inbox.
+        Thunderbird: reads MBOX directly — real data, no hallucination.
+        Other clients: uses accessibility tree.
+        No proposal needed — pure observation.
+        """
         app_name = normalize_email_app(app)
         result = EmailWorkflowResult(True, "read_inbox", app_name)
 
+        # Thunderbird: direct MBOX read — ground truth only
+        if app_name == "thunderbird":
+            reader = ThunderbirdDirectReader()
+            if reader.is_available():
+                emails = reader.read_inbox(max_emails=max_emails)
+                result.emails = emails
+                result.steps_completed.append("direct_mbox_read")
+                if emails:
+                    lines = [f"email > inbox (thunderbird): {len(emails)} messages"]
+                    for e in emails:
+                        flag = "[unread] " if e.unread else ""
+                        lines.append(f"  {flag}{e.sender} — {e.subject} [{e.date[:16]}]")
+                    result.output = "\n".join(lines)
+                else:
+                    result.output = "email > inbox (thunderbird): no messages found"
+                return result
+            result.success = False
+            result.error = "Thunderbird INBOX file not found on this system"
+            return result
+
+        # Other clients: accessibility tree
         open_result = self.desktop.open_app(app_name)
         result.steps_completed.append(f"open:{open_result.success}")
         if not open_result.success:
             result.success = False
             result.error = f"Could not open {app_name}: {open_result.error}"
             return result
-
-        time.sleep(2.0)
+        import time; time.sleep(2.0)
         window_title = EMAIL_APP_PATTERNS.get(app_name, [app_name])[0]
-        read_result = self.desktop.read_window(app_name=window_title, max_depth=7)
-        result.steps_completed.append(f"read:{read_result.success}")
-        if read_result.success:
-            result.output = read_result.output
-            result.emails = self._parse_inbox(read_result.output, app_name)[: max(1, max_emails)]
+        read_r = self.desktop.read_window(app_name=window_title, max_depth=7)
+        result.steps_completed.append(f"read:{read_r.success}")
+        if read_r.success and read_r.output and len(read_r.output) > 100:
+            result.output = read_r.output
+            result.emails = self._parse_inbox(read_r.output, app_name)
         else:
             result.success = False
-            result.error = read_result.error or f"Could not read inbox in {app_name}"
+            result.error = f"Could not read {app_name} inbox — accessibility tree returned no content"
         return result
 
     def read_email(
-        self,
-        subject_or_sender: str,
+        self, subject_or_sender: str,
         app: str = DEFAULT_EMAIL_CLIENT,
     ) -> EmailWorkflowResult:
+        """
+        Read a specific email by sender name or subject keyword.
+        Thunderbird: direct MBOX search — real data only.
+        """
         app_name = normalize_email_app(app)
-        lookup = str(subject_or_sender or "").strip()
         result = EmailWorkflowResult(True, "read_email", app_name)
 
+        if app_name == "thunderbird":
+            reader = ThunderbirdDirectReader()
+            if reader.is_available():
+                emails = reader.read_email_by_sender(subject_or_sender)
+                if not emails:
+                    emails = reader.read_email_by_subject(subject_or_sender)
+                if emails:
+                    result.emails = emails
+                    lines = []
+                    for e in emails:
+                        lines.append(f"From: {e.sender}")
+                        lines.append(f"Subject: {e.subject}")
+                        lines.append(f"Date: {e.date}")
+                        if e.preview:
+                            lines.append("---")
+                            lines.append(e.preview[:600])
+                        lines.append("")
+                    result.output = "\n".join(lines)
+                    result.steps_completed.append("direct_mbox_read")
+                else:
+                    result.success = False
+                    result.error = f"No emails found matching '{subject_or_sender}'"
+            else:
+                result.success = False
+                result.error = "Thunderbird INBOX file not found"
+            return result
+
+        # Other clients
         open_result = self.desktop.open_app(app_name)
         result.steps_completed.append(f"open:{open_result.success}")
         if not open_result.success:
             result.success = False
             result.error = f"Could not open {app_name}: {open_result.error}"
             return result
-
-        time.sleep(2.0)
-        click_result = self.desktop.click(lookup, app_name=app_name)
-        result.steps_completed.append(f"click_email:{click_result.success}")
-        if not click_result.success:
-            search_result = self.desktop.click("Search", app_name=app_name)
-            result.steps_completed.append(f"search:{search_result.success}")
-            if search_result.success:
-                self.desktop.type_text(lookup, submit=True)
-                time.sleep(1.0)
-
-        read_result = self.desktop.read_window(app_name=app_name, max_depth=8)
-        result.steps_completed.append(f"read_content:{read_result.success}")
-        if read_result.success:
-            result.output = read_result.output
+        import time; time.sleep(2.0)
+        self.desktop.click(subject_or_sender, app_name=app_name)
+        read_r = self.desktop.read_window(app_name=app_name, max_depth=8)
+        if read_r.success and read_r.output and len(read_r.output) > 100:
+            result.output = read_r.output
         else:
             result.success = False
-            result.error = read_result.error or f"Could not read email in {app_name}"
+            result.error = "Could not read email content via accessibility tree"
         return result
 
     def search_emails(
