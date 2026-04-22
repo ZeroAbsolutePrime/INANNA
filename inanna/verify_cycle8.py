@@ -287,6 +287,12 @@ def check_authentication_login() -> object:
         if body.get("token") or body.get("success"):
             return True
         return f"login failed: {body}"
+    except urllib.error.HTTPError as exc:
+        try:
+            body = exc.read().decode("utf-8", errors="replace")
+        except Exception:
+            body = str(exc)
+        return f"login http error {exc.code}: {body}"
     except urllib.error.URLError:
         return "skip"
     except OSError:
@@ -304,7 +310,7 @@ def check_email_mbox_reader() -> object:
 
 
 def check_email_natural_routing() -> object:
-    request = assert_tool_request("read my thunderbird inbox", "email_read_inbox")
+    request = assert_tool_request("check thunderbird inbox", "email_read_inbox")
     if isinstance(request, str):
         return request
     params = request.get("params", {})
