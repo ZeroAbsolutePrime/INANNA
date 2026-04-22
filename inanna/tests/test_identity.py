@@ -150,8 +150,8 @@ class IdentityTests(unittest.TestCase):
     def test_current_phase_constant_matches_phase_banner(self) -> None:
         self.assertEqual(CURRENT_PHASE, phase_banner())
 
-    def test_current_phase_names_the_feedback_loop(self) -> None:
-        self.assertIn("Feedback Loop", CURRENT_PHASE)
+    def test_current_phase_names_the_multilingual_core(self) -> None:
+        self.assertIn("Multilingual Core", CURRENT_PHASE)
 
     def test_cycle2_summary_describes_completed_kernel(self) -> None:
         self.assertIn("NAMMU Kernel", CYCLE2_SUMMARY)

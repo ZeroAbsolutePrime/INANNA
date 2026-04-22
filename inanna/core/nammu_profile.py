@@ -136,21 +136,10 @@ class OperatorProfile:
 
     def detect_language(self, text: str) -> str:
         lowered = str(text or "").lower()
-        if any(
-            token in lowered
-            for token in ["gràcies", "correus", "avui", "demà", "resumeix", "missatge"]
-        ):
-            return "ca"
-        if any(
-            token in lowered
-            for token in ["obrigad", "olá", "olá", "mensagem", "correio", "amanhã", "hoje"]
-        ):
-            return "pt"
-        if any(
-            token in lowered
-            for token in ["hola", "gracias", "correo", "hoy", "mañana", "urgentes", "resumen", "tengo"]
-        ):
-            return "es"
+        for language in ("ca", "pt", "es", "eu"):
+            markers = _LANGUAGE_MARKERS.get(language, [])
+            if any(marker in lowered for marker in markers):
+                return language
         return "en"
 
     def update_language_pattern(self, text: str, domain: str) -> None:
@@ -281,6 +270,75 @@ _STOP_WORDS = {
     "no",
     "go",
     "get",
+}
+
+
+_LANGUAGE_MARKERS: dict[str, list[str]] = {
+    "ca": [
+        "gracies",
+        "gràcies",
+        "avui",
+        "dema",
+        "demà",
+        "correus",
+        "correu",
+        "resumeix",
+        "missatge",
+        "missatges",
+        "tinc",
+        "tens",
+        "puc",
+        "pots",
+        "que tens",
+        "calendari",
+        "reunio",
+        "reunió",
+    ],
+    "pt": [
+        "obrigado",
+        "obrigada",
+        "bom dia",
+        "boa tarde",
+        "boa noite",
+        "hoje",
+        "amanha",
+        "amanhã",
+        "email",
+        "mensagem",
+        "tenho",
+        "quero",
+        "posso",
+        "pode",
+        "calendario",
+        "resumo",
+    ],
+    "es": [
+        "gracias",
+        "hola",
+        "correo",
+        "hoy",
+        "manana",
+        "mañana",
+        "urgentes",
+        "urgente",
+        "resumen",
+        "tienes",
+        "tengo",
+        "mensajes",
+        "mensaje",
+        "calendario",
+        "reunión",
+        "que tengo",
+        "tengo emails",
+        "correos de",
+        "correos",
+    ],
+    "eu": [
+        "eskerrik asko",
+        "kaixo",
+        "bihar",
+        "gaur",
+    ],
 }
 
 

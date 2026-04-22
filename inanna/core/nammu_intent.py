@@ -132,6 +132,17 @@ FILESYSTEM_LOCATION_WORDS = {
     "notes",
 }
 
+NAMMU_MULTILINGUAL_EXAMPLES = """
+MULTILINGUAL EXAMPLES (Spanish / Catalan / Portuguese):
+"urgentes?" (es) -> {"intent":"email_read_inbox","params":{"urgency_only":true},"confidence":0.95,"domain":"email"}
+"resumen de ayer" (es) -> {"intent":"email_read_inbox","params":{"period":"yesterday","output_format":"summary"},"confidence":0.96,"domain":"email"}
+"que tinc avui?" (ca) -> {"intent":"calendar_today","params":{},"confidence":0.97,"domain":"calendar"}
+"resumeix els correus" (ca) -> {"intent":"email_read_inbox","params":{"output_format":"summary"},"confidence":0.95,"domain":"email"}
+"busca NixOS" (es) -> {"intent":"browser_search","params":{"query":"NixOS"},"confidence":0.98,"domain":"browser"}
+"obre firefox" (ca) -> {"intent":"desktop_open_app","params":{"app":"firefox"},"confidence":0.97,"domain":"desktop"}
+"""
+
+
 NAMMU_UNIVERSAL_PROMPT = """You are NAMMU, the intent extraction core of INANNA NYX.
 Your only job: read the operator message and return a JSON intent object.
 Never refuse. Never explain. Return JSON only. Work in any language.
@@ -204,11 +215,6 @@ INFORMATION:
 NONE:
   none                {} (not a tool request - conversation)
 
-Return exactly:
-{"intent":"...","params":{...},"confidence":0.0-1.0,"domain":"..."}
-
-IMPORTANT: JSON only. No markdown. No explanation. No prose.
-
 Examples:
 "anything from Matxalen?" -> {"intent":"email_search","params":{"query":"Matxalen","app":"thunderbird"},"confidence":0.97,"domain":"email"}
 "read ~/report.pdf" -> {"intent":"doc_read","params":{"path":"~/report.pdf"},"confidence":0.99,"domain":"document"}
@@ -218,7 +224,13 @@ Examples:
 "list my documents folder" -> {"intent":"list_dir","params":{"path":"~/Documents"},"confidence":0.95,"domain":"filesystem"}
 "ping google.com" -> {"intent":"ping","params":{"host":"google.com"},"confidence":0.98,"domain":"network"}
 "what is the latest news about NixOS" -> {"intent":"web_search","params":{"query":"latest news about NixOS"},"confidence":0.94,"domain":"information"}
-"hello how are you" -> {"intent":"none","params":{},"confidence":0.99,"domain":"none"}"""
+"hello how are you" -> {"intent":"none","params":{},"confidence":0.99,"domain":"none"}
+""" + NAMMU_MULTILINGUAL_EXAMPLES + """
+
+IMPORTANT: JSON only. No markdown. No explanation. No prose.
+
+Return exactly this JSON (no markdown, no explanation, nothing else):
+{"intent":"...","params":{...},"confidence":0.0-1.0,"domain":"..."}"""
 
 # Legacy alias kept so older imports and tests do not break.
 NAMMU_EMAIL_PROMPT = NAMMU_UNIVERSAL_PROMPT
