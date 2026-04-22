@@ -1142,6 +1142,17 @@ def extract_calendar_tool_request(
         "what is on my calendar today",
         "what is scheduled today",
         "what's on my calendar today",
+        # Spanish
+        "que tengo hoy",
+        "agenda de hoy",
+        "eventos de hoy",
+        # Catalan
+        "que tinc avui",
+        "agenda d'avui",
+        "events d'avui",
+        # Portuguese
+        "agenda de hoje",
+        "o que tenho hoje",
     )
     if any(phrase in lowered for phrase in today_phrases):
         return {
@@ -1785,6 +1796,12 @@ def extract_email_tool_request(
     )) or bool(re.match(
         r"^(?:urgent|important|critical|urgentes?|importantes?)(?:\s+|\??$)",
         prefix_stripped, re.IGNORECASE
+    )) or bool(re.match(
+        r"^(?:hola\s+)?tengo\s+(?:emails?|correos?|mensajes)",
+        prefix_stripped, re.IGNORECASE
+    )) or bool(re.match(
+        r"^resumen\s+(?:de|del|correos?|emails?)",
+        prefix_stripped, re.IGNORECASE
     ))
     if not hint_match and not app_match and not natural_match:
         return None
@@ -1859,7 +1876,30 @@ def extract_email_tool_request(
             "reason": "Email count request (regex fallback)",
         }
 
-    # "do I have emails from X" / "any emails from X" -> search
+    # Spanish/Catalan "tengo emails" / "resumen de ayer" → inbox
+    if re.match(r"^(?:hola\s+)?tengo\s+(?:emails?|correos?|mensajes)", prefix_stripped, re.IGNORECASE):
+        params = {"app": DEFAULT_EMAIL_CLIENT, "output_format": "list"}
+        return {
+            "tool": "email_read_inbox",
+            "params": params,
+            "query": "Read inbox",
+            "reason": "Spanish/Catalan inbox request (regex fallback)",
+        }
+
+    if re.match(r"^resumen\s+(?:de|del)\s+", prefix_stripped, re.IGNORECASE):
+        # "resumen de ayer" → read inbox with period=yesterday
+        period = "yesterday" if "ayer" in prefix_stripped or "ahir" in prefix_stripped else ""
+        params = {"app": DEFAULT_EMAIL_CLIENT, "output_format": "summary"}
+        if period:
+            params["period"] = period
+        return {
+            "tool": "email_read_inbox",
+            "params": params,
+            "query": f"Email summary {'yesterday' if period else 'recent'}",
+            "reason": "Spanish/Catalan email summary (regex fallback)",
+        }
+
+        # "do I have emails from X" / "any emails from X" -> search
     have_emails_match = re.match(
         r"^(?:do\s+i\s+have|any|have\s+i\s+(?:got|received)?)\s+(?:any\s+)?(?:new\s+)?emails?\s+from\s+(?P<sender>.+?)(?:\s+in\s+(?P<app>.+))?$",
         prefix_stripped,

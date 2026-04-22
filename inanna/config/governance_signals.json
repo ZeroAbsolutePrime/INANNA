@@ -250,7 +250,12 @@
       "protonmail",
       "proton mail",
       "mail",
-      "message from"
+      "message from",
+      "resumen",
+      "resumen de",
+      "missatjes",
+      "hola tengo",
+      "tinc emails"
     ],
     "calendar": [
       "calendar",
@@ -279,7 +284,10 @@
       "my schedule",
       "read ics",
       "open ics",
-      "ics file"
+      "ics file",
+      "que tinc avui?",
+      "agenda de avui",
+      "agenda avui"
     ],
     "document": [
       "read document",
