@@ -47,7 +47,18 @@ from core.filesystem_faculty import FileInfo, FileSystemFaculty, FileSystemResul
 from core.governance import GovernanceLayer
 from core.guardian import GuardianFaculty
 from core.memory import Memory
-from core.nammu_intent import _classify_domain_fast, extract_intent, extract_intent_universal
+from core.nammu_intent import (
+    INTENT_TO_DOMAIN,
+    _classify_domain_fast,
+    extract_intent,
+    extract_intent_universal,
+)
+from core.nammu_profile import (
+    OperatorProfile,
+    build_profile_from_user_profile,
+    load_operator_profile,
+    save_operator_profile,
+)
 from core.nammu import IntentClassifier
 from core.nammu_memory import (
     ROUTING_LOG_FILE,
@@ -2024,6 +2035,7 @@ def _extract_intent_with_timeout(
 def nammu_first_routing(
     text: str,
     conversation_context: list[dict[str, str]] | None = None,
+    operator_profile: OperatorProfile | None = None,
 ) -> dict[str, Any] | None:
     """Try NAMMU universal intent extraction first, then fall through to regex."""
     normalized = str(text or "").strip()
@@ -2038,6 +2050,7 @@ def nammu_first_routing(
             normalized,
             conversation_context=conversation_context,
             domain_hint=domain,
+            operator_profile=operator_profile,
         )
 
     thread = threading.Thread(target=_run_universal_intent, daemon=True)
@@ -2049,7 +2062,45 @@ def nammu_first_routing(
     result = holder[0]
     if result is None or not result.success or result.confidence < 0.75:
         return None
-    return result.to_tool_request()
+    request = result.to_tool_request()
+    if request is not None:
+        request["_nammu_domain"] = result.domain
+    return request
+
+
+def ensure_nammu_profile_for_user(
+    profile_manager: ProfileManager | None,
+    nammu_dir: Path | None,
+    user_id: str,
+) -> OperatorProfile | None:
+    if profile_manager is None or nammu_dir is None or not user_id:
+        return None
+    user_profile = profile_manager.ensure_profile_exists(user_id)
+    nammu_profile = build_profile_from_user_profile(user_profile, nammu_dir)
+    save_operator_profile(nammu_dir, nammu_profile)
+    return nammu_profile
+
+
+def resolve_tool_domain(tool_name: str) -> str:
+    normalized = str(tool_name or "").strip().lower()
+    return INTENT_TO_DOMAIN.get(normalized, "none")
+
+
+def update_nammu_profile_after_tool(
+    profile: OperatorProfile | None,
+    nammu_dir: Path | None,
+    text: str,
+    tool_name: str,
+) -> OperatorProfile | None:
+    if profile is None or nammu_dir is None:
+        return profile
+    domain = resolve_tool_domain(tool_name)
+    if domain == "none":
+        return profile
+    profile.record_routing(domain)
+    profile.update_language_pattern(text, domain)
+    save_operator_profile(nammu_dir, profile)
+    return profile
 
 
 def _nammu_request_requires_proposal(
@@ -6690,6 +6741,8 @@ def complete_tool_resolution(
     active_realm_name: str = "",
     conversation_state: dict[str, int] | None = None,
     reflective_memory: ReflectiveMemory | None = None,
+    nammu_dir: Path | None = None,
+    nammu_profile: OperatorProfile | None = None,
 ) -> str:
     payload = resolved["payload"]
     original_input = payload.get("original_input", "")
@@ -6719,6 +6772,12 @@ def complete_tool_resolution(
             desktop_faculty=desktop_faculty,
             communication_workflows=communication_workflows,
             email_workflows=email_workflows,
+        )
+        nammu_profile = update_nammu_profile_after_tool(
+            nammu_profile,
+            nammu_dir,
+            str(original_input),
+            str(result.tool),
         )
         if faculty_monitor is not None:
             faculty_monitor.record_call("operator", (time.monotonic() - t0) * 1000, result.success)
@@ -7085,6 +7144,13 @@ def handle_command(
                 profile_manager.ensure_profile_exists(target.user_id)
         session_state["active_token"] = token
         session_state["active_user"] = target
+        session_state["nammu_profile"] = ensure_nammu_profile_for_user(
+            profile_manager,
+            nammu_dir,
+            target.user_id,
+        )
+        session_state["last_nammu_input"] = ""
+        session_state["last_nammu_route"] = "unknown"
         if guardian_user is not None and target.user_id == guardian_user.user_id:
             session_state["guardian_token"] = token
             session_state["original_token"] = None
@@ -7140,6 +7206,9 @@ def handle_command(
         session_state["active_user"] = None
         session_state["original_token"] = None
         session_state["original_user"] = None
+        session_state["nammu_profile"] = None
+        session_state["last_nammu_input"] = ""
+        session_state["last_nammu_route"] = "unknown"
         refresh_startup_context(startup_context, memory, None, user_manager)
         sync_profile_grounding(engine, profile_manager, None, None)
         reset_onboarding_state(session_state)
@@ -7162,6 +7231,87 @@ def handle_command(
         if profile is None:
             return "my-profile > profile management is unavailable."
         return format_profile_output(profile, display_name or current_user.display_name)
+
+    if lowered == "nammu-profile":
+        nammu_profile = (
+            session_state.get("nammu_profile")
+            if isinstance(session_state, dict)
+            else None
+        )
+        if nammu_profile is None:
+            return "nammu-profile > profile management is unavailable."
+        top_domains = sorted(
+            nammu_profile.domain_weights.items(),
+            key=lambda item: item[1],
+            reverse=True,
+        )[:5]
+        return "\n".join(
+            [
+                f"nammu > operator profile for {nammu_profile.display_name or nammu_profile.user_id}",
+                f"  languages: {nammu_profile.language_patterns}",
+                f"  shorthands: {nammu_profile.known_shorthands}",
+                f"  top domains: {top_domains}",
+                f"  corrections: {len(nammu_profile.routing_corrections)}",
+            ]
+        )
+
+    if lowered.startswith("nammu-learn"):
+        if active_token is None or current_user is None:
+            return 'nammu-learn > No active session. Type "login [name]" to identify.'
+        nammu_profile = (
+            session_state.get("nammu_profile")
+            if isinstance(session_state, dict)
+            else None
+        )
+        if nammu_profile is None or nammu_dir is None:
+            return "nammu-learn > profile management is unavailable."
+        parts = normalized.split(None, 2)
+        if len(parts) != 3:
+            return "nammu-learn > usage: nammu-learn [abbreviation] [full meaning]"
+        _, abbreviation, full_meaning = parts
+        nammu_profile.record_shorthand(abbreviation, full_meaning)
+        save_operator_profile(nammu_dir, nammu_profile)
+        return f"nammu > learned: '{abbreviation.lower()}' = '{full_meaning}'"
+
+    if lowered.startswith("nammu-correct"):
+        if active_token is None or current_user is None:
+            return 'nammu-correct > No active session. Type "login [name]" to identify.'
+        nammu_profile = (
+            session_state.get("nammu_profile")
+            if isinstance(session_state, dict)
+            else None
+        )
+        if nammu_profile is None or nammu_dir is None:
+            return "nammu-correct > profile management is unavailable."
+        parts = normalized.split(None, 2)
+        if len(parts) < 2:
+            return "nammu-correct > usage: nammu-correct [intent] [optional params]"
+        correct_intent = parts[1].strip()
+        correct_params: dict[str, Any] = {}
+        if len(parts) == 3 and parts[2].strip():
+            trailing = parts[2].strip()
+            if correct_intent == "email_search":
+                correct_params["query"] = trailing
+            elif correct_intent in {"desktop_open_app", "launch_app"}:
+                correct_params["app"] = trailing
+            elif correct_intent in {"read_file", "doc_read", "calendar_read_ics"}:
+                correct_params["path"] = trailing
+        nammu_profile.record_correction(
+            original_text=(
+                str(session_state.get("last_nammu_input", ""))
+                if isinstance(session_state, dict)
+                else ""
+            ),
+            misrouted_to=(
+                str(session_state.get("last_nammu_route", "unknown"))
+                if isinstance(session_state, dict)
+                else "unknown"
+            ),
+            correct_intent=correct_intent,
+            correct_params=correct_params,
+        )
+        save_operator_profile(nammu_dir, nammu_profile)
+        return f"nammu > correction recorded: '{correct_intent}'"
 
     if lowered == "inanna-reflect":
         if user_manager is None:
@@ -7617,6 +7767,13 @@ def handle_command(
         session_state["active_user"] = created
         session_state["original_token"] = None
         session_state["original_user"] = None
+        session_state["nammu_profile"] = ensure_nammu_profile_for_user(
+            profile_manager,
+            nammu_dir,
+            created.user_id,
+        )
+        session_state["last_nammu_input"] = ""
+        session_state["last_nammu_route"] = "unknown"
         append_audit_event(
             session_audit,
             "join",
@@ -7821,6 +7978,13 @@ def handle_command(
         if target_name.lower() in {"off", guardian_record.display_name.lower()}:
             session_state["active_user"] = guardian_record
             session_state["original_user"] = None
+            session_state["nammu_profile"] = ensure_nammu_profile_for_user(
+                profile_manager,
+                nammu_dir,
+                guardian_record.user_id,
+            )
+            session_state["last_nammu_input"] = ""
+            session_state["last_nammu_route"] = "unknown"
             refresh_startup_context(startup_context, memory, guardian_record, user_manager)
             sync_profile_grounding(
                 engine,
@@ -7852,6 +8016,13 @@ def handle_command(
         session_state["active_user"] = target
         session_state["guardian_user"] = guardian_record
         session_state["original_user"] = guardian_record
+        session_state["nammu_profile"] = ensure_nammu_profile_for_user(
+            profile_manager,
+            nammu_dir,
+            target.user_id,
+        )
+        session_state["last_nammu_input"] = ""
+        session_state["last_nammu_route"] = "unknown"
         refresh_startup_context(startup_context, memory, target, user_manager)
         sync_profile_grounding(engine, profile_manager, target, active_token)
         lines = [f"switch-user > Now operating as: {target.display_name} ({target.role})"]
@@ -8044,6 +8215,12 @@ def handle_command(
                 active_realm_name=active_realm_name,
                 conversation_state=conversation_state,
                 reflective_memory=reflective_memory,
+                nammu_dir=nammu_dir,
+                nammu_profile=(
+                    session_state.get("nammu_profile")
+                    if isinstance(session_state, dict)
+                    else None
+                ),
             )
 
         if payload.get("action") == "orchestration":
@@ -8239,14 +8416,23 @@ def handle_command(
             f"{created['line']}"
         )
 
+    nammu_profile = (
+        session_state.get("nammu_profile")
+        if isinstance(session_state, dict)
+        else None
+    )
     nammu_action = build_nammu_tool_action(
         nammu_first_routing(
             normalized,
             session.events,
+            operator_profile=nammu_profile,
         ),
         filesystem_faculty,
     )
     nammu_tool_name = str(nammu_action.get("tool", "")) if nammu_action is not None else ""
+    if isinstance(session_state, dict):
+        session_state["last_nammu_input"] = normalized
+        session_state["last_nammu_route"] = nammu_tool_name or "unknown"
 
     calendar_action = nammu_action if nammu_tool_name in CALENDAR_TOOL_NAMES else detect_calendar_tool_action(
         normalized,
@@ -8311,6 +8497,12 @@ def handle_command(
             active_realm_name=active_realm_name,
             conversation_state=conversation_state,
             reflective_memory=reflective_memory,
+            nammu_dir=nammu_dir,
+            nammu_profile=(
+                session_state.get("nammu_profile")
+                if isinstance(session_state, dict)
+                else None
+            ),
         )
 
     if email_action is not None:
@@ -8377,6 +8569,12 @@ def handle_command(
             active_realm_name=active_realm_name,
             conversation_state=conversation_state,
             reflective_memory=reflective_memory,
+            nammu_dir=nammu_dir,
+            nammu_profile=(
+                session_state.get("nammu_profile")
+                if isinstance(session_state, dict)
+                else None
+            ),
         )
 
     if communication_action is not None:
@@ -8440,6 +8638,12 @@ def handle_command(
             active_realm_name=active_realm_name,
             conversation_state=conversation_state,
             reflective_memory=reflective_memory,
+            nammu_dir=nammu_dir,
+            nammu_profile=(
+                session_state.get("nammu_profile")
+                if isinstance(session_state, dict)
+                else None
+            ),
         )
 
     desktop_action = nammu_action if nammu_tool_name in DESKTOP_TOOL_NAMES else detect_desktop_tool_action(
@@ -8505,6 +8709,12 @@ def handle_command(
             active_realm_name=active_realm_name,
             conversation_state=conversation_state,
             reflective_memory=reflective_memory,
+            nammu_dir=nammu_dir,
+            nammu_profile=(
+                session_state.get("nammu_profile")
+                if isinstance(session_state, dict)
+                else None
+            ),
         )
 
     browser_action = nammu_action if nammu_tool_name in BROWSER_TOOL_NAMES else detect_browser_tool_action(
@@ -8572,6 +8782,12 @@ def handle_command(
             active_realm_name=active_realm_name,
             conversation_state=conversation_state,
             reflective_memory=reflective_memory,
+            nammu_dir=nammu_dir,
+            nammu_profile=(
+                session_state.get("nammu_profile")
+                if isinstance(session_state, dict)
+                else None
+            ),
         )
 
     document_action = nammu_action if nammu_tool_name in DOCUMENT_TOOL_NAMES else detect_document_tool_action(
@@ -8638,6 +8854,12 @@ def handle_command(
             active_realm_name=active_realm_name,
             conversation_state=conversation_state,
             reflective_memory=reflective_memory,
+            nammu_dir=nammu_dir,
+            nammu_profile=(
+                session_state.get("nammu_profile")
+                if isinstance(session_state, dict)
+                else None
+            ),
         )
 
     filesystem_action = nammu_action if nammu_tool_name in FILESYSTEM_TOOL_NAMES else detect_filesystem_tool_action(
@@ -8706,6 +8928,12 @@ def handle_command(
             active_realm_name=active_realm_name,
             conversation_state=conversation_state,
             reflective_memory=reflective_memory,
+            nammu_dir=nammu_dir,
+            nammu_profile=(
+                session_state.get("nammu_profile")
+                if isinstance(session_state, dict)
+                else None
+            ),
         )
 
     process_action = nammu_action if nammu_tool_name in PROCESS_TOOL_NAMES else detect_process_tool_action(
@@ -8771,6 +8999,12 @@ def handle_command(
             active_realm_name=active_realm_name,
             conversation_state=conversation_state,
             reflective_memory=reflective_memory,
+            nammu_dir=nammu_dir,
+            nammu_profile=(
+                session_state.get("nammu_profile")
+                if isinstance(session_state, dict)
+                else None
+            ),
         )
 
     package_action = nammu_action if nammu_tool_name in PACKAGE_TOOL_NAMES else detect_package_tool_action(
@@ -8835,6 +9069,12 @@ def handle_command(
             active_realm_name=active_realm_name,
             conversation_state=conversation_state,
             reflective_memory=reflective_memory,
+            nammu_dir=nammu_dir,
+            nammu_profile=(
+                session_state.get("nammu_profile")
+                if isinstance(session_state, dict)
+                else None
+            ),
         )
 
     generic_nammu_action = (
@@ -8998,6 +9238,12 @@ def handle_command(
                 active_realm_name=active_realm_name,
                 conversation_state=conversation_state,
                 reflective_memory=reflective_memory,
+                nammu_dir=nammu_dir,
+                nammu_profile=(
+                    session_state.get("nammu_profile")
+                    if isinstance(session_state, dict)
+                    else None
+                ),
             )
         created = create_tool_use_proposal(
             proposal=proposal,
@@ -9138,6 +9384,11 @@ def main() -> None:
         guardian_user.role,
     )
     ensure_guardian_profile_completed(profile_manager, guardian_user.user_id)
+    nammu_profile = ensure_nammu_profile_for_user(
+        profile_manager,
+        NAMMU_DIR,
+        guardian_user.user_id,
+    )
     user_log = UserLog(USER_LOG_DIR)
     faculty_monitor = FacultyMonitor()
     session_audit: list[dict[str, str]] = []
@@ -9158,6 +9409,9 @@ def main() -> None:
         "onboarding_active": False,
         "onboarding_step": 0,
         "onboarding_responses": {},
+        "nammu_profile": nammu_profile,
+        "last_nammu_input": "",
+        "last_nammu_route": "unknown",
     }
     engine = Engine(
         model_url=config.model_url,

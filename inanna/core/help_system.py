@@ -29,6 +29,16 @@ HELP_COMMON = """𒀭 INANNA NYX — Available Commands
     On slow hardware: NAMMU uses intelligent regex fallback.
     Both produce correct results. Speed differs.
 
+  NAMMU PROFILE (teach INANNA your language)
+    nammu-learn mtx Matxalen      Teach shorthand (mtx = Matxalen)
+    nammu-learn act Actuavalles   Teach another shorthand
+    nammu-correct email_search    Correct the last NAMMU misrouting
+    nammu-profile                 Show your current NAMMU profile
+
+    After teaching, INANNA can understand phrases like:
+    "mtx replied?"
+    Profile grows automatically from every interaction.
+
   YOUR PROFILE
     my-profile                    Show your profile
     my-profile edit [field] [val] Update a field
@@ -291,8 +301,27 @@ HELP_TOPICS = {
   help               Show commands for your role
   help [topic]       Show details on a specific topic
 
-  Topics: my-profile, governance-trust, inanna-reflect,
+  Topics: my-profile, nammu-profile, governance-trust, inanna-reflect,
           faculties, tools, files, processes, packages, communication, email, calendar, documents, browser, desktop, memory, realms, departments""",
+
+    "nammu-profile": """nammu-profile - NAMMU operator memory
+
+  nammu-profile                  Show your current NAMMU profile
+  nammu-learn mtx Matxalen       Teach a shorthand
+  nammu-correct email_search     Correct the last routing
+
+  NAMMU stores:
+    - known shorthands
+    - language patterns
+    - top routed domains
+    - recent corrections
+
+  Operator context is prepended to NAMMU's prompt as:
+    [OPERATOR CONTEXT]
+    ...
+    [END CONTEXT]
+
+  This context enriches routing without replacing the universal prompt.""",
 
     "tools": """tools — Available tools (all require proposal approval)
 

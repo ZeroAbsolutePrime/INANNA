@@ -173,8 +173,8 @@ class IntentEngineTests(unittest.TestCase):
 
         self.assertGreaterEqual(suite.countTestCases(), 621)
 
-    def test_phase_identity_contains_cycle9_phase1(self) -> None:
-        self.assertIn("9.1", CURRENT_PHASE)
+    def test_phase_identity_contains_cycle9_phase2(self) -> None:
+        self.assertIn("9.2", CURRENT_PHASE)
 
 
 if __name__ == "__main__":

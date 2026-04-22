@@ -9,6 +9,8 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
+from core.nammu_profile import OperatorProfile
+
 
 LM_URL = "http://localhost:1234/v1/chat/completions"
 # NOTE: On slow hardware, use 7B as primary (faster than 14B)
@@ -449,26 +451,35 @@ class EmailComprehension:
 def extract_intent(
     user_input: str,
     conversation_context: list[dict[str, str]] | None = None,
+    operator_profile: OperatorProfile | None = None,
 ) -> IntentResult:
-    return extract_intent_universal(user_input, conversation_context=conversation_context)
+    return extract_intent_universal(
+        user_input,
+        conversation_context=conversation_context,
+        operator_profile=operator_profile,
+    )
 
 
 def extract_intent_universal(
     user_input: str,
     conversation_context: list[dict[str, str]] | None = None,
     domain_hint: str | None = None,
+    operator_profile: OperatorProfile | None = None,
 ) -> IntentResult:
     if not str(user_input or "").strip():
         return IntentResult(intent="none", domain="none", error="empty input")
 
     resolved_domain = str(domain_hint or _classify_domain_fast(str(user_input).lower())).strip().lower() or "none"
+    system_prompt = NAMMU_UNIVERSAL_PROMPT
+    if operator_profile is not None:
+        system_prompt = f"{operator_profile.to_nammu_context()}\n\n{NAMMU_UNIVERSAL_PROMPT}"
 
     result = _call_llm(
         user_input=user_input,
         model=MODEL_PRIMARY,
         timeout=TIMEOUT_PRIMARY,
         conversation_context=conversation_context,
-        prompt=NAMMU_UNIVERSAL_PROMPT,
+        prompt=system_prompt,
         domain_hint=resolved_domain,
     )
     if result.success:
@@ -479,7 +490,7 @@ def extract_intent_universal(
         model=MODEL_FALLBACK,
         timeout=TIMEOUT_FALLBACK,
         conversation_context=conversation_context,
-        prompt=NAMMU_UNIVERSAL_PROMPT,
+        prompt=system_prompt,
         domain_hint=resolved_domain,
     )
     if fallback.success:

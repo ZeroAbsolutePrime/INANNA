@@ -36,6 +36,7 @@ from core.nammu_memory import (
     append_routing_event,
     load_governance_history,
 )
+from core.nammu_profile import save_operator_profile
 from core.orchestration import OrchestrationEngine
 from core.operator import OperatorFaculty
 from core.package_faculty import PackageFaculty
@@ -106,6 +107,7 @@ from main import (
     build_users_report,
     build_whoami_report,
     build_tool_context_lines,
+    ensure_nammu_profile_for_user,
     create_invite_proposal,
     create_orchestration_proposal,
     create_realm_proposal,
@@ -167,6 +169,7 @@ from main import (
     onboarding_question,
     queue_department_notifications,
     unassign_profile_membership,
+    update_nammu_profile_after_tool,
 )
 
 APP_ROOT = Path(__file__).resolve().parent.parent
@@ -394,6 +397,13 @@ class InterfaceServer:
             self.guardian_user.role,
         )
         ensure_guardian_profile_completed(self.profile_manager, self.guardian_user.user_id)
+        self.nammu_profile = ensure_nammu_profile_for_user(
+            self.profile_manager,
+            self.nammu_dir,
+            self.guardian_user.user_id,
+        )
+        self._last_nammu_input = ""
+        self._last_nammu_route = "unknown"
         self.active_token = self.guardian_token
         self.original_token = None
         self.user_log = UserLog(self.data_root / "user_logs")
@@ -642,6 +652,13 @@ class InterfaceServer:
             self.guardian_token = token
         else:
             self.profile_manager.ensure_profile_exists(target.user_id)
+        self.nammu_profile = ensure_nammu_profile_for_user(
+            self.profile_manager,
+            self.nammu_dir,
+            target.user_id,
+        )
+        self._last_nammu_input = ""
+        self._last_nammu_route = "unknown"
         append_audit_event(
             self.session_audit,
             "login",
@@ -687,6 +704,13 @@ class InterfaceServer:
             self.guardian_token = token
         else:
             self.profile_manager.ensure_profile_exists(target.user_id)
+        self.nammu_profile = ensure_nammu_profile_for_user(
+            self.profile_manager,
+            self.nammu_dir,
+            target.user_id,
+        )
+        self._last_nammu_input = ""
+        self._last_nammu_route = "unknown"
         self._refresh_startup_context()
         return True
 
@@ -888,10 +912,13 @@ class InterfaceServer:
             nammu_first_routing(
                 text,
                 self.session.events,
+                operator_profile=self.nammu_profile,
             ),
             self.filesystem_faculty,
         )
         nammu_tool_name = str(nammu_action.get("tool", "")) if nammu_action is not None else ""
+        self._last_nammu_input = text
+        self._last_nammu_route = nammu_tool_name or "unknown"
 
         calendar_action = nammu_action if nammu_tool_name in {"calendar_today", "calendar_upcoming", "calendar_read_ics"} else detect_calendar_tool_action(
             text,
@@ -1710,6 +1737,9 @@ class InterfaceServer:
                 self.active_user = None
                 self.original_token = None
                 self.original_user = None
+                self.nammu_profile = None
+                self._last_nammu_input = ""
+                self._last_nammu_route = "unknown"
                 self._refresh_startup_context()
                 onboarding_state = self._onboarding_state()
                 reset_onboarding_state(onboarding_state)
@@ -1955,6 +1985,92 @@ class InterfaceServer:
                         display_name or self.active_user.display_name,
                     ),
                 }
+            )
+            await self.broadcast_state()
+        elif command_name == "nammu-profile":
+            if self.nammu_profile is None:
+                await self.broadcast(
+                    {"type": "system", "text": "nammu-profile > profile management is unavailable."}
+                )
+                await self.broadcast_state()
+                return
+            top_domains = sorted(
+                self.nammu_profile.domain_weights.items(),
+                key=lambda item: item[1],
+                reverse=True,
+            )[:5]
+            lines = [
+                f"nammu > operator profile for {self.nammu_profile.display_name or self.nammu_profile.user_id}",
+                f"  languages: {self.nammu_profile.language_patterns}",
+                f"  shorthands: {self.nammu_profile.known_shorthands}",
+                f"  top domains: {top_domains}",
+                f"  corrections: {len(self.nammu_profile.routing_corrections)}",
+            ]
+            await self.broadcast({"type": "system", "text": "\n".join(lines)})
+            await self.broadcast_state()
+        elif command_name == "nammu-learn":
+            if self.active_token is None or self.active_user is None or self.nammu_profile is None:
+                await self.broadcast(
+                    {"type": "system", "text": "nammu-learn > profile management is unavailable."}
+                )
+                await self.broadcast_state()
+                return
+            parts = raw_cmd.split(None, 2)
+            if len(parts) != 3:
+                await self.broadcast(
+                    {
+                        "type": "system",
+                        "text": "nammu-learn > usage: nammu-learn [abbreviation] [full meaning]",
+                    }
+                )
+                await self.broadcast_state()
+                return
+            _, abbreviation, full_meaning = parts
+            self.nammu_profile.record_shorthand(abbreviation, full_meaning)
+            await asyncio.to_thread(save_operator_profile, self.nammu_dir, self.nammu_profile)
+            await self.broadcast(
+                {
+                    "type": "system",
+                    "text": f"nammu > learned: '{abbreviation.lower()}' = '{full_meaning}'",
+                }
+            )
+            await self.broadcast_state()
+        elif command_name == "nammu-correct":
+            if self.active_token is None or self.active_user is None or self.nammu_profile is None:
+                await self.broadcast(
+                    {"type": "system", "text": "nammu-correct > profile management is unavailable."}
+                )
+                await self.broadcast_state()
+                return
+            parts = raw_cmd.split(None, 2)
+            if len(parts) < 2:
+                await self.broadcast(
+                    {
+                        "type": "system",
+                        "text": "nammu-correct > usage: nammu-correct [intent] [optional params]",
+                    }
+                )
+                await self.broadcast_state()
+                return
+            correct_intent = parts[1].strip()
+            correct_params: dict[str, Any] = {}
+            if len(parts) == 3 and parts[2].strip():
+                trailing = parts[2].strip()
+                if correct_intent == "email_search":
+                    correct_params["query"] = trailing
+                elif correct_intent in {"desktop_open_app", "launch_app"}:
+                    correct_params["app"] = trailing
+                elif correct_intent in {"read_file", "doc_read", "calendar_read_ics"}:
+                    correct_params["path"] = trailing
+            self.nammu_profile.record_correction(
+                original_text=self._last_nammu_input or "",
+                misrouted_to=self._last_nammu_route or "unknown",
+                correct_intent=correct_intent,
+                correct_params=correct_params,
+            )
+            await asyncio.to_thread(save_operator_profile, self.nammu_dir, self.nammu_profile)
+            await self.broadcast(
+                {"type": "system", "text": f"nammu > correction recorded: '{correct_intent}'"}
             )
             await self.broadcast_state()
         elif command_name == "inanna-reflect":
@@ -3328,6 +3444,12 @@ class InterfaceServer:
                 communication_workflows=self.communication_workflows,
                 email_workflows=self.email_workflows,
                 software_registry=self.software_registry,
+            )
+            self.nammu_profile = update_nammu_profile_after_tool(
+                self.nammu_profile,
+                self.nammu_dir,
+                str(original_input),
+                str(result.tool),
             )
             self.faculty_monitor.record_call(
                 "operator",
