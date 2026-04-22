@@ -1,507 +1,777 @@
-# CURRENT PHASE: Cycle 9 - Phase 9.1 - The Intent Engine
+# CURRENT PHASE: Cycle 9 - Phase 9.2 - The Operator Profile
 **Status: ACTIVE**
 **Authorized by: ZAERA (Guardian) + Claude (Command Center)**
-**Date opened: 2026-04-22**
-**Cycle: 9 - NAMMU Reborn: The Living Interpreter**
+**Date: 2026-04-22**
+**Cycle: 9 — NAMMU Reborn: The Living Interpreter**
+**Replaces: Cycle 9 Phase 9.1 - The Intent Engine (COMPLETE)**
 
 ---
 
 ## MANDATORY READING — in this exact order
 
-1. docs/nammu_vision.md              ← ESSENTIAL — read every word
+1. docs/nammu_vision.md              ← Dimension I and II live here
 2. docs/cycle9_master_plan.md
 3. docs/platform_architecture.md
-4. docs/cycle8_complete.md
-5. docs/implementation/CURRENT_PHASE.md (this file)
-6. CODEX_DOCTRINE.md
-7. ABSOLUTE_PROTOCOL.md
-
-**If you read nothing else: read docs/nammu_vision.md first.**
-It defines what NAMMU is, what it must become, and why.
-Every line of code in this cycle serves that vision.
+4. docs/implementation/CURRENT_PHASE.md (this file)
+5. CODEX_DOCTRINE.md
+6. ABSOLUTE_PROTOCOL.md
 
 ---
 
-## The Transition: Cycle 8 → Cycle 9
+## What Already Exists (audited before writing this phase)
 
-Cycle 8 built the tools. 41 tools. 11 categories.
-Email, documents, browser, calendar, desktop.
-The hands exist. The faculties exist.
+UserProfile (core/profile.py, 12176 bytes):
+  Fields already present:
+    preferred_name, pronouns, languages (list)
+    communication_style, preferred_length, formality
+    observed_patterns (list — currently empty)
+    recurring_topics (list — ["operator"])
+    named_projects (list)
+    domains (list)
 
-Cycle 9 builds the intelligence that calls them.
+NAMMU memory (core/nammu_memory.py):
+  routing_log.jsonl — every routing decision recorded
+  governance_log.jsonl — governance events recorded
+  append_routing_event(), load_routing_history()
 
-Before Cycle 9:
-  User: "anything from Matxalen?"
-  NAMMU: regex tries to match → falls through → web_search
-  Result: WRONG
+Active user profile: data/profiles/user_6396c88f.json
+  ZAERA's profile with observed_patterns = []
+  The profile is written and read. Infrastructure works.
+  observed_patterns is waiting to be filled.
 
-After Cycle 9 Phase 9.1:
-  User: "anything from Matxalen?"
-  NAMMU: LLM extracts intent → email_search(query="Matxalen")
-  Result: CORRECT — every time, any phrasing, any language
-
-The core principle (from nammu_vision.md):
-  Humans speak freely.
-  Machines receive structure.
-  NAMMU bridges the gap.
-  LLM, not regex.
-
----
-
-## Hardware Reality
-
-Current machine: Windows laptop, Qwen 2.5 7B via LM Studio
-LLM inference: ~30 seconds per call
-Status: too slow for synchronous routing
-
-DGX Spark (when it arrives): 70B model, ~500ms inference
-Status: full NAMMU intelligence activates
-
-This phase builds the correct architecture for both.
-On current hardware: LLM runs in background thread, 3s timeout,
-regex fallback if slow (already in place from Phase 8.3b/c).
-On DGX: LLM responds in time, full intelligence.
-
-The code written now works perfectly on DGX without changes.
-The fallback ensures it works on current hardware too.
-This is the principle: build for the DGX, run gracefully now.
+NAMMU governance log (real data):
+  "what's on my calendar?" → calendar
+  "open thunderbird" → desktop
+  Routing decisions are being recorded.
 
 ---
 
-## What Phase 9.1 Builds
+## What Phase 9.2 Builds
 
-Phase 9.1 replaces all regex pattern matching in the routing
-layer with LLM-based intent extraction, domain by domain.
+Phase 9.2 activates the Operator Profile system.
 
-### The Scope
+NAMMU already records every routing decision.
+NAMMU already has a profile with observed_patterns.
+What is missing: the connection between them.
 
-Phase 8.3b built NAMMU intent extraction for email and
-communication only. Phase 9.1 extends it to ALL domains:
-  - email / communication   (already done — enhance)
-  - document                (new)
-  - browser                 (new)
-  - calendar                (new)
-  - desktop                 (new)
-  - filesystem              (new)
-  - process / system        (new)
+Phase 9.2 builds:
+  1. OperatorProfileBuilder — reads routing history,
+     extracts patterns, updates UserProfile.observed_patterns
+  2. Profile enrichment — NAMMU receives the operator's
+     profile as context before each intent extraction call
+  3. Shorthand learning — NAMMU records shorthands
+     (e.g. "mtx" = Matxalen) and uses them
+  4. Language detection — NAMMU records which language
+     ZAERA uses and updates profile.languages accordingly
+  5. Correction recording — when NAMMU misroutes and the
+     operator corrects it, the correction is stored and
+     used as a few-shot example in future calls
 
-### The Architecture
+The profile becomes NAMMU's memory of the person.
+Every session, NAMMU knows ZAERA better than the last.
+
+---
+
+## Architecture
 
 ```
-User input
-    ↓
-NAMMU IntentEngine.extract(text, context)
-    ↓  [3s thread timeout]
-    ↓  [primary: qwen2.5-7b, timeout 20s]
-    ↓  [fallback: regex if LLM slow]
-IntentResult {
-  intent: "email_search",
-  params: {query: "Matxalen", app: "thunderbird"},
-  confidence: 0.97,
-  domain: "email",
-  language: "en"
-}
-    ↓
-OPERATOR executes tool
-    ↓
-CROWN presents result
+Every operator message:
+  1. NAMMU classifies domain (fast, no LLM)
+  2. NAMMU loads operator profile
+  3. NAMMU builds enriched context:
+     {
+       "operator": "ZAERA",
+       "preferred_language": "en/es (switches by mood)",
+       "known_shorthands": {"mtx": "Matxalen"},
+       "communication_style": "Queer",
+       "preferred_length": "short",
+       "recurring_topics": ["operator", "email", "calendar"],
+       "recent_corrections": [
+         {"misrouted": "mtx replied?", "correct": "email_search",
+          "query": "Matxalen"}
+       ]
+     }
+  4. NAMMU passes enriched context to LLM prompt
+  5. LLM extracts intent using operator context
+  6. Result is stored in routing_log for future learning
+```
+
+The profile enrichment is inserted into NAMMU_UNIVERSAL_PROMPT
+as a dynamic section at the start:
+
+```
+[OPERATOR CONTEXT]
+Name: ZAERA
+Languages: English (technical), Spanish (relaxed)
+Shorthands: "mtx" = Matxalen
+Style: direct, short preferred
+Recent correction: "mtx replied?" → email_search(query="Matxalen")
+[END CONTEXT]
+
+You are NAMMU... [rest of universal prompt]
 ```
 
 ---
 
 ## What You Are Building
 
-### Task 1 — Expand nammu_intent.py to cover all domains
+### Task 1 — inanna/core/nammu_profile.py (NEW)
 
-The existing nammu_intent.py covers email and communication.
-Extend it to cover all 11 tool categories.
-
-Create a unified NAMMU_UNIVERSAL_PROMPT that covers all domains:
+Create: inanna/core/nammu_profile.py
 
 ```python
-NAMMU_UNIVERSAL_PROMPT = """You are NAMMU, the intent extraction
-core of INANNA NYX. Your only job: read the operator message and
-return a JSON intent object. Never refuse. Never explain.
-Return JSON only. Work in any language.
+"""
+INANNA NYX — NAMMU Operator Profile
+Phase 9.2: The Operator Profile
 
-Available intents by domain:
+NAMMU learns the operator's communication patterns
+from every interaction. The profile enriches intent
+extraction with personal context.
 
-EMAIL:
-  email_read_inbox    {app, max_emails, period, urgency_only, output_format}
-  email_search        {query, app, period}
-  email_read_message  {subject_or_sender, app}
-  email_compose       {to, subject, body, app}
-  email_reply         {subject_or_sender, body, app}
+What is stored per operator:
+  - known_shorthands: {abbreviated: full_meaning}
+  - language_patterns: {language: contexts_when_used}
+  - routing_corrections: [{original, correct_intent, correct_params}]
+  - domain_weights: {domain: frequency_score}
+  - urgency_markers: [phrases that signal urgency]
+  - session_patterns: {time_of_day: typical_domain}
 
-COMMUNICATION:
-  comm_read_messages  {app}
-  comm_send_message   {app, contact, message}
-  comm_list_contacts  {app}
+Storage: data/realms/{realm}/nammu/operator_profiles/{user_id}.json
+This file grows with every session.
+It is never deleted — only appended.
 
-DOCUMENT:
-  doc_read            {path}
-  doc_write           {path, content, title, format}
-  doc_open            {path}
-  doc_export_pdf      {path, output_dir}
+See docs/nammu_vision.md Dimension I and II for full vision.
+"""
+from __future__ import annotations
 
-BROWSER:
-  browser_read        {url, js}
-  browser_search      {query}
-  browser_open        {url, browser}
+import json
+import re
+from dataclasses import dataclass, field, asdict
+from datetime import datetime, timezone
+from pathlib import Path
+from typing import Any, Optional
 
-CALENDAR:
-  calendar_today      {}
-  calendar_upcoming   {days}
-  calendar_read_ics   {path}
 
-DESKTOP:
-  desktop_open_app    {app}
-  desktop_read_window {app_name, max_depth}
-  desktop_click       {label, app_name}
-  desktop_type        {text, submit}
-  desktop_screenshot  {app_name}
+# ── DATA STRUCTURES ─────────────────────────────────────────────────
 
-FILESYSTEM:
-  read_file           {path}
-  write_file          {path, content}
-  list_dir            {path, pattern}
-  search_files        {path, pattern}
-  file_info           {path}
+@dataclass
+class RoutingCorrection:
+    """
+    A correction NAMMU received from the operator.
+    Stored as a few-shot example for future calls.
+    """
+    timestamp: str = ""
+    original_text: str = ""         # what the operator said
+    misrouted_to: str = ""          # what NAMMU thought
+    correct_intent: str = ""        # what it should have been
+    correct_params: dict = field(default_factory=dict)
 
-PROCESS:
-  list_processes      {filter}
-  run_command         {command, working_dir}
-  system_info         {}
-  kill_process        {pid, name}
+    def to_example_line(self) -> str:
+        """Format as a few-shot example for the LLM prompt."""
+        params_str = json.dumps(self.correct_params)
+        return (
+            f'"{self.original_text}" '
+            f'-> {{"intent":"{self.correct_intent}",'
+            f'"params":{params_str}}}'
+        )
 
-NETWORK:
-  ping                {host}
-  resolve_host        {host}
-  scan_ports          {host, ports}
 
-INFORMATION:
-  web_search          {query}
+@dataclass
+class OperatorProfile:
+    """
+    NAMMU's learned model of an operator's communication style.
+    Grows with every interaction. Never shrinks.
+    """
+    user_id: str = ""
+    display_name: str = ""
+    last_updated: str = ""
 
-NONE:
-  none                {} (not a tool request — conversation)
+    # Language patterns
+    # e.g. {"en": ["technical", "morning"], "es": ["relaxed", "evening"]}
+    language_patterns: dict[str, list[str]] = field(default_factory=dict)
+    primary_language: str = "en"
 
-Return exactly:
-{"intent":"...","params":{...},"confidence":0.0-1.0,"domain":"..."}
-IMPORTANT: JSON only. No markdown. No explanation. No prose.
+    # Shorthand lexicon: abbreviations → full meanings
+    # e.g. {"mtx": "Matxalen", "act": "Actuavalles"}
+    known_shorthands: dict[str, str] = field(default_factory=dict)
 
-Examples:
-"anything from Matxalen?" → {"intent":"email_search","params":{"query":"Matxalen","app":"thunderbird"},"confidence":0.97,"domain":"email"}
-"read ~/report.pdf" → {"intent":"doc_read","params":{"path":"~/report.pdf"},"confidence":0.99,"domain":"document"}
-"search the web for NixOS" → {"intent":"browser_search","params":{"query":"NixOS"},"confidence":0.98,"domain":"browser"}
-"what's on my calendar today" → {"intent":"calendar_today","params":{},"confidence":0.99,"domain":"calendar"}
-"open firefox" → {"intent":"desktop_open_app","params":{"app":"firefox"},"confidence":0.97,"domain":"desktop"}
-"list my documents folder" → {"intent":"list_dir","params":{"path":"~/Documents"},"confidence":0.95,"domain":"filesystem"}
-"hello how are you" → {"intent":"none","params":{},"confidence":0.99,"domain":"none"}"""
+    # How often each domain is used (frequency score, 0.0-1.0)
+    domain_weights: dict[str, float] = field(default_factory=dict)
+
+    # Phrases that signal urgency for this operator
+    urgency_markers: list[str] = field(default_factory=list)
+
+    # Routing corrections from this operator
+    routing_corrections: list[dict] = field(default_factory=list)
+
+    # Topics this operator frequently mentions
+    recurring_topics: list[str] = field(default_factory=list)
+
+    # Communication preferences (from UserProfile, mirrored)
+    communication_style: str = ""
+    preferred_length: str = "short"
+
+    def to_nammu_context(self) -> str:
+        """
+        Build the [OPERATOR CONTEXT] block for the LLM prompt.
+        Injected at the start of NAMMU_UNIVERSAL_PROMPT.
+        """
+        lines = ["[OPERATOR CONTEXT]"]
+        if self.display_name:
+            lines.append(f"Operator: {self.display_name}")
+
+        # Language preference
+        if self.language_patterns:
+            lang_desc = []
+            for lang, contexts in self.language_patterns.items():
+                lang_desc.append(f"{lang} ({', '.join(contexts[:2])})")
+            lines.append(f"Languages: {' | '.join(lang_desc)}")
+        elif self.primary_language:
+            lines.append(f"Primary language: {self.primary_language}")
+
+        # Known shorthands — critical for accurate routing
+        if self.known_shorthands:
+            sh = ', '.join(f'"{k}"={v}' for k, v in
+                          list(self.known_shorthands.items())[:8])
+            lines.append(f"Shorthands: {sh}")
+
+        # Communication style
+        if self.preferred_length == "short":
+            lines.append("Style: prefers short, direct responses")
+
+        # Top domains (what this operator uses most)
+        if self.domain_weights:
+            top = sorted(self.domain_weights.items(),
+                        key=lambda x: x[1], reverse=True)[:4]
+            lines.append(
+                f"Most used: {', '.join(d for d, _ in top)}"
+            )
+
+        # Recent corrections (few-shot examples)
+        if self.routing_corrections:
+            recent = self.routing_corrections[-3:]
+            corrections_clean = []
+            for c in recent:
+                obj = RoutingCorrection(**c)
+                corrections_clean.append(obj.to_example_line())
+            if corrections_clean:
+                lines.append("Recent corrections:")
+                for ex in corrections_clean:
+                    lines.append(f"  {ex}")
+
+        lines.append("[END CONTEXT]")
+        return "\n".join(lines)
+
+    def record_shorthand(self, abbreviation: str, full_meaning: str) -> None:
+        """Record a new shorthand the operator uses."""
+        self.known_shorthands[abbreviation.lower()] = full_meaning
+        self.last_updated = _utc_now()
+
+    def record_correction(
+        self,
+        original_text: str,
+        misrouted_to: str,
+        correct_intent: str,
+        correct_params: dict,
+    ) -> None:
+        """Record a routing correction. Used as few-shot example."""
+        correction = RoutingCorrection(
+            timestamp=_utc_now(),
+            original_text=original_text,
+            misrouted_to=misrouted_to,
+            correct_intent=correct_intent,
+            correct_params=correct_params,
+        )
+        self.routing_corrections.append(asdict(correction))
+        # Keep only last 20 corrections
+        if len(self.routing_corrections) > 20:
+            self.routing_corrections = self.routing_corrections[-20:]
+        self.last_updated = _utc_now()
+
+    def record_routing(self, domain: str) -> None:
+        """Record that a domain was used — updates frequency weights."""
+        current = self.domain_weights.get(domain, 0.0)
+        # Exponential moving average: new = 0.1 + 0.9 * old
+        # Gradually increases weight for frequently used domains
+        self.domain_weights[domain] = min(1.0, current + 0.05)
+        self.last_updated = _utc_now()
+
+    def detect_language(self, text: str) -> str:
+        """
+        Detect language of input text using simple heuristics.
+        Returns ISO language code: 'en', 'es', 'ca', 'pt'.
+        On DGX: replace with LLM language detection.
+        """
+        text_lower = text.lower()
+        # Catalan markers
+        if any(w in text_lower for w in
+               ['gràcies', 'hola', 'correus', 'avui', 'demà',
+                'resumeix', 'missatge']):
+            return 'ca'
+        # Portuguese markers
+        if any(w in text_lower for w in
+               ['obrigad', 'olá', 'mensagem', 'correio',
+                'amanhã', 'hoje']):
+            return 'pt'
+        # Spanish markers
+        if any(w in text_lower for w in
+               ['gracias', 'hola', 'correo', 'hoy', 'mañana',
+                'urgentes', 'resumen', 'tienes', 'tengo']):
+            return 'es'
+        return 'en'
+
+    def update_language_pattern(self, text: str, domain: str) -> None:
+        """Record language usage context."""
+        lang = self.detect_language(text)
+        if lang not in self.language_patterns:
+            self.language_patterns[lang] = []
+        context = domain if domain != "none" else "conversation"
+        if context not in self.language_patterns[lang]:
+            self.language_patterns[lang].append(context)
+        if lang != self.primary_language:
+            # Update primary if this language is becoming dominant
+            lang_counts = {
+                l: len(ctxs) for l, ctxs in
+                self.language_patterns.items()
+            }
+            self.primary_language = max(lang_counts, key=lang_counts.get)
+
+
+# ── STORAGE ──────────────────────────────────────────────────────────
+
+def _utc_now() -> str:
+    return datetime.now(timezone.utc).isoformat()
+
+
+def _profile_path(nammu_dir: Path, user_id: str) -> Path:
+    """Path to operator's NAMMU profile file."""
+    return nammu_dir / "operator_profiles" / f"{user_id}.json"
+
+
+def load_operator_profile(
+    nammu_dir: Path, user_id: str
+) -> OperatorProfile:
+    """
+    Load operator profile from disk.
+    Returns empty profile if not found — never raises.
+    """
+    path = _profile_path(nammu_dir, user_id)
+    if not path.exists():
+        return OperatorProfile(
+            user_id=user_id,
+            last_updated=_utc_now(),
+        )
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+        return OperatorProfile(**{
+            k: v for k, v in data.items()
+            if k in OperatorProfile.__dataclass_fields__
+        })
+    except Exception:
+        return OperatorProfile(
+            user_id=user_id,
+            last_updated=_utc_now(),
+        )
+
+
+def save_operator_profile(
+    nammu_dir: Path, profile: OperatorProfile
+) -> None:
+    """Save operator profile to disk. Never raises."""
+    path = _profile_path(nammu_dir, profile.user_id)
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(
+            json.dumps(asdict(profile), indent=2, ensure_ascii=False),
+            encoding="utf-8",
+        )
+    except Exception:
+        pass
+
+
+def build_profile_from_user_profile(
+    user_profile: Any,
+    nammu_dir: Path,
+) -> OperatorProfile:
+    """
+    Seed the NAMMU operator profile from the existing UserProfile.
+    Called once when profile doesn't exist yet.
+    """
+    uid = getattr(user_profile, "user_id", "")
+    profile = load_operator_profile(nammu_dir, uid)
+
+    # Mirror from UserProfile
+    profile.display_name = (
+        getattr(user_profile, "preferred_name", "")
+        or getattr(user_profile, "display_name", "")
+        or uid
+    )
+    profile.communication_style = getattr(
+        user_profile, "communication_style", ""
+    )
+    profile.preferred_length = getattr(
+        user_profile, "preferred_length", "short"
+    )
+
+    # Seed languages from UserProfile
+    langs = getattr(user_profile, "languages", ["en"])
+    if langs:
+        profile.primary_language = langs[0]
+        for lang in langs:
+            if lang not in profile.language_patterns:
+                profile.language_patterns[lang] = []
+
+    # Seed recurring topics as domain weights
+    topics = getattr(user_profile, "recurring_topics", [])
+    for topic in topics:
+        profile.domain_weights[topic] = 0.3
+
+    return profile
+
+
+# ── SHORTHAND DETECTION ──────────────────────────────────────────────
+
+# Patterns that suggest the user is using shorthand
+# e.g. "mtx" alone as a word, or very short words
+_SHORTHAND_PATTERN = re.compile(r'\b([a-z]{2,4})\b')
+
+
+def extract_potential_shorthands(
+    text: str, known_shorthands: dict[str, str]
+) -> list[str]:
+    """
+    Find short words in text that might be shorthands.
+    Returns list of candidates not yet in known_shorthands.
+    Only flags words 2-4 chars that appear standalone.
+    """
+    candidates = []
+    for match in _SHORTHAND_PATTERN.finditer(text.lower()):
+        word = match.group(1)
+        if word not in known_shorthands and len(word) <= 4:
+            # Exclude common English/Spanish stop words
+            if word not in {
+                'the', 'and', 'for', 'not', 'but', 'can',
+                'any', 'all', 'my', 'me', 'do', 'it', 'is',
+                'en', 'de', 'la', 'el', 'que', 'los', 'las',
+                'una', 'por', 'con', 'he', 'she', 'we', 'ok',
+                'hi', 'yes', 'no', 'go', 'get',
+            }:
+                candidates.append(word)
+    return candidates
 ```
 
-Key changes to nammu_intent.py:
-  - Add NAMMU_UNIVERSAL_PROMPT alongside NAMMU_EMAIL_PROMPT
-  - Extend IntentResult: add `domain` field
-  - Extend extract_intent() to use universal prompt for non-email
-  - Add domain detection: classify input domain before LLM call
-    (fast heuristic — avoids LLM call for clearly-domain inputs)
-  - Update _has_email_comm_signal → _classify_domain(text)
+### Task 2 — Wire OperatorProfile into nammu_intent.py
 
-### Task 2 — Replace domain-specific routing in main.py
+In nammu_intent.py, modify `extract_intent_universal()` and
+`nammu_first_routing()` to accept and use the operator profile:
 
-Currently main.py has separate extract_*_tool_request()
-functions per domain, all using regex patterns.
+```python
+def extract_intent_universal(
+    text: str,
+    conversation_context: list[dict] | None = None,
+    operator_profile: OperatorProfile | None = None,  # ← NEW
+) -> IntentResult:
+    """
+    Extract intent with operator profile enrichment.
+    If profile provided, prepend [OPERATOR CONTEXT] to prompt.
+    """
+    system_prompt = NAMMU_UNIVERSAL_PROMPT
+    if operator_profile:
+        context_block = operator_profile.to_nammu_context()
+        system_prompt = context_block + "\n\n" + NAMMU_UNIVERSAL_PROMPT
+    # ... rest of existing implementation unchanged
+```
 
-Phase 9.1 adds a NAMMU-first pre-routing pass:
-
+And in `nammu_first_routing()`:
 ```python
 def nammu_first_routing(
     text: str,
     conversation_context: list | None = None,
+    operator_profile: OperatorProfile | None = None,  # ← NEW
 ) -> dict | None:
-    """
-    Try NAMMU LLM intent extraction first.
-    Returns tool_request dict if confident, None to fall through to regex.
-    Runs in 3s background thread — never blocks routing.
-    """
+    """Try NAMMU LLM with operator profile context."""
     domain = _classify_domain_fast(text.lower())
     if domain == "none":
-        return None   # Pure conversation — skip LLM entirely
-
-    import threading
+        return None
     result_box = [None]
     def _run():
-        result_box[0] = extract_intent_universal(text, conversation_context)
+        result_box[0] = extract_intent_universal(
+            text, conversation_context, operator_profile
+        )
     t = threading.Thread(target=_run, daemon=True)
     t.start()
     t.join(timeout=3.0)
-
     r = result_box[0]
     if r and r.success and r.confidence >= 0.75:
-        return r.to_tool_request()
-    return None   # Fall through to existing regex routing
+        req = r.to_tool_request()
+        if req:
+            req["_nammu_domain"] = r.domain
+        return req
+    return None
 ```
 
-Add `_classify_domain_fast(text_lower)`:
-```python
-def _classify_domain_fast(text: str) -> str:
-    """Fast domain classification without LLM.
-    Returns domain name or 'none'."""
-    # Check each domain's signal words
-    if any(w in text for w in EMAIL_SIGNALS):     return "email"
-    if any(w in text for w in COMM_SIGNALS):      return "communication"
-    if any(w in text for w in DOC_SIGNALS):       return "document"
-    if any(w in text for w in BROWSER_SIGNALS):   return "browser"
-    if any(w in text for w in CAL_SIGNALS):       return "calendar"
-    if any(w in text for w in DESKTOP_SIGNALS):   return "desktop"
-    if any(w in text for w in FS_SIGNALS):        return "filesystem"
-    if any(w in text for w in PROC_SIGNALS):      return "process"
-    if any(w in text for w in NET_SIGNALS):       return "network"
-    if any(w in text for w in INFO_SIGNALS):      return "information"
-    return "none"
-```
+### Task 3 — Wire profile into server.py dispatch
 
-Signal word lists use the existing governance_signals.json
-entries. No duplication — read from the same source.
-
-### Task 3 — Wire nammu_first_routing into the dispatch chain
-
-In main.py _run_routed_turn() or equivalent dispatch:
+In InterfaceServer, load the operator profile at session start
+and pass it to nammu_first_routing on every turn:
 
 ```python
-# NAMMU-first: try LLM intent extraction
-# Falls through gracefully if LLM is slow or unavailable
-tool_request = nammu_first_routing(text, conversation_context)
+# In InterfaceServer.__init__:
+from core.nammu_profile import (
+    load_operator_profile, save_operator_profile,
+    build_profile_from_user_profile,
+)
+self.nammu_profile = build_profile_from_user_profile(
+    self.profile_manager.load(self.active_user.user_id),
+    self.nammu_dir,
+)
 
-if tool_request:
-    # NAMMU succeeded — execute directly
-    result = execute_tool_request(tool_request)
-    return build_tool_response(result)
+# In _run_routed_turn() or equivalent:
+# After tool executes, record domain usage
+if tool_result:
+    domain = tool_result.tool.split("_")[0]  # "email", "doc", etc.
+    self.nammu_profile.record_routing(domain)
+    self.nammu_profile.update_language_pattern(text, domain)
+    save_operator_profile(self.nammu_dir, self.nammu_profile)
 
-# Fall through to domain-specific regex routing
-# (existing extract_email_tool_request, etc.)
-tool_request = (
-    extract_email_tool_request(text, ...) or
-    extract_document_tool_request(text, ...) or
-    extract_browser_tool_request(text, ...) or
-    ...
+# Pass profile to routing:
+tool_request = nammu_first_routing(
+    text,
+    conversation_context,
+    operator_profile=self.nammu_profile,
 )
 ```
 
-### Task 4 — Extend IntentResult with domain field
+### Task 4 — Add correction recording command
 
-In nammu_intent.py:
+Add a command `nammu-correct` that the operator can use to
+teach NAMMU when it misrouted:
+
+Usage: `nammu-correct email_search Matxalen`
+(means: "what I just said should have routed to
+email_search with query Matxalen")
+
+In handle_command():
 ```python
-@dataclass
-class IntentResult:
-    intent: str
-    params: dict = field(default_factory=dict)
-    confidence: float = 0.0
-    domain: str = ""           # ← NEW
-    language_detected: str = "en"
-    model_used: str = ""
-    latency_ms: float = 0.0
-    raw_response: str = ""
-    error: Optional[str] = None
+elif command_name == "nammu-correct":
+    # Parse: nammu-correct <intent> [params...]
+    parts = raw_cmd.split(None, 2)
+    if len(parts) >= 2:
+        correct_intent = parts[1]
+        # Get last NAMMU routing from profile
+        self.nammu_profile.record_correction(
+            original_text=self._last_nammu_input or "",
+            misrouted_to=self._last_nammu_route or "unknown",
+            correct_intent=correct_intent,
+            correct_params={},
+        )
+        save_operator_profile(self.nammu_dir, self.nammu_profile)
+        await self.broadcast({
+            "type": "system",
+            "text": f"nammu > correction recorded: '{correct_intent}'"
+        })
 ```
 
-### Task 5 — Update help_system.py
+### Task 5 — Add shorthand registration command
 
-Add a section to the help panel explaining natural language:
+Add command `nammu-learn`:
 
-```
-  NATURAL LANGUAGE (speak freely)
-    INANNA understands your intent regardless of phrasing.
-    You do not need exact commands. Examples:
+Usage: `nammu-learn mtx Matxalen`
+(teaches NAMMU that "mtx" means "Matxalen")
 
-    "anything from Matxalen?"        finds her emails
-    "¿tengo algo urgente?"           checks urgent emails (Spanish)
-    "resumeix els correus d'ahir"    yesterday's emails (Catalan)
-    "read ~/proposal.pdf"            reads a document
-    "search the web for NixOS"       web search
-    "what's on my calendar?"         today's events
-    "open firefox"                   opens Firefox
-    "list my downloads"              filesystem listing
-
-    On fast hardware: NAMMU uses full LLM understanding.
-    On slow hardware: NAMMU uses intelligent regex fallback.
-    Both produce correct results. Speed differs.
-```
-
-### Task 6 — Update identity.py
-
-CURRENT_PHASE = "Cycle 9 - Phase 9.1 - The Intent Engine"
-
-### Task 7 — Update docs/cycle9_master_plan.md
-
-Add a status section at the top:
-```
-## Phase Status
-  9.1  The Intent Engine    ← ACTIVE
-  9.2  Operator Profile     ← pending
-  9.3  Constitutional Filter ← pending
-  9.4  Comprehension Layer  ← pending (email comprehension built in 8.3b)
-  9.5  Feedback Loop        ← pending
-  9.6  Multilingual Core    ← pending
-  9.7  NAMMU Constitution   ← pending
-  9.8  Capability Proof     ← pending
+```python
+elif command_name == "nammu-learn":
+    parts = raw_cmd.split(None, 2)
+    if len(parts) == 3:
+        abbreviation = parts[1].lower()
+        full_meaning = parts[2]
+        self.nammu_profile.record_shorthand(abbreviation, full_meaning)
+        save_operator_profile(self.nammu_dir, self.nammu_profile)
+        await self.broadcast({
+            "type": "system",
+            "text": (f"nammu > learned: '{abbreviation}' = "
+                    f"'{full_meaning}'")
+        })
 ```
 
-### Task 8 — Tests
+### Task 6 — Update help_system.py
 
-Create inanna/tests/test_intent_engine.py (25 tests):
+Add NAMMU PROFILE section:
 
-All tests mock the LLM call — no actual LLM calls in tests.
+```
+  NAMMU PROFILE (teach INANNA your language)
+    "nammu-learn mtx Matxalen"     Teach shorthand (mtx = Matxalen)
+    "nammu-learn act Actuavalles"  Teach another shorthand
+    "nammu-correct email_search"   Correct last misrouting
+    "nammu-profile"                Show your current profile
 
-  - IntentResult has domain field with default ""
-  - extract_intent_universal called with universal prompt
-  - _classify_domain_fast("check my email") returns "email"
-  - _classify_domain_fast("read ~/report.pdf") returns "document"
-  - _classify_domain_fast("search the web for X") returns "browser"
-  - _classify_domain_fast("what's on my calendar") returns "calendar"
-  - _classify_domain_fast("open firefox") returns "desktop"
-  - _classify_domain_fast("list my documents") returns "filesystem"
-  - _classify_domain_fast("hello how are you") returns "none"
-  - _classify_domain_fast("urgentes?") returns "email"
-  - _classify_domain_fast("ping google.com") returns "network"
-  - nammu_first_routing returns None when domain is "none"
-    (mock _classify_domain_fast to return "none")
-  - nammu_first_routing returns None when LLM times out
-    (mock extract_intent_universal to block > 3s)
-  - nammu_first_routing returns tool_request when LLM fast + confident
-    (mock to return IntentResult(intent="email_search", confidence=0.97))
-  - nammu_first_routing returns None when confidence < 0.75
-    (mock to return IntentResult(intent="email_search", confidence=0.50))
-  - NAMMU_UNIVERSAL_PROMPT contains all 11 domain names
-  - NAMMU_UNIVERSAL_PROMPT contains example JSON outputs
-  - IntentResult.to_tool_request includes domain in output
-  - Email routing still works when NAMMU returns None (regex fallback)
-    "anything from Matxalen?" → email_search via regex
-  - Document routing: "read ~/report.pdf" → doc_read via regex fallback
-  - Browser routing: "fetch https://example.com" → browser_read
-  - Calendar routing: "what do I have today" → calendar_today
-  - Full test suite still passes (≥621 tests)
-  - Phase identity: CURRENT_PHASE contains "9.1"
+  After teaching: INANNA will understand "mtx replied?"
+  Profile grows automatically from every interaction.
+```
 
-Update test_identity.py, test_nammu_intent.py.
+Add `nammu-profile` command to handle_command():
+```python
+elif command_name == "nammu-profile":
+    profile = self.nammu_profile
+    lines = [
+        f"nammu > operator profile for {profile.display_name}",
+        f"  languages: {profile.language_patterns}",
+        f"  shorthands: {profile.known_shorthands}",
+        f"  top domains: {sorted(profile.domain_weights.items(), key=lambda x:-x[1])[:5]}",
+        f"  corrections: {len(profile.routing_corrections)}",
+    ]
+    await self.broadcast({"type":"system","text":"\n".join(lines)})
+```
+
+### Task 7 — Update identity.py
+
+CURRENT_PHASE = "Cycle 9 - Phase 9.2 - The Operator Profile"
+
+### Task 8 — Tests (all offline — no LLM calls)
+
+Create inanna/tests/test_nammu_profile.py (25 tests):
+
+  - OperatorProfile instantiates with defaults
+  - OperatorProfile.to_nammu_context includes display_name
+  - OperatorProfile.to_nammu_context includes shorthands
+  - OperatorProfile.to_nammu_context includes corrections
+  - OperatorProfile.to_nammu_context includes top domains
+  - OperatorProfile.record_shorthand stores correctly
+  - OperatorProfile.record_correction stores correctly
+  - OperatorProfile.record_correction keeps only last 20
+  - OperatorProfile.record_routing increases domain weight
+  - OperatorProfile.record_routing caps at 1.0
+  - OperatorProfile.detect_language('hola') returns 'es'
+  - OperatorProfile.detect_language('hello') returns 'en'
+  - OperatorProfile.detect_language('gràcies') returns 'ca'
+  - OperatorProfile.detect_language('obrigado') returns 'pt'
+  - OperatorProfile.update_language_pattern records context
+  - RoutingCorrection.to_example_line formats correctly
+  - load_operator_profile returns empty profile when missing
+  - load_operator_profile returns correct profile when present
+    (write a temp file, load it, verify fields)
+  - save_operator_profile creates file correctly
+  - save_operator_profile creates parent directories
+  - build_profile_from_user_profile seeds display_name
+  - build_profile_from_user_profile seeds preferred_length
+  - extract_potential_shorthands finds short words
+  - extract_potential_shorthands excludes stop words
+  - extract_potential_shorthands excludes known shorthands
+
+Update test_identity.py: CURRENT_PHASE assertion.
 
 ---
 
-## Signal Word Lists
+## Storage Path
 
-Read from governance_signals.json. Do NOT hardcode separately.
-These must stay in sync with the governance config.
-Load them at module import time:
-
-```python
-import json
-from pathlib import Path
-
-def _load_signals() -> dict[str, list[str]]:
-    path = Path(__file__).parent.parent / "config" / "governance_signals.json"
-    try:
-        return json.loads(path.read_text(encoding="utf-8"))
-    except Exception:
-        return {}
-
-_DOMAIN_SIGNALS = _load_signals()
-
-def _classify_domain_fast(text_lower: str) -> str:
-    for domain, signals in _DOMAIN_SIGNALS.items():
-        if any(s in text_lower for s in signals):
-            return domain
-    return "none"
 ```
+data/realms/{realm}/nammu/operator_profiles/{user_id}.json
+```
+
+For ZAERA:
+```
+data/realms/default/nammu/operator_profiles/user_6396c88f.json
+```
+
+This file is created the first time the server starts
+after Phase 9.2 is deployed. It is never deleted.
 
 ---
 
 ## Permitted file changes
 
-inanna/core/nammu_intent.py            <- MODIFY: universal prompt,
-                                           domain field, new functions
-inanna/main.py                         <- MODIFY: nammu_first_routing,
-                                           _classify_domain_fast, wiring
-inanna/core/help_system.py             <- MODIFY: natural language section
-inanna/identity.py                     <- MODIFY: CURRENT_PHASE
-inanna/tests/test_intent_engine.py     <- NEW
-inanna/tests/test_nammu_intent.py      <- MODIFY: domain field tests
-inanna/tests/test_identity.py          <- MODIFY
-docs/cycle9_master_plan.md             <- MODIFY: phase status
+inanna/core/nammu_profile.py            <- NEW
+inanna/core/nammu_intent.py             <- MODIFY: profile parameter
+inanna/ui/server.py                     <- MODIFY: load/save profile,
+                                           wire into routing,
+                                           add commands
+inanna/core/help_system.py              <- MODIFY: profile section
+inanna/identity.py                      <- MODIFY: CURRENT_PHASE
+inanna/tests/test_nammu_profile.py      <- NEW
+inanna/tests/test_identity.py           <- MODIFY
 
 ---
 
 ## What You Are NOT Building
 
-- No operator profile storage (Phase 9.2)
 - No constitutional filter (Phase 9.3)
-- No per-operator learning (Phase 9.2)
-- No changes to workflow files (email_workflows, etc.)
-- No changes to tools.json
-- No changes to NixOS configs
+- No multilingual LLM detection (simple heuristic only)
+- No cross-operator pattern sharing (Cycle 11)
+- No changes to tools.json or NixOS configs
+- Do NOT modify the existing UserProfile dataclass
+- Do NOT make LLM calls in tests
 
 ---
 
 ## Critical Constraints
 
-1. NEVER block the main routing path waiting for LLM
-   All LLM calls MUST be in daemon threads with max 3s join timeout
+1. The operator profile is ADDITIVE to the routing prompt
+   It never replaces NAMMU_UNIVERSAL_PROMPT
+   It is prepended as [OPERATOR CONTEXT]...[END CONTEXT]
 
-2. NEVER remove existing regex routing
-   nammu_first_routing is ADDITIVE — it runs before regex
-   If it returns None, regex runs as before
-   The system must work identically on slow hardware
+2. Profile loading NEVER blocks the server
+   If the profile file is corrupt or missing:
+   load_operator_profile() returns an empty OperatorProfile
+   The server continues normally
 
-3. NEVER call the LLM for pure conversation
-   _classify_domain_fast("hello") returns "none"
-   nammu_first_routing returns None immediately
-   CROWN handles the conversation — no LLM routing call
+3. Profile saving is fire-and-forget
+   save_operator_profile() wraps writes in try/except
+   A save failure never surfaces to the operator
 
-4. Confidence threshold: 0.75
-   Below this: fall through to regex even if LLM responded
-   The regex is often more reliable for ambiguous inputs
+4. The profile enriches on every turn, even current hardware
+   Even if the LLM times out and regex runs:
+   domain_weights and language_patterns still update
+   The profile grows regardless of LLM availability
+
+5. nammu-learn and nammu-correct are operator commands
+   They do NOT require proposal approval
+   They are teaching commands, not action commands
 
 ---
 
 ## Definition of Done
 
-- [ ] NAMMU_UNIVERSAL_PROMPT covers all 11 domains with examples
-- [ ] _classify_domain_fast() reads from governance_signals.json
-- [ ] nammu_first_routing() runs in 3s thread, returns None on timeout
-- [ ] IntentResult has domain field
-- [ ] nammu_first_routing wired before regex in dispatch chain
-- [ ] help_system.py updated with natural language section
-- [ ] CURRENT_PHASE = "Cycle 9 - Phase 9.1 - The Intent Engine"
-- [ ] All tests pass: py -3 -m unittest discover -s tests (≥621)
-- [ ] Pushed as cycle9-phase1-complete
+- [ ] core/nammu_profile.py with all dataclasses and functions
+- [ ] OperatorProfile.to_nammu_context() formats correctly
+- [ ] detect_language() works for en/es/ca/pt
+- [ ] load/save_operator_profile() work correctly
+- [ ] nammu_intent.py accepts operator_profile parameter
+- [ ] server.py loads profile at session start
+- [ ] server.py updates profile on every tool execution
+- [ ] nammu-learn command works
+- [ ] nammu-correct command works
+- [ ] nammu-profile command shows current profile
+- [ ] help_system.py updated
+- [ ] Profile file created at correct path on first run
+- [ ] CURRENT_PHASE = "Cycle 9 - Phase 9.2 - The Operator Profile"
+- [ ] All tests pass: py -3 -m unittest discover -s tests (>=648)
+- [ ] Pushed as cycle9-phase2-complete
 
 ---
 
 ## Handoff
 
-Commit: cycle9-phase1-complete
+Commit: cycle9-phase2-complete
 Push immediately to origin/main.
-Report: docs/implementation/CYCLE9_PHASE1_REPORT.md
+Report: docs/implementation/CYCLE9_PHASE2_REPORT.md
 
 The report MUST include:
-  - Confirmation NAMMU_UNIVERSAL_PROMPT covers all 11 domains
-  - Test of nammu_first_routing with mocked 97% confidence result
-  - Confirmation fallback still works when LLM returns None
-  - Whether the 3s thread timeout was tested
+  - Confirmation operator profile file is created on startup
+  - Show the actual profile JSON for user_6396c88f after startup
+  - Test of nammu-learn command
+  - Test of to_nammu_context() output with a seeded profile
 
-Stop. Do not begin Phase 9.2 without new CURRENT_PHASE.md.
+Stop. Do not begin Phase 9.3 without new CURRENT_PHASE.md.
 
 ---
 
 *Written by: Claude (Command Center)*
 *Guardian approval: ZAERA*
 *Date: 2026-04-22*
-*Cycle 8 gave INANNA hands.*
-*Cycle 9 gives INANNA understanding.*
-*Phase 9.1 is the first word*
-*in NAMMU's language.*
-*The regex falls silent.*
-*The LLM speaks.*
-*Any phrasing. Any language. Any style.*
-*Humans speak freely.*
-*Machines receive structure.*
-*NAMMU bridges the gap.*
+*Every session, NAMMU knows ZAERA better.*
+*Every correction, NAMMU becomes more fluent.*
+*Every shorthand learned, the gap closes.*
+*"mtx replied?" becomes crystal clear.*
+*The operator does not adapt to the machine.*
+*The machine adapts to the operator.*
+*This is Dimension I made real.*
