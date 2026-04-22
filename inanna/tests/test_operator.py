@@ -35,6 +35,11 @@ class OperatorFacultyTests(unittest.TestCase):
                 "comm_read_messages",
                 "comm_send_message",
                 "comm_list_contacts",
+                "email_read_inbox",
+                "email_read_message",
+                "email_search",
+                "email_compose",
+                "email_reply",
                 "desktop_open_app",
                 "desktop_read_window",
                 "desktop_click",
@@ -111,6 +116,18 @@ class OperatorFacultyTests(unittest.TestCase):
                 "requires_approval": True,
                 "requires_privilege": "converse",
                 "parameters": ["app", "contact", "message", "mode"],
+                "enabled": True,
+            },
+        )
+        self.assertEqual(
+            operator.get_tool_definition("email_compose"),
+            {
+                "display_name": "Compose Email Draft",
+                "description": "Compose an email draft for review before sending.",
+                "category": "email",
+                "requires_approval": True,
+                "requires_privilege": "converse",
+                "parameters": ["app", "to", "subject", "body", "mode"],
                 "enabled": True,
             },
         )

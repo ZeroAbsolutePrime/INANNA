@@ -56,6 +56,15 @@ HELP_COMMON = """𒀭 INANNA NYX — Available Commands
                                        type draft + confirm send)
     (sending ALWAYS requires approval - no exceptions)
 
+  EMAIL (Thunderbird, Proton Mail)
+    "check my email"                Read inbox (no approval)
+    "read the email from Carlos"    Read specific email (no approval)
+    "search my email for invoice"   Search emails (no approval)
+    "send an email to..."           Compose draft (approval x2:
+                                    compose + confirm send)
+    "reply to the email from Sara"  Compose reply (approval x2)
+    (sending email ALWAYS requires approval - no exceptions)
+
   DESKTOP (speak naturally)
     "open firefox"                Open any application
     "read the whatsapp window"    Read window content
@@ -212,6 +221,8 @@ HELP_TOPICS = {
               read_file, list_dir, file_info, search_files, write_file,
               list_processes, system_info, kill_process, run_command,
               comm_read_messages, comm_send_message, comm_list_contacts,
+              email_read_inbox, email_read_message, email_search,
+              email_compose, email_reply,
               search_packages, list_packages, install_package, remove_package,
               launch_app,
               desktop_open_app, desktop_read_window, desktop_click,
@@ -229,7 +240,7 @@ HELP_TOPICS = {
   help [topic]       Show details on a specific topic
 
   Topics: my-profile, governance-trust, inanna-reflect,
-          faculties, tools, files, processes, packages, communication, desktop, memory, realms, departments""",
+          faculties, tools, files, processes, packages, communication, email, desktop, memory, realms, departments""",
 
     "tools": """tools — Available tools (all require proposal approval)
 
@@ -246,6 +257,8 @@ HELP_TOPICS = {
     - kill_process, run_command: approval required
     - comm_read_messages, comm_list_contacts: no approval required
     - comm_send_message: ALWAYS requires approval and send confirmation
+    - email_read_inbox, email_read_message, email_search: no approval required
+    - email_compose, email_reply: ALWAYS require approval and send confirmation
     - search_packages, list_packages: no approval required
     - install_package, remove_package, launch_app: approval required
     - desktop_read_window, desktop_screenshot: no approval required
@@ -335,6 +348,28 @@ HELP_TOPICS = {
 
   Supported now: Signal and WhatsApp workflows
   Future phases: Telegram, Discord, Slack.""",
+
+    "email": """email - Email workflows
+
+  INANNA can inspect inboxes, read specific messages, search mail,
+  compose drafts, and prepare governed replies in desktop email clients.
+
+  Read inbox:      "check my email"
+  Read message:    "read the email from Carlos"
+  Search mail:     "search my email for invoice"
+  Compose draft:   "send an email to maria@example.com about budget saying hello"
+  Reply draft:     "reply to the email from Sara saying I will answer tomorrow"
+
+  Governance:
+    - email_read_inbox, email_read_message, email_search: no approval required
+    - email_compose, email_reply: ALWAYS require approval twice
+
+  Sending is a two-stage flow:
+    1. Approve composing the visible draft
+    2. Approve clicking Send after you review it
+
+  Supported now: Thunderbird and Proton Mail Desktop
+  Future phases: Evolution and Geary.""",
 
     "desktop": """desktop - Desktop Faculty operations
 

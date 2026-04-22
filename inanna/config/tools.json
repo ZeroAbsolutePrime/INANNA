@@ -239,6 +239,71 @@
       ],
       "enabled": true
     },
+    "email_read_inbox": {
+      "display_name": "Read Email Inbox",
+      "description": "Open email client and read inbox messages.",
+      "category": "email",
+      "requires_approval": false,
+      "requires_privilege": "converse",
+      "parameters": [
+        "app",
+        "max_emails"
+      ],
+      "enabled": true
+    },
+    "email_read_message": {
+      "display_name": "Read Email",
+      "description": "Open and read a specific email by subject or sender.",
+      "category": "email",
+      "requires_approval": false,
+      "requires_privilege": "converse",
+      "parameters": [
+        "subject_or_sender",
+        "app"
+      ],
+      "enabled": true
+    },
+    "email_search": {
+      "display_name": "Search Emails",
+      "description": "Search emails by keyword, sender, or subject.",
+      "category": "email",
+      "requires_approval": false,
+      "requires_privilege": "converse",
+      "parameters": [
+        "query",
+        "app"
+      ],
+      "enabled": true
+    },
+    "email_compose": {
+      "display_name": "Compose Email Draft",
+      "description": "Compose an email draft for review before sending.",
+      "category": "email",
+      "requires_approval": true,
+      "requires_privilege": "converse",
+      "parameters": [
+        "app",
+        "to",
+        "subject",
+        "body",
+        "mode"
+      ],
+      "enabled": true
+    },
+    "email_reply": {
+      "display_name": "Reply Draft",
+      "description": "Compose a reply draft for review before sending.",
+      "category": "email",
+      "requires_approval": true,
+      "requires_privilege": "converse",
+      "parameters": [
+        "app",
+        "subject_or_sender",
+        "body",
+        "mode"
+      ],
+      "enabled": true
+    },
     "desktop_open_app": {
       "display_name": "Open Application",
       "description": "Open any installed application by name.",

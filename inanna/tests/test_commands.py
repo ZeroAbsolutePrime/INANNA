@@ -582,6 +582,15 @@ class CommandTests(unittest.TestCase):
         self.assertIn("help > Unknown topic: unknown-topic", result)
         self.assertIn("faculties", result)
         self.assertIn("tools", result)
+        self.assertIn("email", result)
+
+    def test_help_email_topic_lists_governed_email_workflows(self) -> None:
+        result = build_help_response("guardian", "email")
+
+        self.assertTrue(result.startswith("INANNA NYX"))
+        self.assertIn("EMAIL", result)
+        self.assertIn("check my email", result.lower())
+        self.assertIn("two-stage", result.lower())
 
     def test_my_profile_returns_formatted_profile(self) -> None:
         (
@@ -1638,11 +1647,17 @@ class CommandTests(unittest.TestCase):
             config,
         )
 
-        self.assertIn("tool-registry > Registered tools (26 total):", result)
+        self.assertIn("tool-registry > Registered tools (31 total):", result)
         self.assertIn("COMMUNICATION", result)
         self.assertIn("Read Messages [enabled]", result)
         self.assertIn("Send Message [enabled]", result)
         self.assertIn("List Contacts [enabled]", result)
+        self.assertIn("EMAIL", result)
+        self.assertIn("Read Email Inbox [enabled]", result)
+        self.assertIn("Read Email [enabled]", result)
+        self.assertIn("Search Emails [enabled]", result)
+        self.assertIn("Compose Email Draft [enabled]", result)
+        self.assertIn("Reply Draft [enabled]", result)
         self.assertIn("DESKTOP", result)
         self.assertIn("Open Application [enabled]", result)
         self.assertIn("Read Window Content [enabled]", result)

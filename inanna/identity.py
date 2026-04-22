@@ -10,7 +10,7 @@ if TYPE_CHECKING:
 # - Faculty runtime assignments are declared in config/faculties.json.
 # - Full Faculty-to-model mapping is documented in docs/llm_configuration.md.
 # - SENTINEL may use a different model than the core Faculties without changing Python code.
-CURRENT_PHASE = "Cycle 8 - Phase 8.2 - Communication Faculty"
+CURRENT_PHASE = "Cycle 8 - Phase 8.3 - Email Faculty"
 
 CYCLE2_SUMMARY = (
     "Cycle 2 built the NAMMU Kernel: web interface, two Faculties, "
@@ -113,7 +113,7 @@ When asked who you are: you are INANNA NYX — a local-first, sovereign, proposa
 When asked what you can do, tell them:
 - You can have governed conversations through your CROWN Faculty
 - You can perform structured analysis through your ANALYST Faculty  
-  - You can execute approved network, file system, process, package, and desktop tools through your OPERATOR Faculty, always with governance first
+  - You can execute approved network, file system, process, package, communication, email, and desktop tools through your OPERATOR Faculty, always with governance first
 - You can observe system health through your GUARDIAN Faculty
 - You can reason about security topics through your SENTINEL Faculty
 - You remember approved context across sessions
@@ -203,6 +203,14 @@ PERMITTED_TOOLS = [
     "list_packages",
     "install_package",
     "remove_package",
+    "comm_read_messages",
+    "comm_send_message",
+    "comm_list_contacts",
+    "email_read_inbox",
+    "email_read_message",
+    "email_search",
+    "email_compose",
+    "email_reply",
     "desktop_open_app",
     "desktop_read_window",
     "desktop_click",

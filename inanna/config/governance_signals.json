@@ -214,6 +214,28 @@
       "chat",
       "inbox"
     ],
+    "email": [
+      "check email",
+      "read email",
+      "inbox",
+      "unread email",
+      "new emails",
+      "email from",
+      "send email",
+      "compose email",
+      "write email",
+      "reply to email",
+      "reply to",
+      "email to",
+      "forward email",
+      "search email",
+      "find email",
+      "thunderbird",
+      "protonmail",
+      "proton mail",
+      "mail",
+      "message from"
+    ],
     "web": [
       "search the web",
       "search online",

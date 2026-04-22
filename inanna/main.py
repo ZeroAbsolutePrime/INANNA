@@ -16,6 +16,15 @@ from config import Config
 from core.body import BodyInspector, BodyReport
 from core.communication_workflows import CommunicationWorkflows, WorkflowResult, normalize_app_name
 from core.desktop_faculty import DesktopFaculty, DesktopResult, is_consequential_label
+from core.email_workflows import (
+    DEFAULT_EMAIL_CLIENT,
+    EMAIL_APP_PATTERNS,
+    EMAIL_APP_WINGET_IDS,
+    EmailRecord,
+    EmailWorkflowResult,
+    EmailWorkflows,
+    normalize_email_app,
+)
 from core.faculty_monitor import FacultyMonitor
 from core.filesystem_faculty import FileInfo, FileSystemFaculty, FileSystemResult
 from core.governance import GovernanceLayer
@@ -276,6 +285,13 @@ COMMUNICATION_TOOL_NAMES = {
     "comm_send_message",
     "comm_list_contacts",
 }
+EMAIL_TOOL_NAMES = {
+    "email_read_inbox",
+    "email_read_message",
+    "email_search",
+    "email_compose",
+    "email_reply",
+}
 PROCESS_HINT_FALLBACKS = (
     "process",
     "processes",
@@ -323,6 +339,28 @@ COMMUNICATION_HINT_FALLBACKS = (
     "unread",
     "chat",
     "inbox",
+)
+EMAIL_HINT_FALLBACKS = (
+    "check email",
+    "read email",
+    "inbox",
+    "unread email",
+    "new emails",
+    "email from",
+    "send email",
+    "compose email",
+    "write email",
+    "reply to email",
+    "reply to",
+    "email to",
+    "forward email",
+    "search email",
+    "find email",
+    "thunderbird",
+    "protonmail",
+    "proton mail",
+    "mail",
+    "message from",
 )
 DESKTOP_HINT_FALLBACKS = (
     "open app",
@@ -442,6 +480,25 @@ def load_communication_domain_hints(
 
     cleaned = [str(item).strip().lower() for item in hints if str(item).strip()]
     return cleaned or list(COMMUNICATION_HINT_FALLBACKS)
+
+
+def load_email_domain_hints(
+    signals_path: Path = FILESYSTEM_SIGNAL_PATH,
+) -> list[str]:
+    try:
+        payload = json.loads(signals_path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return list(EMAIL_HINT_FALLBACKS)
+
+    domain_hints = payload.get("domain_hints", {})
+    if not isinstance(domain_hints, dict):
+        return list(EMAIL_HINT_FALLBACKS)
+    hints = domain_hints.get("email", [])
+    if not isinstance(hints, list):
+        return list(EMAIL_HINT_FALLBACKS)
+
+    cleaned = [str(item).strip().lower() for item in hints if str(item).strip()]
+    return cleaned or list(EMAIL_HINT_FALLBACKS)
 
 
 def load_desktop_domain_hints(
@@ -989,6 +1046,10 @@ def communication_request_requires_proposal(
     return str(communication_request.get("tool", "")).strip().lower() == "comm_send_message"
 
 
+def email_request_requires_proposal(email_request: dict[str, Any]) -> bool:
+    return str(email_request.get("tool", "")).strip().lower() in {"email_compose", "email_reply"}
+
+
 def display_communication_app_name(app: str) -> str:
     normalized = normalize_app_name(app)
     labels = {
@@ -1001,11 +1062,33 @@ def display_communication_app_name(app: str) -> str:
     return labels.get(normalized, normalized.title() or "Communication App")
 
 
+def display_email_app_name(app: str) -> str:
+    normalized = normalize_email_app(app)
+    labels = {
+        "thunderbird": "Thunderbird",
+        "protonmail": "Proton Mail",
+        "evolution": "Evolution",
+        "geary": "Geary",
+    }
+    return labels.get(normalized, normalized.title() or "Email Client")
+
+
 def build_communication_send_query(app: str, contact: str, message: str) -> str:
     return (
         f'{display_communication_app_name(app)} -> {normalize_request_fragment(contact)}: '
         f'"{str(message or "").strip()}"'
     )
+
+
+def build_email_compose_query(app: str, recipient: str, subject: str) -> str:
+    return (
+        f"{display_email_app_name(app)} -> {normalize_request_fragment(recipient)}"
+        f' | "{normalize_request_fragment(subject)}"'
+    )
+
+
+def build_email_reply_query(app: str, subject_or_sender: str) -> str:
+    return f"{display_email_app_name(app)} reply -> {normalize_request_fragment(subject_or_sender)}"
 
 
 def extract_communication_tool_request(
@@ -1120,6 +1203,152 @@ def detect_communication_tool_action(
     return {
         **request,
         "requires_proposal": communication_request_requires_proposal(request),
+    }
+
+
+def extract_email_tool_request(
+    text: str,
+    hints: list[str] | None = None,
+) -> dict[str, Any] | None:
+    normalized = str(text or "").strip()
+    lowered = normalized.lower()
+    prefix_pattern = r"^(?:inanna[,\s]+|hey inanna[,\s]+|please[,\s]+|can you[,\s]+)"
+    prefix_stripped = re.sub(prefix_pattern, "", lowered, flags=re.IGNORECASE).strip()
+    normalized_stripped = re.sub(prefix_pattern, "", normalized, flags=re.IGNORECASE).strip()
+    app_pattern = r"thunderbird|thunder bird|tb|protonmail|proton mail|proton"
+    active_hints = hints or load_email_domain_hints()
+    hint_match = any(hint in lowered for hint in active_hints)
+    app_match = re.search(app_pattern, prefix_stripped, flags=re.IGNORECASE) is not None
+    if not hint_match and not app_match:
+        return None
+
+    compose_match = re.match(
+        rf"^(?:send|write|compose)\s+(?:an?\s+)?email\s+to\s+(?P<to>.+?)\s+about\s+(?P<subject>.+?)\s+saying\s+(?P<body>.+?)(?:\s+on\s+(?P<app>{app_pattern}))?$",
+        normalized_stripped,
+        flags=re.IGNORECASE,
+    )
+    if compose_match:
+        app = normalize_email_app(compose_match.group("app") or DEFAULT_EMAIL_CLIENT)
+        recipient = normalize_request_fragment(compose_match.group("to"))
+        subject = normalize_request_fragment(compose_match.group("subject"))
+        body = str(compose_match.group("body") or "").strip()
+        params = {
+            "app": app,
+            "to": recipient,
+            "subject": subject,
+            "body": body,
+            "mode": "draft",
+        }
+        return {
+            "tool": "email_compose",
+            "params": params,
+            "query": build_email_compose_query(app, recipient, subject),
+            "reason": "Email composition requires a governed two-stage send flow.",
+        }
+
+    reply_match = re.match(
+        rf"^(?:reply\s+to(?:\s+the)?\s+email\s+from|reply\s+to)\s+(?P<target>.+?)\s+saying\s+(?P<body>.+?)(?:\s+on\s+(?P<app>{app_pattern}))?$",
+        normalized_stripped,
+        flags=re.IGNORECASE,
+    )
+    if reply_match:
+        app = normalize_email_app(reply_match.group("app") or DEFAULT_EMAIL_CLIENT)
+        target = normalize_request_fragment(reply_match.group("target"))
+        body = str(reply_match.group("body") or "").strip()
+        params = {
+            "app": app,
+            "subject_or_sender": target,
+            "body": body,
+            "mode": "draft",
+        }
+        return {
+            "tool": "email_reply",
+            "params": params,
+            "query": build_email_reply_query(app, target),
+            "reason": "Email reply requires a governed two-stage send flow.",
+        }
+
+    read_inbox_patterns = (
+        re.match(
+            rf"^(?:check|read|show)(?:\s+my)?\s+(?:email|emails|inbox|mail)(?:\s+on\s+(?P<app>{app_pattern}))?$",
+            prefix_stripped,
+            flags=re.IGNORECASE,
+        ),
+        re.match(
+            rf"^(?:check|read|show)\s+(?P<app>{app_pattern})\s+(?:email|emails|inbox|mail)$",
+            prefix_stripped,
+            flags=re.IGNORECASE,
+        ),
+    )
+    for match in read_inbox_patterns:
+        if match:
+            app = normalize_email_app(match.groupdict().get("app", "") or DEFAULT_EMAIL_CLIENT)
+            return {
+                "tool": "email_read_inbox",
+                "params": {"app": app, "max_emails": 10},
+                "query": f"{display_email_app_name(app)} inbox",
+                "reason": "Email inbox inspection routed to workflow execution.",
+            }
+
+    search_sender_match = re.match(
+        rf"^(?:do i have any )?(?:emails?|mail)\s+from\s+(?P<query>.+?)(?:\s+on\s+(?P<app>{app_pattern}))?$",
+        prefix_stripped,
+        flags=re.IGNORECASE,
+    )
+    if search_sender_match:
+        app = normalize_email_app(search_sender_match.group("app") or DEFAULT_EMAIL_CLIENT)
+        query = normalize_request_fragment(search_sender_match.group("query"))
+        return {
+            "tool": "email_search",
+            "params": {"query": query, "app": app},
+            "query": f"{display_email_app_name(app)} search: {query}",
+            "reason": "Email search routed to workflow execution.",
+        }
+
+    read_email_match = re.match(
+        rf"^(?:read|open)\s+(?:the\s+)?email\s+from\s+(?P<target>.+?)(?:\s+on\s+(?P<app>{app_pattern}))?$",
+        normalized_stripped,
+        flags=re.IGNORECASE,
+    )
+    if read_email_match:
+        app = normalize_email_app(read_email_match.group("app") or DEFAULT_EMAIL_CLIENT)
+        target = normalize_request_fragment(read_email_match.group("target"))
+        return {
+            "tool": "email_read_message",
+            "params": {"subject_or_sender": target, "app": app},
+            "query": f"{display_email_app_name(app)} email: {target}",
+            "reason": "Specific email reading routed to workflow execution.",
+        }
+
+    search_match = re.match(
+        rf"^(?:search|find)\s+(?:my\s+)?(?:email|emails|mail)\s+for\s+(?P<query>.+?)(?:\s+on\s+(?P<app>{app_pattern}))?$",
+        normalized_stripped,
+        flags=re.IGNORECASE,
+    )
+    if search_match:
+        app = normalize_email_app(search_match.group("app") or DEFAULT_EMAIL_CLIENT)
+        query = normalize_request_fragment(search_match.group("query"))
+        return {
+            "tool": "email_search",
+            "params": {"query": query, "app": app},
+            "query": f"{display_email_app_name(app)} search: {query}",
+            "reason": "Email search routed to workflow execution.",
+        }
+
+    return None
+
+
+def detect_email_tool_action(
+    text: str,
+    email_workflows: EmailWorkflows | None = None,
+) -> dict[str, Any] | None:
+    del email_workflows
+    request = extract_email_tool_request(text)
+    if request is None:
+        return None
+    return {
+        **request,
+        "requires_proposal": email_request_requires_proposal(request),
     }
 
 
@@ -3437,6 +3666,101 @@ def create_communication_send_proposal(
     }
 
 
+def create_email_send_proposal(
+    proposal: Proposal,
+    session: Session,
+    user_input: str,
+    app: str,
+    *,
+    recipient: str = "",
+    subject: str = "",
+    body: str = "",
+    subject_or_sender: str = "",
+    stage: str = "draft",
+    workflow: str = "email_compose",
+) -> dict[str, Any]:
+    normalized_stage = "execute_send" if str(stage).strip().lower() in {
+        "execute_send",
+        "send",
+        "confirm",
+    } else "draft"
+    app_label = display_email_app_name(app)
+    cleaned_recipient = normalize_request_fragment(recipient)
+    cleaned_subject = normalize_request_fragment(subject)
+    cleaned_target = normalize_request_fragment(subject_or_sender)
+    body_text = str(body or "").strip()
+    is_reply = workflow == "email_reply"
+    summary = (
+        f"Send drafted email in {app_label}"
+        if normalized_stage == "execute_send"
+        else (
+            f"Compose reply draft in {app_label} for {cleaned_target or 'selected email'}"
+            if is_reply
+            else f"Compose email draft in {app_label} to {cleaned_recipient or 'recipient'}"
+        )
+    )
+    header_lines = []
+    if cleaned_recipient:
+        header_lines.append(f"To: {cleaned_recipient}")
+    if cleaned_subject:
+        header_lines.append(f"Subject: {cleaned_subject}")
+    if cleaned_target and is_reply:
+        header_lines.append(f"Reply target: {cleaned_target}")
+    header_lines.append("---")
+    header_lines.append(body_text)
+    header_text = "\n".join(header_lines)
+    prompt_text = (
+        f"Send this email from {app_label}?\n{header_text}"
+        if normalized_stage == "execute_send"
+        else (
+            f"Compose this reply draft in {app_label}?\n{header_text}"
+            if is_reply
+            else f"Compose this email draft in {app_label}?\n{header_text}"
+        )
+    )
+    payload_params: dict[str, Any] = {
+        "app": normalize_email_app(app),
+        "mode": normalized_stage,
+    }
+    if is_reply:
+        payload_params["subject_or_sender"] = cleaned_target
+        payload_params["body"] = body_text
+        tool_name = "email_reply"
+        query = build_email_reply_query(app, cleaned_target)
+    else:
+        payload_params["to"] = cleaned_recipient
+        payload_params["subject"] = cleaned_subject
+        payload_params["body"] = body_text
+        tool_name = "email_compose"
+        query = build_email_compose_query(app, cleaned_recipient, cleaned_subject)
+    created = proposal.create(
+        what=summary,
+        why=(
+            "Sending an email is a consequential action and requires explicit approval."
+            if normalized_stage == "execute_send"
+            else "User requested a governed email draft before any email is sent."
+        ),
+        payload={
+            "action": "tool_use",
+            "tool": tool_name,
+            "query": query,
+            "params": payload_params,
+            "original_input": user_input,
+            "session_id": session.session_id,
+        },
+    )
+    tool_line = (
+        f"[TOOL PROPOSAL] {created['timestamp']} | "
+        f"{summary} | status: {created['status']}"
+    )
+    return {
+        **created,
+        "prompt_text": prompt_text,
+        "tool_line": tool_line,
+        "line": f"{prompt_text}\n{tool_line}",
+    }
+
+
 def create_orchestration_proposal(
     proposal: Proposal,
     session: Session,
@@ -3839,6 +4163,52 @@ def build_communication_tool_result(
     )
 
 
+def serialize_email_record(record: EmailRecord) -> dict[str, object]:
+    return {
+        "sender": record.sender,
+        "subject": record.subject,
+        "preview": record.preview,
+        "date": record.date,
+        "unread": record.unread,
+        "app": record.app,
+    }
+
+
+def build_email_tool_result(
+    tool_name: str,
+    workflow_result: EmailWorkflowResult,
+    email_workflows: EmailWorkflows,
+    *,
+    query: str,
+    recipient: str = "",
+    subject: str = "",
+    body: str = "",
+    subject_or_sender: str = "",
+    mode: str = "",
+) -> ToolResult:
+    data: dict[str, Any] = {
+        "formatted": email_workflows.format_result(workflow_result),
+        "workflow": workflow_result.workflow,
+        "app": workflow_result.app,
+        "emails": [serialize_email_record(record) for record in workflow_result.emails],
+        "output": workflow_result.output,
+        "draft_visible": workflow_result.draft_visible,
+        "steps_completed": list(workflow_result.steps_completed),
+        "recipient": workflow_result.recipient or recipient,
+        "subject": workflow_result.subject or subject,
+        "body": body,
+        "subject_or_sender": subject_or_sender,
+        "mode": mode,
+    }
+    return ToolResult(
+        tool=tool_name,
+        query=query,
+        success=workflow_result.success,
+        data=data,
+        error=str(workflow_result.error or ""),
+    )
+
+
 def run_filesystem_tool(
     filesystem_faculty: FileSystemFaculty,
     tool_name: str,
@@ -3984,6 +4354,101 @@ def run_communication_tool(
     )
 
 
+def run_email_tool(
+    email_workflows: EmailWorkflows,
+    tool_name: str,
+    params: dict[str, Any],
+) -> ToolResult:
+    app = normalize_email_app(str(params.get("app", "") or DEFAULT_EMAIL_CLIENT))
+    mode = str(params.get("mode", "draft") or "draft").strip().lower()
+    if tool_name == "email_read_inbox":
+        max_emails = int(params.get("max_emails", 10) or 10)
+        result = email_workflows.read_inbox(app, max_emails=max_emails)
+        query = f"{display_email_app_name(app)} inbox"
+        return build_email_tool_result(
+            tool_name,
+            result,
+            email_workflows,
+            query=query,
+            mode=mode,
+        )
+
+    if tool_name == "email_read_message":
+        subject_or_sender = str(params.get("subject_or_sender", "") or params.get("query", "")).strip()
+        result = email_workflows.read_email(subject_or_sender, app)
+        query = f"{display_email_app_name(app)} email: {subject_or_sender}"
+        return build_email_tool_result(
+            tool_name,
+            result,
+            email_workflows,
+            query=query,
+            subject_or_sender=subject_or_sender,
+            mode=mode,
+        )
+
+    if tool_name == "email_search":
+        search_query = str(params.get("query", "")).strip()
+        result = email_workflows.search_emails(search_query, app)
+        query = f"{display_email_app_name(app)} search: {search_query}"
+        return build_email_tool_result(
+            tool_name,
+            result,
+            email_workflows,
+            query=query,
+            mode=mode,
+        )
+
+    if tool_name == "email_compose":
+        recipient = str(params.get("to", "")).strip()
+        subject = str(params.get("subject", "")).strip()
+        body = str(params.get("body", "")).strip()
+        query = build_email_compose_query(app, recipient, subject)
+        if mode == "execute_send":
+            result = email_workflows.execute_send(app)
+        else:
+            result = email_workflows.compose_draft(app=app, to=recipient, subject=subject, body=body)
+        return build_email_tool_result(
+            tool_name,
+            result,
+            email_workflows,
+            query=query,
+            recipient=recipient,
+            subject=subject,
+            body=body,
+            mode=mode,
+        )
+
+    if tool_name == "email_reply":
+        subject_or_sender = str(params.get("subject_or_sender", "")).strip()
+        body = str(params.get("body", "")).strip()
+        query = build_email_reply_query(app, subject_or_sender)
+        if mode == "execute_send":
+            result = email_workflows.execute_send(app)
+        else:
+            result = email_workflows.reply_draft(
+                app=app,
+                subject_or_sender=subject_or_sender,
+                body=body,
+            )
+        return build_email_tool_result(
+            tool_name,
+            result,
+            email_workflows,
+            query=query,
+            body=body,
+            subject_or_sender=subject_or_sender,
+            mode=mode,
+        )
+
+    result = EmailWorkflowResult(
+        success=False,
+        workflow=tool_name,
+        app=app,
+        error=f"Unknown email tool: {tool_name}",
+    )
+    return build_email_tool_result(tool_name, result, email_workflows, query=app, mode=mode)
+
+
 def run_package_tool(
     package_faculty: PackageFaculty,
     tool_name: str,
@@ -4052,6 +4517,7 @@ def execute_tool_request(
     package_faculty: PackageFaculty | None = None,
     desktop_faculty: DesktopFaculty | None = None,
     communication_workflows: CommunicationWorkflows | None = None,
+    email_workflows: EmailWorkflows | None = None,
     software_registry: SoftwareRegistry | None = None,
 ) -> ToolResult:
     if tool_name in FILESYSTEM_TOOL_NAMES:
@@ -4070,6 +4536,9 @@ def execute_tool_request(
             desktop_faculty or DesktopFaculty()
         )
         return run_communication_tool(communication_workflows, tool_name, params)
+    if tool_name in EMAIL_TOOL_NAMES:
+        email_workflows = email_workflows or EmailWorkflows(desktop_faculty or DesktopFaculty())
+        return run_email_tool(email_workflows, tool_name, params)
     if tool_name in DESKTOP_TOOL_NAMES:
         return run_desktop_tool(desktop_faculty or DesktopFaculty(), tool_name, params)
     return operator.execute(tool_name, params)
@@ -4359,6 +4828,66 @@ def build_communication_context_lines(result: ToolResult) -> list[str]:
     ]
 
 
+def build_email_context_lines(result: ToolResult) -> list[str]:
+    if not result.success:
+        return [
+            f"tool result ({result.tool}) query: {result.query}",
+            f"error: {result.error or 'unknown email error'}",
+        ]
+
+    workflow = str(result.data.get("workflow", "") or result.tool)
+    app = str(result.data.get("app", "") or result.query)
+    if workflow == "read_inbox":
+        emails = list(result.data.get("emails", []))
+        lines = [
+            f"tool result ({result.tool}) app: {app}",
+            f"visible_items: {len(emails)}",
+        ]
+        for record in emails[:10]:
+            if isinstance(record, dict):
+                subject = str(record.get("subject", "")).strip()
+                if subject:
+                    lines.append(f"email_subject: {subject[:200]}")
+        output = str(result.data.get("output", "")).strip()
+        if not emails and output:
+            lines.append(f"window_excerpt: {output[:4000]}")
+        return lines
+
+    if workflow in {"read_email", "search"}:
+        lines = [f"tool result ({result.tool}) app: {app}"]
+        output = str(result.data.get("output", "")).strip()
+        if output:
+            lines.append(f"email_excerpt: {output[:4000]}")
+        emails = list(result.data.get("emails", []))
+        if emails:
+            lines.append(f"matches: {len(emails)}")
+        return lines
+
+    if workflow in {"compose_draft", "reply"}:
+        return [
+            f"tool result ({result.tool}) app: {app}",
+            f"recipient: {result.data.get('recipient', '')}",
+            f"subject: {result.data.get('subject', '')}",
+            f"reply_target: {result.data.get('subject_or_sender', '')}",
+            f"draft_visible: {'yes' if result.data.get('draft_visible') else 'no'}",
+            f"draft_body: {str(result.data.get('body', ''))[:400]}",
+        ]
+
+    if workflow == "execute_send":
+        return [
+            f"tool result ({result.tool}) app: {app}",
+            f"recipient: {result.data.get('recipient', '')}",
+            f"subject: {result.data.get('subject', '')}",
+            f"reply_target: {result.data.get('subject_or_sender', '')}",
+            f"sent: {'yes' if result.success else 'no'}",
+        ]
+
+    return [
+        f"tool result ({result.tool}) query: {result.query}",
+        str(result.data.get("formatted", "")),
+    ]
+
+
 def communication_result_requires_send_confirmation(result: ToolResult) -> bool:
     return bool(
         result.tool == "comm_send_message"
@@ -4368,7 +4897,22 @@ def communication_result_requires_send_confirmation(result: ToolResult) -> bool:
     )
 
 
+def email_result_requires_send_confirmation(result: ToolResult) -> bool:
+    return bool(
+        result.tool in {"email_compose", "email_reply"}
+        and result.success
+        and result.data.get("draft_visible")
+        and str(result.data.get("mode", "draft")).strip().lower() != "execute_send"
+    )
+
+
 def build_tool_result_text(result: ToolResult) -> str:
+    if result.tool in EMAIL_TOOL_NAMES:
+        return str(
+            result.data.get("formatted")
+            or f"email > error: {result.error or 'Unknown email error.'}"
+        )
+
     if result.tool in COMMUNICATION_TOOL_NAMES:
         return str(
             result.data.get("formatted")
@@ -4457,6 +5001,9 @@ def build_tool_result_text(result: ToolResult) -> str:
 
 
 def build_tool_context_lines(result: ToolResult) -> list[str]:
+    if result.tool in EMAIL_TOOL_NAMES:
+        return build_email_context_lines(result)
+
     if result.tool in COMMUNICATION_TOOL_NAMES:
         return build_communication_context_lines(result)
 
@@ -4770,6 +5317,50 @@ def build_communication_audit_entry(result: ToolResult) -> dict[str, object] | N
     return details
 
 
+def build_email_audit_entry(result: ToolResult) -> dict[str, object] | None:
+    if result.tool not in EMAIL_TOOL_NAMES:
+        return None
+
+    app = str(result.data.get("app") or result.query).strip()
+    recipient = str(result.data.get("recipient") or "").strip()
+    subject = str(result.data.get("subject") or "").strip()
+    reply_target = str(result.data.get("subject_or_sender") or "").strip()
+    details: dict[str, object] = {
+        "tool": result.tool,
+        "app": app,
+    }
+    if recipient:
+        details["recipient"] = recipient
+    if subject:
+        details["subject"] = subject[:200]
+    if reply_target:
+        details["reply_target"] = reply_target
+    if result.data.get("steps_completed"):
+        details["steps_completed"] = list(result.data.get("steps_completed", []))
+
+    if not result.success:
+        result_text = result.error or "failed"
+    elif email_result_requires_send_confirmation(result):
+        result_text = "draft ready"
+    elif str(result.data.get("workflow", "")) == "execute_send":
+        result_text = "sent"
+    elif result.tool == "email_search":
+        result_text = f"{len(list(result.data.get('emails', [])))} matches"
+    elif result.tool == "email_read_inbox":
+        result_text = f"{len(list(result.data.get('emails', [])))} items visible"
+    else:
+        result_text = "read"
+
+    details["result"] = result_text
+    details["summary"] = (
+        f"{result.tool} {app}"
+        f"{f'/{recipient}' if recipient else ''}"
+        f"{f'/{reply_target}' if reply_target else ''}"
+        f" -> {result_text}"
+    )
+    return details
+
+
 def build_tool_registry_report(payload: dict[str, object]) -> str:
     tools = list(payload.get("tools", []))
     total = int(payload.get("total", len(tools)))
@@ -4891,6 +5482,7 @@ def complete_tool_resolution(
     package_faculty: PackageFaculty | None = None,
     desktop_faculty: DesktopFaculty | None = None,
     communication_workflows: CommunicationWorkflows | None = None,
+    email_workflows: EmailWorkflows | None = None,
     session_audit: list[dict[str, object]] | None = None,
     active_realm_name: str = "",
     conversation_state: dict[str, int] | None = None,
@@ -4920,6 +5512,7 @@ def complete_tool_resolution(
             package_faculty=package_faculty,
             desktop_faculty=desktop_faculty,
             communication_workflows=communication_workflows,
+            email_workflows=email_workflows,
         )
         if faculty_monitor is not None:
             faculty_monitor.record_call("operator", (time.monotonic() - t0) * 1000, result.success)
@@ -4928,6 +5521,7 @@ def complete_tool_resolution(
             or build_filesystem_audit_entry(result)
             or build_process_audit_entry(result)
             or build_package_audit_entry(result)
+            or build_email_audit_entry(result)
             or build_communication_audit_entry(result)
             or build_desktop_audit_entry(result)
         )
@@ -4939,6 +5533,38 @@ def complete_tool_resolution(
                 {key: value for key, value in audit_entry.items() if key != "summary"},
             )
         operator_text = build_tool_result_text(result)
+        if email_result_requires_send_confirmation(result):
+            created = create_email_send_proposal(
+                proposal=proposal,
+                session=session,
+                user_input=(
+                    f"send confirmation for {result.data.get('recipient', '') or result.data.get('subject_or_sender', 'email')} "
+                    f"on {display_email_app_name(str(result.data.get('app', '')))}"
+                ),
+                app=str(result.data.get("app", "")),
+                recipient=str(result.data.get("recipient", "")),
+                subject=str(result.data.get("subject", "")),
+                body=str(result.data.get("body", "")),
+                subject_or_sender=str(result.data.get("subject_or_sender", "")),
+                stage="execute_send",
+                workflow=result.tool,
+            )
+            record_completed_turn(
+                conversation_state=conversation_state,
+                memory=memory,
+                session=session,
+                active_realm_name=active_realm_name,
+                active_token=active_token,
+                user_log=user_log,
+                session_audit=session_audit,
+            )
+            return (
+                f"operator > {operator_text}\n"
+                "operator > send approval required.\n"
+                f"{created['prompt_text']}\n"
+                'Type "approve" to send or "reject" to leave the draft unsent.\n'
+                f"{created['tool_line']}"
+            )
         if communication_result_requires_send_confirmation(result):
             created = create_communication_send_proposal(
                 proposal=proposal,
@@ -4992,6 +5618,20 @@ def complete_tool_resolution(
                 "operator > model unavailable to summarize. Raw results shown above."
             )
     else:
+        if tool in {"email_compose", "email_reply"}:
+            mode = str(params.get("mode", "draft") or "draft").strip().lower()
+            record_completed_turn(
+                conversation_state=conversation_state,
+                memory=memory,
+                session=session,
+                active_realm_name=active_realm_name,
+                active_token=active_token,
+                user_log=user_log,
+                session_audit=session_audit,
+            )
+            if mode == "execute_send":
+                return "operator > send cancelled. The drafted email remains unsent."
+            return "operator > draft cancelled. No email was composed."
         if tool == "comm_send_message":
             mode = str(params.get("mode", "draft") or "draft").strip().lower()
             record_completed_turn(
@@ -5114,6 +5754,7 @@ def handle_command(
     package_faculty: PackageFaculty | None = None,
     desktop_faculty: DesktopFaculty | None = None,
     communication_workflows: CommunicationWorkflows | None = None,
+    email_workflows: EmailWorkflows | None = None,
     guardian: GuardianFaculty | None = None,
     guardian_metrics: dict[str, int] | None = None,
     nammu_dir: Path | None = None,
@@ -5138,6 +5779,7 @@ def handle_command(
     process_faculty = process_faculty or ProcessFaculty()
     package_faculty = package_faculty or PackageFaculty()
     communication_workflows = communication_workflows or CommunicationWorkflows(desktop_faculty)
+    email_workflows = email_workflows or EmailWorkflows(desktop_faculty)
     current_user = session_state.get("active_user") if session_state else None
     original_user = session_state.get("original_user") if session_state else None
     guardian_user = session_state.get("guardian_user") if session_state else None
@@ -6182,6 +6824,7 @@ def handle_command(
                 package_faculty=package_faculty,
                 desktop_faculty=desktop_faculty,
                 communication_workflows=communication_workflows,
+                email_workflows=email_workflows,
                 session_audit=session_audit,
                 active_realm_name=active_realm_name,
                 conversation_state=conversation_state,
@@ -6385,6 +7028,76 @@ def handle_command(
         normalized,
         communication_workflows,
     )
+    email_action = detect_email_tool_action(
+        normalized,
+        email_workflows,
+    )
+    if email_action is not None:
+        append_routing_decision(
+            routing_log,
+            session,
+            "operator",
+            normalized,
+            nammu_dir=nammu_dir,
+        )
+        append_governance_event(
+            resolve_nammu_dir(session, nammu_dir),
+            session.session_id,
+            "tool",
+            str(email_action.get("reason", "Governed email workflow use.")),
+            normalized[:60],
+        )
+        if bool(email_action.get("requires_proposal", False)):
+            params = dict(email_action.get("params", {}))
+            created = create_email_send_proposal(
+                proposal=proposal,
+                session=session,
+                user_input=normalized,
+                app=str(params.get("app", "")),
+                recipient=str(params.get("to", "")),
+                subject=str(params.get("subject", "")),
+                body=str(params.get("body", "")),
+                subject_or_sender=str(params.get("subject_or_sender", "")),
+                stage="draft",
+                workflow=str(email_action.get("tool", "email_compose")),
+            )
+            return (
+                f"operator > {created['prompt_text']}\n"
+                'Type "approve" to compose the draft or "reject" to cancel.\n'
+                f"{created['tool_line']}"
+            )
+        return complete_tool_resolution(
+            {
+                "payload": {
+                    "original_input": normalized,
+                    "query": str(email_action["query"]),
+                    "tool": str(email_action["tool"]),
+                    "params": dict(email_action.get("params", {})),
+                }
+            },
+            "approve",
+            session,
+            proposal,
+            memory,
+            engine,
+            startup_context,
+            operator or OperatorFaculty(),
+            guardian_metrics,
+            active_token=active_token,
+            user_log=user_log,
+            faculty_monitor=faculty_monitor,
+            filesystem_faculty=filesystem_faculty,
+            process_faculty=process_faculty,
+            package_faculty=package_faculty,
+            desktop_faculty=desktop_faculty,
+            communication_workflows=communication_workflows,
+            email_workflows=email_workflows,
+            session_audit=session_audit,
+            active_realm_name=active_realm_name,
+            conversation_state=conversation_state,
+            reflective_memory=reflective_memory,
+        )
+
     if communication_action is not None:
         append_routing_decision(
             routing_log,
@@ -6441,6 +7154,7 @@ def handle_command(
             package_faculty=package_faculty,
             desktop_faculty=desktop_faculty,
             communication_workflows=communication_workflows,
+            email_workflows=email_workflows,
             session_audit=session_audit,
             active_realm_name=active_realm_name,
             conversation_state=conversation_state,
@@ -6505,6 +7219,7 @@ def handle_command(
             package_faculty=package_faculty,
             desktop_faculty=desktop_faculty,
             communication_workflows=communication_workflows,
+            email_workflows=email_workflows,
             session_audit=session_audit,
             active_realm_name=active_realm_name,
             conversation_state=conversation_state,
@@ -6572,6 +7287,7 @@ def handle_command(
             package_faculty=package_faculty,
             desktop_faculty=desktop_faculty,
             communication_workflows=communication_workflows,
+            email_workflows=email_workflows,
             session_audit=session_audit,
             active_realm_name=active_realm_name,
             conversation_state=conversation_state,
@@ -6636,6 +7352,7 @@ def handle_command(
             package_faculty=package_faculty,
             desktop_faculty=desktop_faculty,
             communication_workflows=communication_workflows,
+            email_workflows=email_workflows,
             session_audit=session_audit,
             active_realm_name=active_realm_name,
             conversation_state=conversation_state,
@@ -6796,6 +7513,7 @@ def handle_command(
                 package_faculty=package_faculty,
                 desktop_faculty=desktop_faculty,
                 communication_workflows=communication_workflows,
+                email_workflows=email_workflows,
                 session_audit=session_audit,
                 active_realm_name=active_realm_name,
                 conversation_state=conversation_state,
@@ -6980,6 +7698,7 @@ def main() -> None:
     package_faculty = PackageFaculty()
     desktop_faculty = DesktopFaculty()
     communication_workflows = CommunicationWorkflows(desktop_faculty)
+    email_workflows = EmailWorkflows(desktop_faculty)
     governance = GovernanceLayer(engine=engine)
     sync_profile_grounding(engine, profile_manager, guardian_user, guardian_token, reflective_memory)
     classifier = IntentClassifier(
@@ -7093,6 +7812,7 @@ def main() -> None:
             package_faculty=package_faculty,
             desktop_faculty=desktop_faculty,
             communication_workflows=communication_workflows,
+            email_workflows=email_workflows,
             guardian=guardian,
             guardian_metrics=guardian_metrics,
             nammu_dir=NAMMU_DIR,

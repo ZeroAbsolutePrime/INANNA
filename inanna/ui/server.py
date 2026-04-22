@@ -20,6 +20,7 @@ from config import Config
 from core.auth import AuthStore
 from core.communication_workflows import CommunicationWorkflows
 from core.desktop_faculty import DesktopFaculty
+from core.email_workflows import EmailWorkflows
 from core.filesystem_faculty import FileSystemFaculty
 from core.governance import GovernanceLayer
 from core.guardian import GuardianFaculty
@@ -67,6 +68,7 @@ from main import (
     build_body_summary,
     build_communication_audit_entry,
     build_desktop_audit_entry,
+    build_email_audit_entry,
     build_faculty_registry_payload,
     build_package_audit_entry,
     build_filesystem_audit_entry,
@@ -104,6 +106,7 @@ from main import (
     create_memory_request_proposal,
     create_realm_context_proposal,
     create_communication_send_proposal,
+    create_email_send_proposal,
     create_tool_use_proposal,
     coerce_profile_field_value,
     clear_communication_observations,
@@ -112,6 +115,7 @@ from main import (
     default_profile_field_value,
     detect_communication_tool_action,
     detect_desktop_tool_action,
+    detect_email_tool_action,
     detect_filesystem_tool_action,
     detect_package_tool_action,
     detect_process_tool_action,
@@ -142,6 +146,8 @@ from main import (
     run_sentinel_response as run_sentinel_backend_response,
     sentinel_response_mode,
     display_communication_app_name,
+    display_email_app_name,
+    email_result_requires_send_confirmation,
     ensure_guardian_profile_completed,
     startup_context_items,
     sync_profile_grounding,
@@ -404,6 +410,7 @@ class InterfaceServer:
         self.operator = OperatorFaculty()
         self.desktop_faculty = DesktopFaculty()
         self.communication_workflows = CommunicationWorkflows(self.desktop_faculty)
+        self.email_workflows = EmailWorkflows(self.desktop_faculty)
         self.filesystem_faculty = FileSystemFaculty()
         self.process_faculty = ProcessFaculty()
         self.package_faculty = PackageFaculty()
@@ -857,6 +864,56 @@ class InterfaceServer:
                 },
                 "proposal": created,
             }
+
+        email_action = detect_email_tool_action(
+            text,
+            self.email_workflows,
+        )
+        if email_action is not None:
+            self._record_routing_decision("operator", text)
+            self._record_governance_decision(
+                "tool",
+                str(email_action.get("reason", "Governed email workflow use.")),
+                text,
+            )
+            if bool(email_action.get("requires_proposal", False)):
+                params = dict(email_action.get("params", {}))
+                created = create_email_send_proposal(
+                    proposal=self.proposal,
+                    session=self.session,
+                    user_input=text,
+                    app=str(params.get("app", "")),
+                    recipient=str(params.get("to", "")),
+                    subject=str(params.get("subject", "")),
+                    body=str(params.get("body", "")),
+                    subject_or_sender=str(params.get("subject_or_sender", "")),
+                    stage="draft",
+                    workflow=str(email_action.get("tool", "email_compose")),
+                )
+                return {
+                    "response": {
+                        "type": "operator",
+                        "text": created["prompt_text"],
+                    },
+                    "proposal": created,
+                }
+            outcome = self.complete_tool_resolution(
+                {
+                    "payload": {
+                        "original_input": text,
+                        "query": str(email_action["query"]),
+                        "tool": str(email_action["tool"]),
+                        "params": dict(email_action.get("params", {})),
+                    }
+                },
+                "approve",
+            )
+            responses = list(outcome["operator_payloads"])
+            if outcome["assistant_text"]:
+                responses.append({"type": "assistant", "text": outcome["assistant_text"]})
+            if outcome.get("proposal"):
+                responses.append({"type": "system", "text": outcome["proposal"]["line"]})
+            return {"responses": responses}
 
         communication_action = detect_communication_tool_action(
             text,
@@ -3068,6 +3125,7 @@ class InterfaceServer:
                 package_faculty=self.package_faculty,
                 desktop_faculty=self.desktop_faculty,
                 communication_workflows=self.communication_workflows,
+                email_workflows=self.email_workflows,
                 software_registry=self.software_registry,
             )
             self.faculty_monitor.record_call(
@@ -3080,6 +3138,7 @@ class InterfaceServer:
                 or build_filesystem_audit_entry(result)
                 or build_process_audit_entry(result)
                 or build_package_audit_entry(result)
+                or build_email_audit_entry(result)
                 or build_communication_audit_entry(result)
                 or build_desktop_audit_entry(result)
             )
@@ -3097,6 +3156,34 @@ class InterfaceServer:
                     "tool_result": build_tool_result_payload(result),
                 }
             ]
+            if email_result_requires_send_confirmation(result):
+                created = create_email_send_proposal(
+                    proposal=self.proposal,
+                    session=self.session,
+                    user_input=(
+                        f"send confirmation for {result.data.get('recipient', '') or result.data.get('subject_or_sender', 'email')} "
+                        f"on {display_email_app_name(str(result.data.get('app', '')))}"
+                    ),
+                    app=str(result.data.get("app", "")),
+                    recipient=str(result.data.get("recipient", "")),
+                    subject=str(result.data.get("subject", "")),
+                    body=str(result.data.get("body", "")),
+                    subject_or_sender=str(result.data.get("subject_or_sender", "")),
+                    stage="execute_send",
+                    workflow=result.tool,
+                )
+                self._record_completed_turn()
+                return {
+                    "operator_payloads": operator_payloads
+                    + [
+                        {
+                            "type": "operator",
+                            "text": "send approval required. The email draft is visible and waiting.",
+                        }
+                    ],
+                    "assistant_text": "",
+                    "proposal": created,
+                }
             if communication_result_requires_send_confirmation(result):
                 created = create_communication_send_proposal(
                     proposal=self.proposal,
@@ -3169,6 +3256,23 @@ class InterfaceServer:
                     }
                 )
         else:
+            if tool in {"email_compose", "email_reply"}:
+                self._record_completed_turn()
+                mode = str(params.get("mode", "draft") or "draft").strip().lower()
+                return {
+                    "operator_payloads": [
+                        {
+                            "type": "operator",
+                            "text": (
+                                "send cancelled. The drafted email remains unsent."
+                                if mode == "execute_send"
+                                else "draft cancelled. No email was composed."
+                            ),
+                        }
+                    ],
+                    "assistant_text": "",
+                    "proposal": None,
+                }
             if tool == "comm_send_message":
                 self._record_completed_turn()
                 mode = str(params.get("mode", "draft") or "draft").strip().lower()
