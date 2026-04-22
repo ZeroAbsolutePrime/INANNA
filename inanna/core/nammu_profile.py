@@ -303,7 +303,6 @@ _LANGUAGE_MARKERS: dict[str, list[str]] = {
         "hoje",
         "amanha",
         "amanhã",
-        "email",
         "mensagem",
         "tenho",
         "quero",
