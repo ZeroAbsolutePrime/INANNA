@@ -1256,7 +1256,16 @@ def extract_email_tool_request(
     active_hints = hints or load_email_domain_hints()
     hint_match = any(hint in lowered for hint in active_hints)
     app_match = re.search(app_pattern, prefix_stripped, flags=re.IGNORECASE) is not None
-    if not hint_match and not app_match:
+    # Natural phrase guard — catch "anything from X?", "urgentes?", etc.
+    # even when they don't contain explicit email keywords
+    natural_match = bool(re.match(
+        r"^(?:anything|something|news)\s+from\s+[\w]",
+        prefix_stripped, re.IGNORECASE
+    )) or bool(re.match(
+        r"^(?:urgent|important|critical|urgentes?|importantes?)(?:\s+|\??$)",
+        prefix_stripped, re.IGNORECASE
+    ))
+    if not hint_match and not app_match and not natural_match:
         return None
 
     if _has_email_comm_signal(lowered):
