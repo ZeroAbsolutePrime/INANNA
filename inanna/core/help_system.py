@@ -65,6 +65,16 @@ HELP_COMMON = """𒀭 INANNA NYX — Available Commands
     "reply to the email from Sara"  Compose reply (approval x2)
     (sending email ALWAYS requires approval - no exceptions)
 
+  CALENDAR (Thunderbird / Google Calendar)
+    "what do I have today"         Today's events (no approval)
+    "upcoming events"              Next 7 days (no approval)
+    "next 14 days"                 Next 14 days (no approval)
+    "read ics file at ~/path.ics"  Read .ics file (no approval)
+
+  Note: Google Calendar events sync via Thunderbird Lightning.
+  Open Thunderbird to trigger a sync if events are missing.
+  CalDAV direct connection available in future phase.
+
   DOCUMENTS (LibreOffice, PDF, DOCX, ODT)
     "read the document at ~/path/to/file.pdf"
                                        Read any document (no approval)
@@ -247,6 +257,7 @@ HELP_TOPICS = {
               comm_read_messages, comm_send_message, comm_list_contacts,
               email_read_inbox, email_read_message, email_search,
               email_compose, email_reply,
+              calendar_today, calendar_upcoming, calendar_read_ics,
               search_packages, list_packages, install_package, remove_package,
               launch_app,
               desktop_open_app, desktop_read_window, desktop_click,
@@ -264,7 +275,7 @@ HELP_TOPICS = {
   help [topic]       Show details on a specific topic
 
   Topics: my-profile, governance-trust, inanna-reflect,
-          faculties, tools, files, processes, packages, communication, email, documents, browser, desktop, memory, realms, departments""",
+          faculties, tools, files, processes, packages, communication, email, calendar, documents, browser, desktop, memory, realms, departments""",
 
     "tools": """tools — Available tools (all require proposal approval)
 
@@ -394,6 +405,26 @@ HELP_TOPICS = {
 
   Supported now: Thunderbird and Proton Mail Desktop
   Future phases: Evolution and Geary.""",
+
+    "calendar": """calendar - Calendar Faculty
+
+  INANNA can read Thunderbird's local calendar cache, summarize upcoming
+  events, and parse .ics files directly from disk.
+
+  Today's events:  "what do I have today"
+  Upcoming week:   "upcoming events"
+  Next 14 days:    "next 14 days"
+  Read ICS file:   "read ics file at ~/calendar/invite.ics"
+
+  Governance:
+    - calendar_today: no approval required
+    - calendar_upcoming: no approval required
+    - calendar_read_ics: no approval required
+
+  Important:
+    - Thunderbird stores a local cache, not the full Google Calendar truth
+    - If the cache is empty, open Thunderbird Calendar to trigger a sync
+    - INANNA explains zero local events with that context instead of inventing absence""",
 
     "documents": """documents - Document Faculty
 

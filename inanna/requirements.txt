@@ -18,6 +18,11 @@ odfpy>=1.4.1
 beautifulsoup4>=4.14.0
 lxml>=6.0.0
 
+# Calendar Faculty
+icalendar>=7.0.0
+recurring-ical-events>=3.8.0
+caldav>=3.1.0
+
 # Voice Pipeline (Phase 7.5+ - install separately)
 # pip install faster-whisper sounddevice torch
 # faster-whisper>=1.0.0

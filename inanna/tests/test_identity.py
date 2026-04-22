@@ -125,6 +125,9 @@ class IdentityTests(unittest.TestCase):
         self.assertIn("list_packages", tools)
         self.assertIn("install_package", tools)
         self.assertIn("remove_package", tools)
+        self.assertIn("calendar_today", tools)
+        self.assertIn("calendar_upcoming", tools)
+        self.assertIn("calendar_read_ics", tools)
         self.assertIn("browser_read", tools)
         self.assertIn("browser_search", tools)
         self.assertIn("browser_open", tools)
@@ -147,8 +150,8 @@ class IdentityTests(unittest.TestCase):
     def test_current_phase_constant_matches_phase_banner(self) -> None:
         self.assertEqual(CURRENT_PHASE, phase_banner())
 
-    def test_current_phase_names_the_browser_faculty(self) -> None:
-        self.assertIn("Browser Faculty", CURRENT_PHASE)
+    def test_current_phase_names_the_calendar_faculty(self) -> None:
+        self.assertIn("Calendar Faculty", CURRENT_PHASE)
 
     def test_cycle2_summary_describes_completed_kernel(self) -> None:
         self.assertIn("NAMMU Kernel", CYCLE2_SUMMARY)

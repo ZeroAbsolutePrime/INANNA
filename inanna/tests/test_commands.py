@@ -592,6 +592,14 @@ class CommandTests(unittest.TestCase):
         self.assertIn("check my email", result.lower())
         self.assertIn("two-stage", result.lower())
 
+    def test_help_calendar_topic_lists_calendar_faculty(self) -> None:
+        result = build_help_response("guardian", "calendar")
+
+        self.assertTrue(result.startswith("INANNA NYX"))
+        self.assertIn("CALENDAR", result)
+        self.assertIn("what do i have today", result.lower())
+        self.assertIn("open thunderbird", result.lower())
+
     def test_help_documents_topic_lists_document_faculty(self) -> None:
         result = build_help_response("guardian", "documents")
 
@@ -1663,7 +1671,7 @@ class CommandTests(unittest.TestCase):
             config,
         )
 
-        self.assertIn("tool-registry > Registered tools (38 total):", result)
+        self.assertIn("tool-registry > Registered tools (41 total):", result)
         self.assertIn("COMMUNICATION", result)
         self.assertIn("Read Messages [enabled]", result)
         self.assertIn("Send Message [enabled]", result)

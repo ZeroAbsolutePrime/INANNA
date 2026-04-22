@@ -236,6 +236,26 @@
       "mail",
       "message from"
     ],
+    "calendar": [
+      "calendar",
+      "events",
+      "schedule",
+      "agenda",
+      "what do i have today",
+      "what is today",
+      "today's events",
+      "this week",
+      "next week",
+      "upcoming",
+      "appointments",
+      "do i have anything",
+      "what is scheduled",
+      "show me my calendar",
+      "my schedule",
+      "read ics",
+      "open ics",
+      "ics file"
+    ],
     "document": [
       "read document",
       "open document",

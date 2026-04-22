@@ -20,6 +20,11 @@ from core.browser_workflows import (
     BrowserWorkflows,
     PageRecord,
 )
+from core.calendar_workflows import (
+    CalendarComprehension,
+    CalendarResult,
+    CalendarWorkflows,
+)
 from core.communication_workflows import CommunicationWorkflows, WorkflowResult, normalize_app_name
 from core.desktop_faculty import DesktopFaculty, DesktopResult, is_consequential_label
 from core.document_workflows import (
@@ -298,6 +303,11 @@ COMMUNICATION_TOOL_NAMES = {
     "comm_send_message",
     "comm_list_contacts",
 }
+CALENDAR_TOOL_NAMES = {
+    "calendar_today",
+    "calendar_upcoming",
+    "calendar_read_ics",
+}
 EMAIL_TOOL_NAMES = {
     "email_read_inbox",
     "email_read_message",
@@ -467,6 +477,26 @@ BROWSER_HINT_FALLBACKS = (
     "open edge",
     "open in browser",
     "show me the website",
+)
+CALENDAR_HINT_FALLBACKS = (
+    "calendar",
+    "events",
+    "schedule",
+    "agenda",
+    "what do i have today",
+    "what is today",
+    "today's events",
+    "this week",
+    "next week",
+    "upcoming",
+    "appointments",
+    "do i have anything",
+    "what is scheduled",
+    "show me my calendar",
+    "my schedule",
+    "read ics",
+    "open ics",
+    "ics file",
 )
 PACKAGE_SEARCH_TERMS = (
     "app",
@@ -641,6 +671,25 @@ def load_browser_domain_hints(
 
     cleaned = [str(item).strip().lower() for item in hints if str(item).strip()]
     return cleaned or list(BROWSER_HINT_FALLBACKS)
+
+
+def load_calendar_domain_hints(
+    signals_path: Path = FILESYSTEM_SIGNAL_PATH,
+) -> list[str]:
+    try:
+        payload = json.loads(signals_path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return list(CALENDAR_HINT_FALLBACKS)
+
+    domain_hints = payload.get("domain_hints", {})
+    if not isinstance(domain_hints, dict):
+        return list(CALENDAR_HINT_FALLBACKS)
+    hints = domain_hints.get("calendar", [])
+    if not isinstance(hints, list):
+        return list(CALENDAR_HINT_FALLBACKS)
+
+    cleaned = [str(item).strip().lower() for item in hints if str(item).strip()]
+    return cleaned or list(CALENDAR_HINT_FALLBACKS)
 
 
 def normalize_request_fragment(value: str) -> str:
@@ -1029,6 +1078,116 @@ def detect_document_tool_action(
     return {
         **request,
         "requires_proposal": document_request_requires_proposal(request),
+    }
+
+
+def extract_calendar_tool_request(
+    text: str,
+    hints: list[str] | None = None,
+) -> dict[str, Any] | None:
+    normalized = str(text or "").strip()
+    lowered = normalized.lower()
+    active_hints = hints or load_calendar_domain_hints()
+    hint_match = any(hint in lowered for hint in active_hints)
+
+    ics_match = re.match(
+        r"^(?:read|open|parse)(?:\s+the)?\s+ics(?:\s+file)?(?:\s+at)?\s+(?P<path>.+)$",
+        normalized,
+        flags=re.IGNORECASE,
+    )
+    if ics_match:
+        path = normalize_document_path(ics_match.group("path"))
+        return {
+            "tool": "calendar_read_ics",
+            "params": {"path": path},
+            "query": path,
+            "reason": "ICS calendar file routed to Calendar Faculty.",
+        }
+
+    next_days_match = re.match(
+        r"^(?:show|what are|read)?(?:\s+my)?\s*(?:calendar|events|schedule|agenda)?\s*(?:for\s+)?next\s+(?P<days>\d+)\s+days?$",
+        normalized,
+        flags=re.IGNORECASE,
+    )
+    if next_days_match:
+        days = max(1, int(next_days_match.group("days")))
+        return {
+            "tool": "calendar_upcoming",
+            "params": {"days": days},
+            "query": f"next {days} days",
+            "reason": "Upcoming calendar events routed to Calendar Faculty.",
+        }
+
+    today_phrases = (
+        "what do i have today",
+        "show my calendar today",
+        "show me my calendar today",
+        "today's events",
+        "todays events",
+        "what is on my calendar today",
+        "what is scheduled today",
+        "what's on my calendar today",
+    )
+    if any(phrase in lowered for phrase in today_phrases):
+        return {
+            "tool": "calendar_today",
+            "params": {},
+            "query": "today",
+            "reason": "Today's calendar events routed to Calendar Faculty.",
+        }
+
+    upcoming_phrases = (
+        "upcoming events",
+        "show my calendar",
+        "show me my calendar",
+        "my schedule",
+        "my agenda",
+        "what is scheduled",
+        "do i have anything",
+    )
+    if "next week" in lowered:
+        return {
+            "tool": "calendar_upcoming",
+            "params": {"days": 14},
+            "query": "next 14 days",
+            "reason": "Next-week calendar view routed to Calendar Faculty.",
+        }
+    if any(phrase in lowered for phrase in upcoming_phrases):
+        return {
+            "tool": "calendar_upcoming",
+            "params": {"days": 7},
+            "query": "next 7 days",
+            "reason": "Upcoming calendar events routed to Calendar Faculty.",
+        }
+
+    if hint_match and "today" in lowered:
+        return {
+            "tool": "calendar_today",
+            "params": {},
+            "query": "today",
+            "reason": "Today's calendar events routed to Calendar Faculty.",
+        }
+    if hint_match:
+        return {
+            "tool": "calendar_upcoming",
+            "params": {"days": 7},
+            "query": "next 7 days",
+            "reason": "Upcoming calendar events routed to Calendar Faculty.",
+        }
+    return None
+
+
+def detect_calendar_tool_action(
+    text: str,
+    calendar_workflows: CalendarWorkflows | None = None,
+) -> dict[str, Any] | None:
+    del calendar_workflows
+    request = extract_calendar_tool_request(text)
+    if request is None:
+        return None
+    return {
+        **request,
+        "requires_proposal": False,
     }
 
 
@@ -5190,10 +5349,89 @@ def run_document_tool(
     )
 
 
+def build_calendar_tool_result(
+    tool_name: str,
+    result: CalendarResult,
+    calendar_workflows: CalendarWorkflows,
+    comprehension: CalendarComprehension,
+    query: str,
+) -> ToolResult:
+    return ToolResult(
+        tool=tool_name,
+        query=query,
+        success=result.success,
+        data={
+            "source": result.source,
+            "events": [event.__dict__.copy() for event in result.events],
+            "todos": [todo.__dict__.copy() for todo in result.todos],
+            "total_events": comprehension.total_events,
+            "period_label": comprehension.period_label,
+            "has_remote_calendar": comprehension.has_remote_calendar,
+            "today_events": [event.__dict__.copy() for event in comprehension.today_events],
+            "upcoming_events": [event.__dict__.copy() for event in comprehension.upcoming_events],
+            "overdue_todos": [todo.__dict__.copy() for todo in comprehension.overdue_todos],
+            "comprehension": {
+                "total_events": comprehension.total_events,
+                "period_label": comprehension.period_label,
+                "source": comprehension.source,
+                "has_remote_calendar": comprehension.has_remote_calendar,
+                "today_events": [event.__dict__.copy() for event in comprehension.today_events],
+                "upcoming_events": [event.__dict__.copy() for event in comprehension.upcoming_events],
+                "overdue_todos": [todo.__dict__.copy() for todo in comprehension.overdue_todos],
+            },
+            "formatted": calendar_workflows.format_result(result, comprehension),
+        },
+        error=result.error or "",
+    )
+
+
+def run_calendar_tool(
+    calendar_workflows: CalendarWorkflows,
+    tool_name: str,
+    params: dict[str, Any],
+) -> ToolResult:
+    if tool_name == "calendar_today":
+        result, comprehension = calendar_workflows.read_today()
+        return build_calendar_tool_result(
+            tool_name,
+            result,
+            calendar_workflows,
+            comprehension,
+            "today",
+        )
+    if tool_name == "calendar_upcoming":
+        days = max(1, int(params.get("days", 7) or 7))
+        result, comprehension = calendar_workflows.read_upcoming(days=days)
+        return build_calendar_tool_result(
+            tool_name,
+            result,
+            calendar_workflows,
+            comprehension,
+            f"next {days} days",
+        )
+    if tool_name == "calendar_read_ics":
+        path = str(params.get("path", "")).strip()
+        result, comprehension = calendar_workflows.read_ics_file(path)
+        return build_calendar_tool_result(
+            tool_name,
+            result,
+            calendar_workflows,
+            comprehension,
+            path,
+        )
+    return ToolResult(
+        tool=tool_name,
+        query=str(params.get("path", "") or params.get("days", "")),
+        success=False,
+        error=f"Unknown calendar tool: {tool_name}",
+    )
+
+
 def execute_tool_request(
     tool_name: str,
     params: dict[str, Any],
     operator: OperatorFaculty,
+    calendar_workflows: CalendarWorkflows | None = None,
     browser_workflows: BrowserWorkflows | None = None,
     document_workflows: DocumentWorkflows | None = None,
     filesystem_faculty: FileSystemFaculty | None = None,
@@ -5204,6 +5442,9 @@ def execute_tool_request(
     email_workflows: EmailWorkflows | None = None,
     software_registry: SoftwareRegistry | None = None,
 ) -> ToolResult:
+    if tool_name in CALENDAR_TOOL_NAMES:
+        workflows = calendar_workflows or CalendarWorkflows()
+        return run_calendar_tool(workflows, tool_name, params)
     if tool_name in BROWSER_TOOL_NAMES:
         workflows = browser_workflows or BrowserWorkflows(desktop_faculty or DesktopFaculty())
         return run_browser_tool(workflows, tool_name, params)
@@ -5615,6 +5856,29 @@ def build_document_context_lines(result: ToolResult) -> list[str]:
     ]
 
 
+def build_calendar_context_lines(result: ToolResult) -> list[str]:
+    query = str(result.query).strip()
+    source = str(result.data.get("source", "") or "calendar")
+    if not result.success:
+        return [
+            f"tool result ({result.tool}) source: {source}",
+            f"query: {query}",
+            f"error: {result.error or 'unknown calendar error'}",
+        ]
+
+    lines = [
+        f"tool result ({result.tool}) source: {source}",
+        f"query: {query}",
+        f"total_events: {result.data.get('total_events', 0)}",
+        f"period_label: {result.data.get('period_label', '')}",
+        f"has_remote_calendar: {'yes' if result.data.get('has_remote_calendar') else 'no'}",
+    ]
+    formatted = str(result.data.get("formatted", "")).strip()
+    if formatted:
+        lines.append(f"calendar_context: {formatted[:4000]}")
+    return lines
+
+
 def build_browser_context_lines(result: ToolResult) -> list[str]:
     url = str(result.data.get("url") or result.query)
     if not result.success:
@@ -5661,6 +5925,12 @@ def email_result_requires_send_confirmation(result: ToolResult) -> bool:
 
 
 def build_tool_result_text(result: ToolResult) -> str:
+    if result.tool in CALENDAR_TOOL_NAMES:
+        return str(
+            result.data.get("formatted")
+            or f"calendar > error: {result.error or 'Unknown calendar error.'}"
+        )
+
     if result.tool in BROWSER_TOOL_NAMES:
         return str(
             result.data.get("formatted")
@@ -5767,6 +6037,9 @@ def build_tool_result_text(result: ToolResult) -> str:
 
 
 def build_tool_context_lines(result: ToolResult) -> list[str]:
+    if result.tool in CALENDAR_TOOL_NAMES:
+        return build_calendar_context_lines(result)
+
     if result.tool in BROWSER_TOOL_NAMES:
         return build_browser_context_lines(result)
 
@@ -5951,6 +6224,29 @@ def build_filesystem_audit_entry(result: ToolResult) -> dict[str, object] | None
 
     details["result"] = result_text
     details["summary"] = f"{result.tool} {path} -> {result_text}"
+    return details
+
+
+def build_calendar_audit_entry(result: ToolResult) -> dict[str, object] | None:
+    if result.tool not in CALENDAR_TOOL_NAMES:
+        return None
+
+    query = str(result.query).strip()
+    source = str(result.data.get("source", "") or "calendar")
+    details: dict[str, object] = {
+        "tool": result.tool,
+        "query": query,
+        "source": source,
+    }
+    if not result.success:
+        result_text = result.error or "failed"
+    else:
+        result_text = f"{int(result.data.get('total_events', 0))} events"
+        details["period_label"] = str(result.data.get("period_label", ""))
+        details["total_events"] = int(result.data.get("total_events", 0))
+        details["has_remote_calendar"] = bool(result.data.get("has_remote_calendar", False))
+    details["result"] = result_text
+    details["summary"] = f"{result.tool} {query or source} -> {result_text}"
     return details
 
 
@@ -6310,6 +6606,7 @@ def complete_tool_resolution(
     active_token: SessionToken | None = None,
     user_log: UserLog | None = None,
     faculty_monitor: FacultyMonitor | None = None,
+    calendar_workflows: CalendarWorkflows | None = None,
     browser_workflows: BrowserWorkflows | None = None,
     document_workflows: DocumentWorkflows | None = None,
     filesystem_faculty: FileSystemFaculty | None = None,
@@ -6342,6 +6639,7 @@ def complete_tool_resolution(
             tool,
             params,
             operator,
+            calendar_workflows=calendar_workflows,
             browser_workflows=browser_workflows,
             document_workflows=document_workflows,
             filesystem_faculty=filesystem_faculty,
@@ -6355,6 +6653,7 @@ def complete_tool_resolution(
             faculty_monitor.record_call("operator", (time.monotonic() - t0) * 1000, result.success)
         audit_entry = (
             build_network_audit_entry(result)
+            or build_calendar_audit_entry(result)
             or build_browser_audit_entry(result)
             or build_document_audit_entry(result)
             or build_filesystem_audit_entry(result)
@@ -6588,6 +6887,7 @@ def handle_command(
     startup_context: dict,
     config: Config,
     operator: OperatorFaculty | None = None,
+    calendar_workflows: CalendarWorkflows | None = None,
     browser_workflows: BrowserWorkflows | None = None,
     document_workflows: DocumentWorkflows | None = None,
     filesystem_faculty: FileSystemFaculty | None = None,
@@ -6616,6 +6916,7 @@ def handle_command(
     normalized = command.strip()
     guardian_metrics = ensure_guardian_metrics(guardian_metrics)
     desktop_faculty = desktop_faculty or DesktopFaculty()
+    calendar_workflows = calendar_workflows or CalendarWorkflows()
     browser_workflows = browser_workflows or BrowserWorkflows(desktop_faculty)
     document_workflows = document_workflows or DocumentWorkflows(desktop_faculty)
     filesystem_faculty = filesystem_faculty or FileSystemFaculty()
@@ -7867,6 +8168,10 @@ def handle_command(
             f"{created['line']}"
         )
 
+    calendar_action = detect_calendar_tool_action(
+        normalized,
+        calendar_workflows,
+    )
     communication_action = detect_communication_tool_action(
         normalized,
         communication_workflows,
@@ -7877,6 +8182,54 @@ def handle_command(
         email_workflows,
         session.events,
     )
+    if calendar_action is not None:
+        append_routing_decision(
+            routing_log,
+            session,
+            "operator",
+            normalized,
+            nammu_dir=nammu_dir,
+        )
+        append_governance_event(
+            resolve_nammu_dir(session, nammu_dir),
+            session.session_id,
+            "tool",
+            str(calendar_action.get("reason", "Governed calendar workflow use.")),
+            normalized[:60],
+        )
+        return complete_tool_resolution(
+            {
+                "payload": {
+                    "original_input": normalized,
+                    "query": str(calendar_action["query"]),
+                    "tool": str(calendar_action["tool"]),
+                    "params": dict(calendar_action.get("params", {})),
+                }
+            },
+            "approve",
+            session,
+            proposal,
+            memory,
+            engine,
+            startup_context,
+            operator or OperatorFaculty(),
+            guardian_metrics,
+            active_token=active_token,
+            user_log=user_log,
+            faculty_monitor=faculty_monitor,
+            calendar_workflows=calendar_workflows,
+            filesystem_faculty=filesystem_faculty,
+            process_faculty=process_faculty,
+            package_faculty=package_faculty,
+            desktop_faculty=desktop_faculty,
+            communication_workflows=communication_workflows,
+            email_workflows=email_workflows,
+            session_audit=session_audit,
+            active_realm_name=active_realm_name,
+            conversation_state=conversation_state,
+            reflective_memory=reflective_memory,
+        )
+
     if email_action is not None:
         append_routing_decision(
             routing_log,
@@ -8675,6 +9028,7 @@ def main() -> None:
     process_faculty = ProcessFaculty()
     package_faculty = PackageFaculty()
     desktop_faculty = DesktopFaculty()
+    calendar_workflows = CalendarWorkflows()
     browser_workflows = BrowserWorkflows(desktop_faculty)
     document_workflows = DocumentWorkflows(desktop_faculty)
     communication_workflows = CommunicationWorkflows(desktop_faculty)
@@ -8787,6 +9141,7 @@ def main() -> None:
             startup_context=startup_context,
             config=config,
             operator=operator,
+            calendar_workflows=calendar_workflows,
             browser_workflows=browser_workflows,
             document_workflows=document_workflows,
             filesystem_faculty=filesystem_faculty,

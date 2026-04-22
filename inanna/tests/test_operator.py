@@ -47,6 +47,9 @@ class OperatorFacultyTests(unittest.TestCase):
                 "email_search",
                 "email_compose",
                 "email_reply",
+                "calendar_today",
+                "calendar_upcoming",
+                "calendar_read_ics",
                 "desktop_open_app",
                 "desktop_read_window",
                 "desktop_click",
@@ -159,6 +162,18 @@ class OperatorFacultyTests(unittest.TestCase):
                 "requires_approval": True,
                 "requires_privilege": "converse",
                 "parameters": ["app", "to", "subject", "body", "mode"],
+                "enabled": True,
+            },
+        )
+        self.assertEqual(
+            operator.get_tool_definition("calendar_today"),
+            {
+                "display_name": "Today's Events",
+                "description": "Read today's calendar events from Thunderbird",
+                "category": "calendar",
+                "requires_approval": False,
+                "requires_privilege": "",
+                "parameters": [],
                 "enabled": True,
             },
         )

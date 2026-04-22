@@ -304,6 +304,34 @@
       ],
       "enabled": true
     },
+    "calendar_today": {
+      "display_name": "Today's Events",
+      "description": "Read today's calendar events from Thunderbird",
+      "category": "calendar",
+      "requires_approval": false,
+      "enabled": true,
+      "parameters": []
+    },
+    "calendar_upcoming": {
+      "display_name": "Upcoming Events",
+      "description": "Read upcoming calendar events for next N days",
+      "category": "calendar",
+      "requires_approval": false,
+      "enabled": true,
+      "parameters": [
+        "days"
+      ]
+    },
+    "calendar_read_ics": {
+      "display_name": "Read ICS File",
+      "description": "Parse a .ics calendar file from the filesystem",
+      "category": "calendar",
+      "requires_approval": false,
+      "enabled": true,
+      "parameters": [
+        "path"
+      ]
+    },
     "doc_read": {
       "display_name": "Read Document",
       "description": "Read any document file: txt, md, docx, odt, pdf, xlsx, csv.",

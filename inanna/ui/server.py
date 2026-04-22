@@ -19,6 +19,7 @@ from websockets.exceptions import ConnectionClosed
 from config import Config
 from core.auth import AuthStore
 from core.browser_workflows import BrowserWorkflows
+from core.calendar_workflows import CalendarWorkflows
 from core.communication_workflows import CommunicationWorkflows
 from core.desktop_faculty import DesktopFaculty
 from core.document_workflows import DocumentWorkflows
@@ -69,6 +70,7 @@ from main import (
     build_admin_surface_payload,
     build_body_report,
     build_body_summary,
+    build_calendar_audit_entry,
     build_communication_audit_entry,
     build_browser_audit_entry,
     build_desktop_audit_entry,
@@ -119,6 +121,7 @@ from main import (
     complete_orchestration_resolution as complete_orchestration_backend_resolution,
     default_profile_field_value,
     detect_communication_tool_action,
+    detect_calendar_tool_action,
     detect_browser_tool_action,
     detect_desktop_tool_action,
     detect_document_tool_action,
@@ -416,6 +419,7 @@ class InterfaceServer:
         self.guardian = GuardianFaculty()
         self.operator = OperatorFaculty()
         self.desktop_faculty = DesktopFaculty()
+        self.calendar_workflows = CalendarWorkflows()
         self.browser_workflows = BrowserWorkflows(self.desktop_faculty)
         self.document_workflows = DocumentWorkflows(self.desktop_faculty)
         self.communication_workflows = CommunicationWorkflows(self.desktop_faculty)
@@ -877,6 +881,35 @@ class InterfaceServer:
                 },
                 "proposal": created,
             }
+
+        calendar_action = detect_calendar_tool_action(
+            text,
+            self.calendar_workflows,
+        )
+        if calendar_action is not None:
+            self._record_routing_decision("operator", text)
+            self._record_governance_decision(
+                "tool",
+                str(calendar_action.get("reason", "Governed calendar workflow use.")),
+                text,
+            )
+            outcome = self.complete_tool_resolution(
+                {
+                    "payload": {
+                        "original_input": text,
+                        "query": str(calendar_action["query"]),
+                        "tool": str(calendar_action["tool"]),
+                        "params": dict(calendar_action.get("params", {})),
+                    }
+                },
+                "approve",
+            )
+            responses = list(outcome["operator_payloads"])
+            if outcome["assistant_text"]:
+                responses.append({"type": "assistant", "text": outcome["assistant_text"]})
+            if outcome.get("proposal"):
+                responses.append({"type": "system", "text": outcome["proposal"]["line"]})
+            return {"responses": responses}
 
         email_action = detect_email_tool_action(
             text,
@@ -3227,6 +3260,7 @@ class InterfaceServer:
                 tool,
                 params,
                 self.operator,
+                calendar_workflows=self.calendar_workflows,
                 browser_workflows=self.browser_workflows,
                 document_workflows=self.document_workflows,
                 filesystem_faculty=self.filesystem_faculty,
@@ -3244,6 +3278,7 @@ class InterfaceServer:
             )
             audit_entry = (
                 build_network_audit_entry(result)
+                or build_calendar_audit_entry(result)
                 or build_browser_audit_entry(result)
                 or build_document_audit_entry(result)
                 or build_filesystem_audit_entry(result)
