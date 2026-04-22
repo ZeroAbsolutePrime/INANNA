@@ -50,6 +50,16 @@ HELP_COMMON = """𒀭 INANNA NYX — Available Commands
     governance-trust [tool]       Mark a tool as persistently trusted
     governance-revoke [tool]      Revoke persistent trust for a tool
 
+  GOVERNANCE (constitutional boundaries)
+    The Constitutional Filter runs on every message.
+    It holds firm on: harm to minors, WMDs, hate speech,
+    audit suppression, genocide incitement.
+    It does not block: difficult topics, dark themes,
+    questions about INANNA's limitations.
+
+    Type 'nammu-profile' to see your operator profile.
+    Type 'status' to see system health.
+
   ORGANIZATION
     my-departments                Show your departments and groups
 

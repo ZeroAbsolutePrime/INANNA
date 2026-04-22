@@ -21,6 +21,7 @@ from core.auth import AuthStore
 from core.browser_workflows import BrowserWorkflows
 from core.calendar_workflows import CalendarWorkflows
 from core.communication_workflows import CommunicationWorkflows
+from core.constitutional_filter import ConstitutionalFilter
 from core.desktop_faculty import DesktopFaculty
 from core.document_workflows import DocumentWorkflows
 from core.email_workflows import EmailWorkflows
@@ -450,6 +451,7 @@ class InterfaceServer:
             name="software-registry-loader"
         ).start()
         self.process_monitor = ProcessMonitor(self.server_start_time)
+        self.constitutional_filter = ConstitutionalFilter(engine=self.engine)
         self.governance = GovernanceLayer(engine=self.engine)
         self.classifier = IntentClassifier(
             self.engine,
@@ -886,6 +888,27 @@ class InterfaceServer:
         self,
         text: str,
     ) -> dict[str, Any]:
+        filter_result = self.constitutional_filter.check_with_logging(
+            text=text,
+            audit_dir=self.nammu_dir,
+            session_id=self.session.session_id,
+            operator_profile=self.nammu_profile,
+        )
+        if filter_result.blocked:
+            append_governance_event(
+                self.nammu_dir,
+                self.session.session_id,
+                "block_constitutional",
+                filter_result.reason,
+                text[:80],
+            )
+            return {
+                "response": {
+                    "type": "assistant",
+                    "text": filter_result.to_crown_response(),
+                }
+            }
+
         plan = self.orchestration_engine.detect_orchestration(text)
         if plan is not None:
             self._record_routing_decision("orchestration", text)

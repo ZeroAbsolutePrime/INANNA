@@ -26,6 +26,7 @@ from core.calendar_workflows import (
     CalendarWorkflows,
 )
 from core.communication_workflows import CommunicationWorkflows, WorkflowResult, normalize_app_name
+from core.constitutional_filter import ConstitutionalFilter
 from core.desktop_faculty import DesktopFaculty, DesktopResult, is_consequential_label
 from core.document_workflows import (
     DocumentComprehension,
@@ -7042,6 +7043,7 @@ def handle_command(
     orchestration_engine: OrchestrationEngine | None = None,
     profile_manager: ProfileManager | None = None,
     reflective_memory: ReflectiveMemory | None = None,
+    constitutional_filter: ConstitutionalFilter | None = None,
 ) -> str | None:
     normalized = command.strip()
     guardian_metrics = ensure_guardian_metrics(guardian_metrics)
@@ -8389,6 +8391,27 @@ def handle_command(
 
         return f"Rejected {resolved['proposal_id']}."
 
+    if constitutional_filter is not None:
+        filter_result = constitutional_filter.check_with_logging(
+            text=normalized,
+            audit_dir=resolve_nammu_dir(session, nammu_dir),
+            session_id=session.session_id,
+            operator_profile=(
+                session_state.get("nammu_profile")
+                if isinstance(session_state, dict)
+                else None
+            ),
+        )
+        if filter_result.blocked:
+            append_governance_event(
+                resolve_nammu_dir(session, nammu_dir),
+                session.session_id,
+                "block_constitutional",
+                filter_result.reason,
+                normalized[:80],
+            )
+            return f"inanna> {filter_result.to_crown_response()}"
+
     plan = orchestration_engine.detect_orchestration(normalized)
     if plan is not None:
         append_routing_decision(
@@ -9436,6 +9459,7 @@ def main() -> None:
     document_workflows = DocumentWorkflows(desktop_faculty)
     communication_workflows = CommunicationWorkflows(desktop_faculty)
     email_workflows = EmailWorkflows(desktop_faculty)
+    constitutional_filter = ConstitutionalFilter(engine=engine)
     governance = GovernanceLayer(engine=engine)
     sync_profile_grounding(engine, profile_manager, guardian_user, guardian_token, reflective_memory)
     classifier = IntentClassifier(
@@ -9569,6 +9593,7 @@ def main() -> None:
             orchestration_engine=orchestration_engine,
             profile_manager=profile_manager,
             reflective_memory=reflective_memory,
+            constitutional_filter=constitutional_filter,
         )
         if result is None:
             observe_session_communication(
