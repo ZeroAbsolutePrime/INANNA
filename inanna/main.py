@@ -1222,8 +1222,25 @@ def extract_email_tool_request(
     if not hint_match and not app_match:
         return None
 
+    # "do I have emails from X" / "any emails from X" -> search
+    have_emails_match = re.match(
+        r"^(?:do\s+i\s+have|any|have\s+i\s+(?:got|received)?)\s+(?:any\s+)?(?:new\s+)?emails?\s+from\s+(?P<sender>.+?)(?:\s+in\s+(?P<app>.+))?$",
+        prefix_stripped,
+        flags=re.IGNORECASE,
+    )
+    if have_emails_match:
+        sender = normalize_request_fragment(have_emails_match.group("sender"))
+        app = normalize_email_app(have_emails_match.group("app") or DEFAULT_EMAIL_CLIENT)
+        params = {"query": sender, "app": app}
+        return {
+            "tool": "email_search",
+            "params": params,
+            "query": f"Search {app} for emails from {sender}",
+            "reason": "Email search routed to email faculty.",
+        }
+
     compose_match = re.match(
-        rf"^(?:send|write|compose)\s+(?:an?\s+)?email\s+to\s+(?P<to>.+?)\s+about\s+(?P<subject>.+?)\s+saying\s+(?P<body>.+?)(?:\s+on\s+(?P<app>{app_pattern}))?$",
+        rf"^(?:send|write|compose)\s+(?:an?\s+)?email\s+to\s+(?P<to>[^\s].+?)(?:\s+about\s+(?P<subject>.+?))?\s+saying\s+(?P<body>.+?)(?:\s+on\s+(?P<app>{app_pattern}))?$",
         normalized_stripped,
         flags=re.IGNORECASE,
     )
