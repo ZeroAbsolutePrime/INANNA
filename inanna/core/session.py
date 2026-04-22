@@ -95,6 +95,7 @@ class Engine:
             self._call_openai_compatible(
                 [{"role": "user", "content": "hi"}],
                 timeout=2,
+                max_tokens=1,
             )
         except Exception:
             self.fallback_mode = True
@@ -294,6 +295,7 @@ class Engine:
         self,
         messages: list[dict[str, str]],
         timeout: float | None = None,
+        max_tokens: int | None = None,
     ) -> str:
         endpoint = self.model_url.rstrip("/")
         if not endpoint.endswith("/chat/completions"):
@@ -303,6 +305,7 @@ class Engine:
             {
                 "model": self.model_name,
                 "messages": messages,
+                **(({"max_tokens": max_tokens}) if max_tokens is not None else {}),
             }
         ).encode("utf-8")
 
