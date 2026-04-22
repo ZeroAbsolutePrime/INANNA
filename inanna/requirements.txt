@@ -7,6 +7,13 @@ psutil>=5.9
 # Desktop Faculty (Windows backend)
 pywinauto>=0.6.8
 
+# Document Faculty
+python-docx>=1.1.0
+python-pptx>=0.6.23
+openpyxl>=3.1.0
+pymupdf>=1.24.0
+odfpy>=1.4.1
+
 # Voice Pipeline (Phase 7.5+ - install separately)
 # pip install faster-whisper sounddevice torch
 # faster-whisper>=1.0.0

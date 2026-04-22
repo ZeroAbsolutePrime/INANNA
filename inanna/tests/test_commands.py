@@ -592,6 +592,14 @@ class CommandTests(unittest.TestCase):
         self.assertIn("check my email", result.lower())
         self.assertIn("two-stage", result.lower())
 
+    def test_help_documents_topic_lists_document_faculty(self) -> None:
+        result = build_help_response("guardian", "documents")
+
+        self.assertTrue(result.startswith("INANNA NYX"))
+        self.assertIn("DOCUMENTS", result)
+        self.assertIn("proposal.pdf", result.lower())
+        self.assertIn("letter.docx to pdf", result.lower())
+
     def test_my_profile_returns_formatted_profile(self) -> None:
         (
             session,
@@ -1647,7 +1655,7 @@ class CommandTests(unittest.TestCase):
             config,
         )
 
-        self.assertIn("tool-registry > Registered tools (31 total):", result)
+        self.assertIn("tool-registry > Registered tools (35 total):", result)
         self.assertIn("COMMUNICATION", result)
         self.assertIn("Read Messages [enabled]", result)
         self.assertIn("Send Message [enabled]", result)
@@ -1658,6 +1666,11 @@ class CommandTests(unittest.TestCase):
         self.assertIn("Search Emails [enabled]", result)
         self.assertIn("Compose Email Draft [enabled]", result)
         self.assertIn("Reply Draft [enabled]", result)
+        self.assertIn("DOCUMENT", result)
+        self.assertIn("Read Document [enabled]", result)
+        self.assertIn("Write Document [enabled]", result)
+        self.assertIn("Open in LibreOffice [enabled]", result)
+        self.assertIn("Export to PDF [enabled]", result)
         self.assertIn("DESKTOP", result)
         self.assertIn("Open Application [enabled]", result)
         self.assertIn("Read Window Content [enabled]", result)

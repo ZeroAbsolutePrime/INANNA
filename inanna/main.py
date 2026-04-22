@@ -17,6 +17,12 @@ from config import Config
 from core.body import BodyInspector, BodyReport
 from core.communication_workflows import CommunicationWorkflows, WorkflowResult, normalize_app_name
 from core.desktop_faculty import DesktopFaculty, DesktopResult, is_consequential_label
+from core.document_workflows import (
+    DocumentComprehension,
+    DocumentRecord,
+    DocumentWorkflows,
+    DocumentWriteResult,
+)
 from core.email_workflows import (
     DEFAULT_EMAIL_CLIENT,
     EMAIL_APP_PATTERNS,
@@ -294,6 +300,12 @@ EMAIL_TOOL_NAMES = {
     "email_compose",
     "email_reply",
 }
+DOCUMENT_TOOL_NAMES = {
+    "doc_read",
+    "doc_write",
+    "doc_open",
+    "doc_export_pdf",
+}
 PROCESS_HINT_FALLBACKS = (
     "process",
     "processes",
@@ -404,6 +416,25 @@ DESKTOP_HINT_FALLBACKS = (
     "capture screen",
     "switch to",
     "focus on",
+)
+DOCUMENT_HINT_FALLBACKS = (
+    "read document",
+    "open document",
+    "read pdf",
+    "read docx",
+    "read odt",
+    "summarize document",
+    "summarize pdf",
+    "what does the document say",
+    "what is in the file",
+    "write a document",
+    "create a document",
+    "write a report",
+    "create a report",
+    "write a letter",
+    "open in libreoffice",
+    "export to pdf",
+    "save as pdf",
 )
 PACKAGE_SEARCH_TERMS = (
     "app",
@@ -542,6 +573,25 @@ def load_desktop_domain_hints(
     return cleaned or list(DESKTOP_HINT_FALLBACKS)
 
 
+def load_document_domain_hints(
+    signals_path: Path = FILESYSTEM_SIGNAL_PATH,
+) -> list[str]:
+    try:
+        payload = json.loads(signals_path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return list(DOCUMENT_HINT_FALLBACKS)
+
+    domain_hints = payload.get("domain_hints", {})
+    if not isinstance(domain_hints, dict):
+        return list(DOCUMENT_HINT_FALLBACKS)
+    hints = domain_hints.get("document", [])
+    if not isinstance(hints, list):
+        return list(DOCUMENT_HINT_FALLBACKS)
+
+    cleaned = [str(item).strip().lower() for item in hints if str(item).strip()]
+    return cleaned or list(DOCUMENT_HINT_FALLBACKS)
+
+
 def normalize_request_fragment(value: str) -> str:
     cleaned = str(value or "").strip()
     if len(cleaned) >= 2 and cleaned[0] == cleaned[-1] and cleaned[0] in {'"', "'"}:
@@ -574,6 +624,20 @@ def normalize_filesystem_path(value: str) -> str:
         }
         return str(special.get(remainder.lower(), Path.home() / remainder))
     return cleaned
+
+
+def normalize_document_path(value: str) -> str:
+    cleaned = normalize_request_fragment(value)
+    lowered = cleaned.lower()
+    for prefix in ("the document ", "document ", "the file ", "file ", "the pdf ", "pdf "):
+        if lowered.startswith(prefix):
+            cleaned = cleaned[len(prefix) :].strip()
+            lowered = cleaned.lower()
+    for suffix in (" in libreoffice", " with libreoffice", " to pdf", " as pdf"):
+        if lowered.endswith(suffix):
+            cleaned = cleaned[: -len(suffix)].strip()
+            lowered = cleaned.lower()
+    return cleaned.strip().strip('"')
 
 
 def normalize_search_pattern(value: str) -> str:
@@ -769,6 +833,145 @@ def detect_filesystem_tool_action(
         **request,
         "requires_proposal": requires_proposal,
         "persistent_trusted_tools": persistent_trusted_tools,
+    }
+
+
+def _looks_like_document_path(value: str) -> bool:
+    cleaned = normalize_document_path(value)
+    if not cleaned:
+        return False
+    suffix = Path(cleaned).suffix.lower()
+    return suffix in {
+        ".txt",
+        ".md",
+        ".rst",
+        ".log",
+        ".docx",
+        ".odt",
+        ".pdf",
+        ".xlsx",
+        ".xls",
+        ".ods",
+        ".csv",
+    }
+
+
+def extract_document_tool_request(
+    text: str,
+    hints: list[str] | None = None,
+) -> dict[str, Any] | None:
+    normalized = str(text or "").strip()
+    lowered = normalized.lower()
+    if (
+        lowered.startswith("read file")
+        or lowered.startswith("read the file")
+        or lowered.startswith("show file")
+        or lowered.startswith("show the file")
+        or lowered.startswith("open file at")
+        or lowered.startswith("open the file at")
+    ):
+        return None
+    active_hints = hints or load_document_domain_hints()
+    hint_match = any(hint in lowered for hint in active_hints)
+
+    open_lo_match = re.match(
+        r"^(?:open)(?:\s+the)?(?:\s+document|\s+file)?\s+(?P<path>.+?)\s+(?:in|with)\s+libreoffice$",
+        normalized,
+        flags=re.IGNORECASE,
+    )
+    if open_lo_match:
+        path = normalize_document_path(open_lo_match.group("path"))
+        if _looks_like_document_path(path):
+            return {
+                "tool": "doc_open",
+                "params": {"path": path},
+                "query": path,
+                "reason": "LibreOffice document open routed to Document Faculty.",
+            }
+
+    export_match = re.match(
+        r"^(?:export|save)\s+(?P<path>.+?)\s+(?:to|as)\s+pdf(?:\s+in\s+(?P<output_dir>.+))?$",
+        normalized,
+        flags=re.IGNORECASE,
+    )
+    if export_match:
+        path = normalize_document_path(export_match.group("path"))
+        if _looks_like_document_path(path):
+            params: dict[str, str] = {"path": path}
+            output_dir = normalize_request_fragment(export_match.group("output_dir") or "")
+            if output_dir:
+                params["output_dir"] = output_dir
+            return {
+                "tool": "doc_export_pdf",
+                "params": params,
+                "query": path,
+                "reason": "Document PDF export routed to Document Faculty.",
+            }
+
+    read_match = re.match(
+        r"^(?:read|open|summarize|explain)(?:\s+the)?(?:\s+document|\s+file|\s+pdf)?\s+(?P<path>.+)$",
+        normalized,
+        flags=re.IGNORECASE,
+    )
+    if read_match:
+        path = normalize_document_path(read_match.group("path"))
+        if _looks_like_document_path(path):
+            return {
+                "tool": "doc_read",
+                "params": {"path": path},
+                "query": path,
+                "reason": "Document read routed to Document Faculty.",
+            }
+
+    write_match = re.match(
+        r"^(?:write|create)(?:\s+a)?(?:\s+new)?\s+(?:document|report|letter|note)(?:\s+at|\s+to|\s+called|\s+named)?\s+(?P<path>\"[^\"]+\"|\\S+)\s*(?:with|saying|containing)?\s*(?P<content>.*)$",
+        normalized,
+        flags=re.IGNORECASE,
+    )
+    if write_match:
+        path = normalize_document_path(write_match.group("path"))
+        if path:
+            suffix = Path(path).suffix.lower()
+            format_name = suffix.lstrip(".") if suffix else "txt"
+            return {
+                "tool": "doc_write",
+                "params": {
+                    "path": path,
+                    "content": normalize_request_fragment(write_match.group("content") or ""),
+                    "format": format_name,
+                },
+                "query": path,
+                "reason": "Document creation routed to Document Faculty.",
+            }
+
+    if hint_match and _looks_like_document_path(normalized):
+        path = normalize_document_path(normalized)
+        return {
+            "tool": "doc_read",
+            "params": {"path": path},
+            "query": path,
+            "reason": "Document read routed to Document Faculty.",
+        }
+
+    return None
+
+
+def document_request_requires_proposal(document_request: dict[str, Any]) -> bool:
+    tool_name = str(document_request.get("tool", "")).strip().lower()
+    return tool_name != "doc_read"
+
+
+def detect_document_tool_action(
+    text: str,
+    document_workflows: DocumentWorkflows | None = None,
+) -> dict[str, Any] | None:
+    del document_workflows
+    request = extract_document_tool_request(text)
+    if request is None:
+        return None
+    return {
+        **request,
+        "requires_proposal": document_request_requires_proposal(request),
     }
 
 
@@ -4686,10 +4889,100 @@ def run_package_tool(
     return build_package_tool_result(tool_name, result, package_faculty)
 
 
+def build_document_tool_result(
+    tool_name: str,
+    record: DocumentRecord | DocumentWriteResult,
+    document_workflows: DocumentWorkflows,
+    comprehension: DocumentComprehension | None = None,
+) -> ToolResult:
+    if isinstance(record, DocumentRecord):
+        return ToolResult(
+            tool=tool_name,
+            query=record.path,
+            success=record.success,
+            data={
+                "path": record.path,
+                "title": record.title,
+                "format": record.format,
+                "content": record.content,
+                "word_count": record.word_count,
+                "page_count": record.page_count,
+                "sheet_names": list(record.sheet_names),
+                "comprehension": {
+                    "title": comprehension.title if comprehension else "",
+                    "format": comprehension.format if comprehension else "",
+                    "word_count": comprehension.word_count if comprehension else 0,
+                    "page_count": comprehension.page_count if comprehension else 0,
+                    "summary_lines": list(comprehension.summary_lines) if comprehension else [],
+                    "key_points": list(comprehension.key_points) if comprehension else [],
+                    "suggested_actions": list(comprehension.suggested_actions) if comprehension else [],
+                },
+                "formatted": document_workflows.format_read_result(
+                    record,
+                    comprehension or DocumentComprehension(),
+                ),
+            },
+            error=record.error,
+        )
+    return ToolResult(
+        tool=tool_name,
+        query=record.path,
+        success=record.success,
+        data={
+            "path": record.path,
+            "format": record.format,
+            "word_count": record.word_count,
+            "formatted": document_workflows.format_write_result(record),
+        },
+        error=record.error,
+    )
+
+
+def run_document_tool(
+    document_workflows: DocumentWorkflows,
+    tool_name: str,
+    params: dict[str, Any],
+) -> ToolResult:
+    if tool_name == "doc_read":
+        record, comprehension = document_workflows.read_document(str(params.get("path", "")))
+        return build_document_tool_result(tool_name, record, document_workflows, comprehension)
+    if tool_name == "doc_write":
+        result = document_workflows.write_document(
+            str(params.get("path", "")),
+            str(params.get("content", "")),
+            title=str(params.get("title", "")),
+            format=str(params.get("format", "txt") or "txt"),
+        )
+        return build_document_tool_result(tool_name, result, document_workflows)
+    if tool_name == "doc_open":
+        path = str(params.get("path", ""))
+        success = document_workflows.open_in_libreoffice(path)
+        result = DocumentWriteResult(
+            success=success,
+            path=str(Path(path).expanduser().resolve()) if path else "",
+            format=Path(path).suffix.lower().lstrip("."),
+            error=None if success else "LibreOffice failed to open document.",
+        )
+        return build_document_tool_result(tool_name, result, document_workflows)
+    if tool_name == "doc_export_pdf":
+        result = document_workflows.export_to_pdf(
+            str(params.get("path", "")),
+            str(params.get("output_dir", "") or "") or None,
+        )
+        return build_document_tool_result(tool_name, result, document_workflows)
+    return ToolResult(
+        tool=tool_name,
+        query=str(params.get("path", "")),
+        success=False,
+        error=f"Unknown document tool: {tool_name}",
+    )
+
+
 def execute_tool_request(
     tool_name: str,
     params: dict[str, Any],
     operator: OperatorFaculty,
+    document_workflows: DocumentWorkflows | None = None,
     filesystem_faculty: FileSystemFaculty | None = None,
     process_faculty: ProcessFaculty | None = None,
     package_faculty: PackageFaculty | None = None,
@@ -4698,6 +4991,9 @@ def execute_tool_request(
     email_workflows: EmailWorkflows | None = None,
     software_registry: SoftwareRegistry | None = None,
 ) -> ToolResult:
+    if tool_name in DOCUMENT_TOOL_NAMES:
+        workflows = document_workflows or DocumentWorkflows(desktop_faculty or DesktopFaculty())
+        return run_document_tool(workflows, tool_name, params)
     if tool_name in FILESYSTEM_TOOL_NAMES:
         return run_filesystem_tool(filesystem_faculty or FileSystemFaculty(), tool_name, params)
     if tool_name in PROCESS_TOOL_NAMES:
@@ -5066,6 +5362,43 @@ def build_email_context_lines(result: ToolResult) -> list[str]:
     ]
 
 
+def build_document_context_lines(result: ToolResult) -> list[str]:
+    path = str(result.data.get("path") or result.query)
+    if not result.success:
+        return [
+            f"tool result ({result.tool}) path: {path}",
+            f"error: {result.error or 'unknown document error'}",
+        ]
+
+    if result.tool == "doc_read":
+        comprehension = result.data.get("comprehension", {})
+        if not isinstance(comprehension, dict):
+            comprehension = {}
+        lines = [
+            f"tool result ({result.tool}) path: {path}",
+            f"title: {result.data.get('title', '') or Path(path).stem}",
+            f"format: {result.data.get('format', 'unknown')}",
+            f"word_count: {result.data.get('word_count', 0)}",
+            f"page_count: {result.data.get('page_count', 0)}",
+        ]
+        summary_lines = list(comprehension.get("summary_lines", []))
+        key_points = list(comprehension.get("key_points", []))
+        if summary_lines:
+            lines.append("summary: " + " | ".join(str(line) for line in summary_lines[:3]))
+        if key_points:
+            lines.append("key_points: " + " | ".join(str(point) for point in key_points[:5]))
+        content = str(result.data.get("content", "")).strip()
+        if content:
+            lines.append(f"content_excerpt: {content[:4000]}")
+        return lines
+
+    return [
+        f"tool result ({result.tool}) path: {path}",
+        f"format: {result.data.get('format', 'unknown')}",
+        f"message: {str(result.data.get('formatted', '')).strip()[:1000]}",
+    ]
+
+
 def communication_result_requires_send_confirmation(result: ToolResult) -> bool:
     return bool(
         result.tool == "comm_send_message"
@@ -5085,6 +5418,12 @@ def email_result_requires_send_confirmation(result: ToolResult) -> bool:
 
 
 def build_tool_result_text(result: ToolResult) -> str:
+    if result.tool in DOCUMENT_TOOL_NAMES:
+        return str(
+            result.data.get("formatted")
+            or f"doc > error: {result.error or 'Unknown document error.'}"
+        )
+
     if result.tool in EMAIL_TOOL_NAMES:
         return str(
             result.data.get("formatted")
@@ -5179,6 +5518,9 @@ def build_tool_result_text(result: ToolResult) -> str:
 
 
 def build_tool_context_lines(result: ToolResult) -> list[str]:
+    if result.tool in DOCUMENT_TOOL_NAMES:
+        return build_document_context_lines(result)
+
     if result.tool in EMAIL_TOOL_NAMES:
         return build_email_context_lines(result)
 
@@ -5354,6 +5696,42 @@ def build_filesystem_audit_entry(result: ToolResult) -> dict[str, object] | None
     elif result.tool == "write_file":
         result_text = f"wrote {result.data.get('bytes_read', 0)} bytes"
         details["bytes_written"] = int(result.data.get("bytes_read", 0))
+
+    details["result"] = result_text
+    details["summary"] = f"{result.tool} {path} -> {result_text}"
+    return details
+
+
+def build_document_audit_entry(result: ToolResult) -> dict[str, object] | None:
+    if result.tool not in DOCUMENT_TOOL_NAMES:
+        return None
+
+    path = str(result.data.get("path") or result.query).strip()
+    details: dict[str, object] = {
+        "tool": result.tool,
+        "path": path,
+        "format": str(result.data.get("format", "") or "unknown"),
+    }
+    if not result.success:
+        result_text = result.error or "failed"
+    elif result.tool == "doc_read":
+        result_text = (
+            f"{int(result.data.get('word_count', 0))} words"
+            + (
+                f", {int(result.data.get('page_count', 0))} pages"
+                if int(result.data.get("page_count", 0))
+                else ""
+            )
+        )
+        details["word_count"] = int(result.data.get("word_count", 0))
+        details["page_count"] = int(result.data.get("page_count", 0))
+    elif result.tool == "doc_write":
+        result_text = f"wrote {int(result.data.get('word_count', 0))} words"
+        details["word_count"] = int(result.data.get("word_count", 0))
+    elif result.tool == "doc_open":
+        result_text = "opened in LibreOffice"
+    else:
+        result_text = "exported to pdf"
 
     details["result"] = result_text
     details["summary"] = f"{result.tool} {path} -> {result_text}"
@@ -5655,6 +6033,7 @@ def complete_tool_resolution(
     active_token: SessionToken | None = None,
     user_log: UserLog | None = None,
     faculty_monitor: FacultyMonitor | None = None,
+    document_workflows: DocumentWorkflows | None = None,
     filesystem_faculty: FileSystemFaculty | None = None,
     process_faculty: ProcessFaculty | None = None,
     package_faculty: PackageFaculty | None = None,
@@ -5685,6 +6064,7 @@ def complete_tool_resolution(
             tool,
             params,
             operator,
+            document_workflows=document_workflows,
             filesystem_faculty=filesystem_faculty,
             process_faculty=process_faculty,
             package_faculty=package_faculty,
@@ -5696,6 +6076,7 @@ def complete_tool_resolution(
             faculty_monitor.record_call("operator", (time.monotonic() - t0) * 1000, result.success)
         audit_entry = (
             build_network_audit_entry(result)
+            or build_document_audit_entry(result)
             or build_filesystem_audit_entry(result)
             or build_process_audit_entry(result)
             or build_package_audit_entry(result)
@@ -5927,6 +6308,7 @@ def handle_command(
     startup_context: dict,
     config: Config,
     operator: OperatorFaculty | None = None,
+    document_workflows: DocumentWorkflows | None = None,
     filesystem_faculty: FileSystemFaculty | None = None,
     process_faculty: ProcessFaculty | None = None,
     package_faculty: PackageFaculty | None = None,
@@ -5953,6 +6335,7 @@ def handle_command(
     normalized = command.strip()
     guardian_metrics = ensure_guardian_metrics(guardian_metrics)
     desktop_faculty = desktop_faculty or DesktopFaculty()
+    document_workflows = document_workflows or DocumentWorkflows(desktop_faculty)
     filesystem_faculty = filesystem_faculty or FileSystemFaculty()
     process_faculty = process_faculty or ProcessFaculty()
     package_faculty = package_faculty or PackageFaculty()
@@ -7406,6 +7789,72 @@ def handle_command(
             reflective_memory=reflective_memory,
         )
 
+    document_action = detect_document_tool_action(
+        normalized,
+        document_workflows,
+    )
+    if document_action is not None:
+        append_routing_decision(
+            routing_log,
+            session,
+            "operator",
+            normalized,
+            nammu_dir=nammu_dir,
+        )
+        append_governance_event(
+            resolve_nammu_dir(session, nammu_dir),
+            session.session_id,
+            "tool",
+            str(document_action.get("reason", "Governed document workflow use.")),
+            normalized[:60],
+        )
+        if bool(document_action.get("requires_proposal", False)):
+            created = create_tool_use_proposal(
+                proposal=proposal,
+                session=session,
+                user_input=normalized,
+                tool=str(document_action["tool"]),
+                query=str(document_action["query"]),
+                params=dict(document_action.get("params", {})),
+            )
+            return (
+                f'operator > tool proposed: {document_action["tool"]} - "{document_action["query"]}"\n'
+                'Type "approve" to execute or "reject" to cancel.\n'
+                f"{created['tool_line']}"
+            )
+        return complete_tool_resolution(
+            {
+                "payload": {
+                    "original_input": normalized,
+                    "query": str(document_action["query"]),
+                    "tool": str(document_action["tool"]),
+                    "params": dict(document_action.get("params", {})),
+                }
+            },
+            "approve",
+            session,
+            proposal,
+            memory,
+            engine,
+            startup_context,
+            operator or OperatorFaculty(),
+            guardian_metrics,
+            active_token=active_token,
+            user_log=user_log,
+            faculty_monitor=faculty_monitor,
+            document_workflows=document_workflows,
+            filesystem_faculty=filesystem_faculty,
+            process_faculty=process_faculty,
+            package_faculty=package_faculty,
+            desktop_faculty=desktop_faculty,
+            communication_workflows=communication_workflows,
+            email_workflows=email_workflows,
+            session_audit=session_audit,
+            active_realm_name=active_realm_name,
+            conversation_state=conversation_state,
+            reflective_memory=reflective_memory,
+        )
+
     filesystem_action = detect_filesystem_tool_action(
         normalized,
         filesystem_faculty,
@@ -7877,6 +8326,7 @@ def main() -> None:
     process_faculty = ProcessFaculty()
     package_faculty = PackageFaculty()
     desktop_faculty = DesktopFaculty()
+    document_workflows = DocumentWorkflows(desktop_faculty)
     communication_workflows = CommunicationWorkflows(desktop_faculty)
     email_workflows = EmailWorkflows(desktop_faculty)
     governance = GovernanceLayer(engine=engine)
@@ -7987,6 +8437,7 @@ def main() -> None:
             startup_context=startup_context,
             config=config,
             operator=operator,
+            document_workflows=document_workflows,
             filesystem_faculty=filesystem_faculty,
             process_faculty=process_faculty,
             package_faculty=package_faculty,

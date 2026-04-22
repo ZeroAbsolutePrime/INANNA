@@ -304,6 +304,54 @@
       ],
       "enabled": true
     },
+    "doc_read": {
+      "display_name": "Read Document",
+      "description": "Read any document file: txt, md, docx, odt, pdf, xlsx, csv.",
+      "category": "document",
+      "requires_approval": false,
+      "requires_privilege": "converse",
+      "parameters": [
+        "path"
+      ],
+      "enabled": true
+    },
+    "doc_write": {
+      "display_name": "Write Document",
+      "description": "Write a new document file.",
+      "category": "document",
+      "requires_approval": true,
+      "requires_privilege": "converse",
+      "parameters": [
+        "path",
+        "content",
+        "title",
+        "format"
+      ],
+      "enabled": true
+    },
+    "doc_open": {
+      "display_name": "Open in LibreOffice",
+      "description": "Open a document in LibreOffice for viewing or editing.",
+      "category": "document",
+      "requires_approval": true,
+      "requires_privilege": "converse",
+      "parameters": [
+        "path"
+      ],
+      "enabled": true
+    },
+    "doc_export_pdf": {
+      "display_name": "Export to PDF",
+      "description": "Export a document to PDF using LibreOffice.",
+      "category": "document",
+      "requires_approval": true,
+      "requires_privilege": "converse",
+      "parameters": [
+        "path",
+        "output_dir"
+      ],
+      "enabled": true
+    },
     "desktop_open_app": {
       "display_name": "Open Application",
       "description": "Open any installed application by name.",

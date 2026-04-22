@@ -31,6 +31,10 @@ class OperatorFacultyTests(unittest.TestCase):
                 "list_packages",
                 "install_package",
                 "remove_package",
+                "doc_read",
+                "doc_write",
+                "doc_open",
+                "doc_export_pdf",
                 "launch_app",
                 "comm_read_messages",
                 "comm_send_message",
@@ -104,6 +108,18 @@ class OperatorFacultyTests(unittest.TestCase):
                 "requires_approval": False,
                 "requires_privilege": "converse",
                 "parameters": ["query"],
+                "enabled": True,
+            },
+        )
+        self.assertEqual(
+            operator.get_tool_definition("doc_read"),
+            {
+                "display_name": "Read Document",
+                "description": "Read any document file: txt, md, docx, odt, pdf, xlsx, csv.",
+                "category": "document",
+                "requires_approval": False,
+                "requires_privilege": "converse",
+                "parameters": ["path"],
                 "enabled": True,
             },
         )

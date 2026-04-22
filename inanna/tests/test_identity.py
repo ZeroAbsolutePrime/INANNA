@@ -125,6 +125,10 @@ class IdentityTests(unittest.TestCase):
         self.assertIn("list_packages", tools)
         self.assertIn("install_package", tools)
         self.assertIn("remove_package", tools)
+        self.assertIn("doc_read", tools)
+        self.assertIn("doc_write", tools)
+        self.assertIn("doc_open", tools)
+        self.assertIn("doc_export_pdf", tools)
         self.assertIn("desktop_open_app", tools)
         self.assertIn("desktop_read_window", tools)
         self.assertIn("desktop_click", tools)
@@ -140,8 +144,8 @@ class IdentityTests(unittest.TestCase):
     def test_current_phase_constant_matches_phase_banner(self) -> None:
         self.assertEqual(CURRENT_PHASE, phase_banner())
 
-    def test_current_phase_names_the_startup_fix(self) -> None:
-        self.assertIn("Startup Fix", CURRENT_PHASE)
+    def test_current_phase_names_the_document_faculty(self) -> None:
+        self.assertIn("Document Faculty", CURRENT_PHASE)
 
     def test_cycle2_summary_describes_completed_kernel(self) -> None:
         self.assertIn("NAMMU Kernel", CYCLE2_SUMMARY)

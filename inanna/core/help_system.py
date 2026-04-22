@@ -65,6 +65,19 @@ HELP_COMMON = """𒀭 INANNA NYX — Available Commands
     "reply to the email from Sara"  Compose reply (approval x2)
     (sending email ALWAYS requires approval - no exceptions)
 
+  DOCUMENTS (LibreOffice, PDF, DOCX, ODT)
+    "read the document at ~/path/to/file.pdf"
+                                       Read any document (no approval)
+    "summarize ~/report.docx"          Summarize document (no approval)
+    "write a document called report.txt with..."
+                                       Write document (approval required)
+    "open ~/proposal.odt in libreoffice"
+                                       Open in LibreOffice (approval)
+    "export ~/letter.docx to pdf"      Export to PDF (approval)
+
+  Supported: .txt .md .docx .odt .pdf .xlsx .ods .csv
+  (reading never requires approval - writing always does)
+
   DESKTOP (speak naturally)
     "open firefox"                Open any application
     "read the whatsapp window"    Read window content
@@ -240,7 +253,7 @@ HELP_TOPICS = {
   help [topic]       Show details on a specific topic
 
   Topics: my-profile, governance-trust, inanna-reflect,
-          faculties, tools, files, processes, packages, communication, email, desktop, memory, realms, departments""",
+          faculties, tools, files, processes, packages, communication, email, documents, desktop, memory, realms, departments""",
 
     "tools": """tools — Available tools (all require proposal approval)
 
@@ -370,6 +383,30 @@ HELP_TOPICS = {
 
   Supported now: Thunderbird and Proton Mail Desktop
   Future phases: Evolution and Geary.""",
+
+    "documents": """documents - Document Faculty
+
+  INANNA can read documents directly from the file system and,
+  with approval, write new documents, open them in LibreOffice,
+  or export them to PDF.
+
+  Read a document:  "read the document at ~/proposal.pdf"
+  Summarize one:    "summarize ~/report.docx"
+  Write one:        "write a document called notes.txt with..."
+  Open in office:   "open ~/draft.odt in libreoffice"
+  Export to PDF:    "export ~/letter.docx to pdf"
+
+  Supported read formats:
+    .txt .md .docx .odt .pdf .xlsx .ods .csv
+
+  Governance:
+    - doc_read: no approval required
+    - doc_write: approval required
+    - doc_open: approval required
+    - doc_export_pdf: approval required
+
+  Direct reading is the primary path.
+  LibreOffice is only used when opening or exporting documents.""",
 
     "desktop": """desktop - Desktop Faculty operations
 

@@ -20,6 +20,7 @@ from config import Config
 from core.auth import AuthStore
 from core.communication_workflows import CommunicationWorkflows
 from core.desktop_faculty import DesktopFaculty
+from core.document_workflows import DocumentWorkflows
 from core.email_workflows import EmailWorkflows
 from core.filesystem_faculty import FileSystemFaculty
 from core.governance import GovernanceLayer
@@ -69,6 +70,7 @@ from main import (
     build_body_summary,
     build_communication_audit_entry,
     build_desktop_audit_entry,
+    build_document_audit_entry,
     build_email_audit_entry,
     build_faculty_registry_payload,
     build_package_audit_entry,
@@ -116,6 +118,7 @@ from main import (
     default_profile_field_value,
     detect_communication_tool_action,
     detect_desktop_tool_action,
+    detect_document_tool_action,
     detect_email_tool_action,
     detect_filesystem_tool_action,
     detect_package_tool_action,
@@ -410,6 +413,7 @@ class InterfaceServer:
         self.guardian = GuardianFaculty()
         self.operator = OperatorFaculty()
         self.desktop_faculty = DesktopFaculty()
+        self.document_workflows = DocumentWorkflows(self.desktop_faculty)
         self.communication_workflows = CommunicationWorkflows(self.desktop_faculty)
         self.email_workflows = EmailWorkflows(self.desktop_faculty)
         self.filesystem_faculty = FileSystemFaculty()
@@ -1006,6 +1010,52 @@ class InterfaceServer:
                         "query": str(desktop_action["query"]),
                         "tool": str(desktop_action["tool"]),
                         "params": dict(desktop_action.get("params", {})),
+                    }
+                },
+                "approve",
+            )
+            responses = list(outcome["operator_payloads"])
+            if outcome["assistant_text"]:
+                responses.append({"type": "assistant", "text": outcome["assistant_text"]})
+            return {"responses": responses}
+
+        document_action = detect_document_tool_action(
+            text,
+            self.document_workflows,
+        )
+        if document_action is not None:
+            self._record_routing_decision("operator", text)
+            self._record_governance_decision(
+                "tool",
+                str(document_action.get("reason", "Governed document workflow use.")),
+                text,
+            )
+            if bool(document_action.get("requires_proposal", False)):
+                created = create_tool_use_proposal(
+                    proposal=self.proposal,
+                    session=self.session,
+                    user_input=text,
+                    tool=str(document_action["tool"]),
+                    query=str(document_action["query"]),
+                    params=dict(document_action.get("params", {})),
+                )
+                return {
+                    "response": {
+                        "type": "operator",
+                        "text": (
+                            f'tool proposed: {document_action["tool"]} - '
+                            f'"{document_action["query"]}"'
+                        ),
+                    },
+                    "proposal": {**created, "line": created["tool_line"]},
+                }
+            outcome = self.complete_tool_resolution(
+                {
+                    "payload": {
+                        "original_input": text,
+                        "query": str(document_action["query"]),
+                        "tool": str(document_action["tool"]),
+                        "params": dict(document_action.get("params", {})),
                     }
                 },
                 "approve",
@@ -3127,6 +3177,7 @@ class InterfaceServer:
                 tool,
                 params,
                 self.operator,
+                document_workflows=self.document_workflows,
                 filesystem_faculty=self.filesystem_faculty,
                 process_faculty=self.process_faculty,
                 package_faculty=self.package_faculty,
@@ -3142,6 +3193,7 @@ class InterfaceServer:
             )
             audit_entry = (
                 build_network_audit_entry(result)
+                or build_document_audit_entry(result)
                 or build_filesystem_audit_entry(result)
                 or build_process_audit_entry(result)
                 or build_package_audit_entry(result)
