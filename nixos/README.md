@@ -1,29 +1,67 @@
 # NYXOS Configuration
 
-This directory contains the Phase 7.1 NixOS scaffold for running
-INANNA NYX as a system service.
+This directory now documents the Cycle 8 two-machine architecture for INANNA NYX.
 
-## Install Flow
+## Prerequisites
 
-1. Boot from the NixOS ISO.
-2. Clone the INANNA repository to `/home/inanna/INANNA`.
-3. Install Python dependencies:
+- NixOS 25.11 or newer
+- This repository cloned onto the target machine
+- `nixos-rebuild` available
 
-   ```bash
-   cd /home/inanna/INANNA/inanna
-   python3 -m pip install --user -r requirements.txt
-   ```
+## Which File To Use
 
-4. Copy `nixos/configuration.nix` to `/etc/nixos/configuration.nix`.
-5. Run:
+- `client.nix`
+  Use for ZAERA's laptop or workstation. This machine runs the browser session and Desktop Faculty apps such as Thunderbird, Signal Desktop, LibreOffice, and Firefox.
 
-   ```bash
-   sudo nixos-rebuild switch
-   ```
+- `server.nix`
+  Use for the DGX Spark or any dedicated INANNA NYX server. This machine runs the Python service, model endpoint connection, and systemd service.
 
-6. INANNA starts automatically and is available at:
-   - `http://localhost:8080`
-   - `ws://localhost:8081`
+- `configuration.nix`
+  Keep this for single-machine development where server and client live on the same NixOS box.
+
+## Two-Machine Architecture
+
+- Client machine: browser UI + Desktop Faculty hands
+- Server machine: INANNA NYX core + models + HTTP/WebSocket service
+
+When deploying the real split architecture:
+
+1. Apply `server.nix` on the DGX Spark.
+2. Update the DGX IP in `client.nix`.
+3. Apply `client.nix` on ZAERA's laptop.
+
+## Applying Configuration
+
+If you are using a flake-based setup, apply with:
+
+```bash
+sudo nixos-rebuild switch --flake .
+```
+
+If you are copying one of these files into `/etc/nixos/configuration.nix`, then run:
+
+```bash
+sudo nixos-rebuild switch
+```
+
+## Updating DGX IP In client.nix
+
+Edit these values in `client.nix`:
+
+```nix
+INANNA_SERVER_URL = "http://192.168.1.100:8080";
+INANNA_WS_URL = "ws://192.168.1.100:8081";
+```
+
+Replace `192.168.1.100` with the actual DGX Spark LAN or VPN address.
+
+## AT-SPI2 Verification
+
+After applying the client config, verify accessibility bindings with:
+
+```bash
+python3 -c "import pyatspi; print('AT-SPI2 OK')"
+```
 
 ## Service Operations
 
@@ -45,18 +83,10 @@ Restart INANNA:
 systemctl restart inanna-nyx
 ```
 
-Update INANNA after pulling new code:
-
-```bash
-cd /home/inanna/INANNA
-git pull
-cd /home/inanna/INANNA/inanna
-python3 -m pip install --user -r requirements.txt
-systemctl restart inanna-nyx
-```
-
 ## Files
 
-- `configuration.nix` declares the NixOS system service and ports.
+- `client.nix` declares the NixOS client laptop configuration.
+- `server.nix` declares the DGX Spark server configuration.
+- `configuration.nix` preserves the single-machine development profile.
 - `inanna-nyx.service` provides a standalone systemd unit for non-NixOS use.
 - `install.sh` automates the basic NixOS setup flow.

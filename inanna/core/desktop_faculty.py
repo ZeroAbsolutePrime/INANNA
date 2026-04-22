@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 import platform
 import re
 import subprocess
@@ -24,6 +25,18 @@ CONSEQUENTIAL_LABELS = {
     "pay",
     "post",
     "publish",
+}
+
+LINUX_APP_NAME_MAP = {
+    "thunderbird": "thunderbird",
+    "firefox": "firefox",
+    "signal": "signal-desktop",
+    "libreoffice": "libreoffice",
+    "writer": "libreoffice --writer",
+    "calc": "libreoffice --calc",
+    "impress": "libreoffice --impress",
+    "terminal": "gnome-terminal",
+    "files": "nautilus",
 }
 
 
@@ -354,17 +367,38 @@ class LinuxAtspiBackend:
 
     name = "linux-atspi2"
 
+    def _detect_display_server(self) -> str:
+        """Detect X11 or Wayland. Returns 'wayland' or 'x11'."""
+        wayland_display = os.environ.get("WAYLAND_DISPLAY", "")
+        xdg_session = os.environ.get("XDG_SESSION_TYPE", "").lower()
+        if wayland_display or xdg_session == "wayland":
+            return "wayland"
+        return "x11"
+
+    def _normalize_app_name(self, app: str) -> str:
+        normalized = str(app or "").strip().lower()
+        return LINUX_APP_NAME_MAP.get(normalized, str(app or "").strip())
+
     def open_app(self, app: str) -> DesktopResult:
         target = str(app or "").strip()
         if not target:
             return DesktopResult(False, "open_app", target, error="Application name is required.")
+        command_text = self._normalize_app_name(target)
         try:
-            process = subprocess.Popen(["xdg-open", target])
-            return DesktopResult(process.poll() is None or process.returncode == 0, "open_app", target)
+            process = subprocess.Popen(command_text.split())
+            return DesktopResult(
+                process.poll() is None or process.returncode == 0,
+                "open_app",
+                target,
+            )
         except Exception:
             try:
-                process = subprocess.Popen([target])
-                return DesktopResult(process.poll() is None or process.returncode == 0, "open_app", target)
+                process = subprocess.Popen(["xdg-open", command_text])
+                return DesktopResult(
+                    process.poll() is None or process.returncode == 0,
+                    "open_app",
+                    target,
+                )
             except Exception as error:
                 return DesktopResult(False, "open_app", target, error=str(error))
 
@@ -446,29 +480,45 @@ class LinuxAtspiBackend:
         content = str(text or "")
         if not content:
             return DesktopResult(False, "type", content, error="Text is required.")
+        display_server = self._detect_display_server()
         try:
-            result = subprocess.run(
-                ["xdotool", "type", "--clearmodifiers", content],
-                capture_output=True,
-                text=True,
-                timeout=10,
-            )
-            if submit:
-                subprocess.run(
-                    ["xdotool", "key", "Return"],
-                    capture_output=True,
-                    text=True,
-                    timeout=5,
-                )
-            return DesktopResult(result.returncode == 0, "type", content, output=f"Typed {len(content)} characters")
-        except FileNotFoundError:
-            try:
+            if display_server == "wayland":
                 result = subprocess.run(
                     ["ydotool", "type", content],
                     capture_output=True,
                     text=True,
                     timeout=10,
                 )
+                if submit:
+                    subprocess.run(
+                        ["ydotool", "key", "28:1", "28:0"],
+                        capture_output=True,
+                        text=True,
+                        timeout=5,
+                    )
+            else:
+                result = subprocess.run(
+                    ["xdotool", "type", "--clearmodifiers", content],
+                    capture_output=True,
+                    text=True,
+                    timeout=10,
+                )
+                if submit:
+                    subprocess.run(
+                        ["xdotool", "key", "Return"],
+                        capture_output=True,
+                        text=True,
+                        timeout=5,
+                    )
+            return DesktopResult(result.returncode == 0, "type", content, output=f"Typed {len(content)} characters")
+        except FileNotFoundError:
+            try:
+                fallback_command = (
+                    ["xdotool", "type", "--clearmodifiers", content]
+                    if display_server == "wayland"
+                    else ["ydotool", "type", content]
+                )
+                result = subprocess.run(fallback_command, capture_output=True, text=True, timeout=10)
                 return DesktopResult(
                     result.returncode == 0,
                     "type",

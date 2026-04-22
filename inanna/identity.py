@@ -10,7 +10,7 @@ if TYPE_CHECKING:
 # - Faculty runtime assignments are declared in config/faculties.json.
 # - Full Faculty-to-model mapping is documented in docs/llm_configuration.md.
 # - SENTINEL may use a different model than the core Faculties without changing Python code.
-CURRENT_PHASE = "Cycle 8 - Phase 8.6 - Calendar Faculty"
+CURRENT_PHASE = "Cycle 8 - Phase 8.7 - NixOS Backend"
 
 CYCLE2_SUMMARY = (
     "Cycle 2 built the NAMMU Kernel: web interface, two Faculties, "
