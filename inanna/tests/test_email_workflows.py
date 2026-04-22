@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 import unittest
 from pathlib import Path
-from unittest.mock import Mock
+from unittest.mock import Mock, patch
 
 from core.email_workflows import (
     DEFAULT_EMAIL_CLIENT,
@@ -117,14 +117,14 @@ class EmailWorkflowsTests(unittest.TestCase):
         )
 
     def test_read_inbox_parses_emails_from_window_output(self) -> None:
-        self.desktop.open_app.return_value = Mock(success=True, error=None)
-        self.desktop.read_window.return_value = Mock(
-            success=True,
-            output="Alpha update\nBeta follow-up",
-            error=None,
-        )
-
-        result = self.workflows.read_inbox("thunderbird", max_emails=5)
+        reader = Mock()
+        reader.is_available.return_value = True
+        reader.read_inbox.return_value = [
+            EmailRecord(sender="Matxalen", subject="Alpha update", app="thunderbird"),
+            EmailRecord(sender="Anthropic", subject="Beta follow-up", app="thunderbird"),
+        ]
+        with patch("core.email_workflows.ThunderbirdDirectReader", return_value=reader):
+            result = self.workflows.read_inbox("thunderbird", max_emails=5)
 
         self.assertTrue(result.success)
         self.assertEqual([email.subject for email in result.emails], ["Alpha update", "Beta follow-up"])

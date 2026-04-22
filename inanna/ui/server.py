@@ -26,6 +26,7 @@ from core.governance import GovernanceLayer
 from core.guardian import GuardianFaculty
 from core.faculty_monitor import FacultyMonitor
 from core.memory import Memory
+from core.nammu_intent import build_comprehension
 from core.nammu import IntentClassifier
 from core.nammu_memory import (
     append_governance_event,
@@ -868,6 +869,7 @@ class InterfaceServer:
         email_action = detect_email_tool_action(
             text,
             self.email_workflows,
+            self.session.events,
         )
         if email_action is not None:
             self._record_routing_decision("operator", text)
@@ -918,6 +920,7 @@ class InterfaceServer:
         communication_action = detect_communication_tool_action(
             text,
             self.communication_workflows,
+            self.session.events,
         )
         if communication_action is not None:
             self._record_routing_decision("operator", text)
@@ -3215,6 +3218,21 @@ class InterfaceServer:
             # so it summarizes the result instead of disclaiming inability
             tool_result_lines = build_tool_context_lines(result)
             tool_result_summary = "\n".join(tool_result_lines)
+            is_email_comprehension = False
+            if result.tool in {"email_read_inbox", "email_search"} and result.success:
+                emails = result.data.get("emails", [])
+                if isinstance(emails, list) and emails:
+                    params_payload = result.data.get("params", {})
+                    if not isinstance(params_payload, dict):
+                        params_payload = {}
+                    comprehension = build_comprehension(
+                        emails,
+                        period=str(params_payload.get("period", "") or ""),
+                        urgency_filter=bool(params_payload.get("urgency_only", False)),
+                    )
+                    tool_result_summary = comprehension.to_crown_context()
+                    tool_result_lines = [tool_result_summary]
+                    is_email_comprehension = True
             if result.tool == "search_packages" and result.success:
                 self._last_package_context = {
                     "tool": "search_packages",
@@ -3236,7 +3254,21 @@ class InterfaceServer:
                 and '\n' not in tool_result_summary.strip()
             )
 
-            if result_is_empty:
+            if is_email_comprehension:
+                tool_instruction = (
+                    f"INBOX DATA (real, from Thunderbird - no hallucination):\n"
+                    f"{tool_result_summary}\n"
+                    f"---\n"
+                    f"Present this to the operator naturally.\n"
+                    f"Rules:\n"
+                    f"- Speak conversationally, not as a list\n"
+                    f"- Mention urgent items first\n"
+                    f"- Suggest a next action if obvious\n"
+                    f"- Use the operator's language if detectable\n"
+                    f"- DO NOT invent any email content not shown above\n"
+                    f"- DO NOT add fictional senders, subjects, or bodies"
+                )
+            elif result_is_empty:
                 tool_instruction = (
                     f"OPERATOR FACULTY: {result.tool} ran but returned minimal data.\n"
                     f"Raw result: {tool_result_summary[:200]}\n"

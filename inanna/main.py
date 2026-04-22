@@ -30,6 +30,7 @@ from core.filesystem_faculty import FileInfo, FileSystemFaculty, FileSystemResul
 from core.governance import GovernanceLayer
 from core.guardian import GuardianFaculty
 from core.memory import Memory
+from core.nammu_intent import extract_intent
 from core.nammu import IntentClassifier
 from core.nammu_memory import (
     ROUTING_LOG_FILE,
@@ -362,6 +363,26 @@ EMAIL_HINT_FALLBACKS = (
     "mail",
     "message from",
 )
+EMAIL_COMM_SIGNAL_FALLBACKS = {
+    "email",
+    "emails",
+    "inbox",
+    "mail",
+    "message",
+    "messages",
+    "signal",
+    "whatsapp",
+    "correo",
+    "mensajes",
+    "correu",
+    "missatge",
+    "from",
+    "de",
+    "urgent",
+    "urgente",
+    "summary",
+    "resumen",
+}
 DESKTOP_HINT_FALLBACKS = (
     "open app",
     "launch app",
@@ -1094,6 +1115,7 @@ def build_email_reply_query(app: str, subject_or_sender: str) -> str:
 def extract_communication_tool_request(
     text: str,
     hints: list[str] | None = None,
+    conversation_context: list[dict[str, str]] | None = None,
 ) -> dict[str, Any] | None:
     normalized = str(text or "").strip()
     lowered = normalized.lower()
@@ -1107,6 +1129,16 @@ def extract_communication_tool_request(
     hint_match = any(hint in lowered for hint in active_hints)
     if not app_mentioned and not hint_match:
         return None
+
+    if _has_email_comm_signal(lowered):
+        intent_result = extract_intent(
+            normalized,
+            conversation_context=conversation_context,
+        )
+        if intent_result.success and intent_result.confidence >= 0.75:
+            tool_request = intent_result.to_tool_request()
+            if tool_request is not None and str(tool_request.get("tool", "")) in COMMUNICATION_TOOL_NAMES:
+                return tool_request
 
     send_patterns = (
         re.match(
@@ -1195,9 +1227,13 @@ def extract_communication_tool_request(
 def detect_communication_tool_action(
     text: str,
     communication_workflows: CommunicationWorkflows | None = None,
+    conversation_context: list[dict[str, str]] | None = None,
 ) -> dict[str, Any] | None:
     del communication_workflows
-    request = extract_communication_tool_request(text)
+    request = extract_communication_tool_request(
+        text,
+        conversation_context=conversation_context,
+    )
     if request is None:
         return None
     return {
@@ -1209,6 +1245,7 @@ def detect_communication_tool_action(
 def extract_email_tool_request(
     text: str,
     hints: list[str] | None = None,
+    conversation_context: list[dict[str, str]] | None = None,
 ) -> dict[str, Any] | None:
     normalized = str(text or "").strip()
     lowered = normalized.lower()
@@ -1221,6 +1258,16 @@ def extract_email_tool_request(
     app_match = re.search(app_pattern, prefix_stripped, flags=re.IGNORECASE) is not None
     if not hint_match and not app_match:
         return None
+
+    if _has_email_comm_signal(lowered):
+        intent_result = extract_intent(
+            normalized,
+            conversation_context=conversation_context,
+        )
+        if intent_result.success and intent_result.confidence >= 0.75:
+            tool_request = intent_result.to_tool_request()
+            if tool_request is not None and str(tool_request.get("tool", "")) in EMAIL_TOOL_NAMES:
+                return tool_request
 
     # "do I have emails from X" / "any emails from X" -> search
     have_emails_match = re.match(
@@ -1358,15 +1405,24 @@ def extract_email_tool_request(
 def detect_email_tool_action(
     text: str,
     email_workflows: EmailWorkflows | None = None,
+    conversation_context: list[dict[str, str]] | None = None,
 ) -> dict[str, Any] | None:
     del email_workflows
-    request = extract_email_tool_request(text)
+    request = extract_email_tool_request(
+        text,
+        conversation_context=conversation_context,
+    )
     if request is None:
         return None
     return {
         **request,
         "requires_proposal": email_request_requires_proposal(request),
     }
+
+
+def _has_email_comm_signal(text_lower: str) -> bool:
+    lowered = str(text_lower or "").lower()
+    return any(signal in lowered for signal in EMAIL_COMM_SIGNAL_FALLBACKS)
 
 
 def detect_desktop_tool_action(
@@ -4202,6 +4258,7 @@ def build_email_tool_result(
     body: str = "",
     subject_or_sender: str = "",
     mode: str = "",
+    param_payload: dict[str, Any] | None = None,
 ) -> ToolResult:
     data: dict[str, Any] = {
         "formatted": email_workflows.format_result(workflow_result),
@@ -4216,6 +4273,7 @@ def build_email_tool_result(
         "body": body,
         "subject_or_sender": subject_or_sender,
         "mode": mode,
+        "params": dict(param_payload or {}),
     }
     return ToolResult(
         tool=tool_name,
@@ -4388,6 +4446,7 @@ def run_email_tool(
             email_workflows,
             query=query,
             mode=mode,
+            param_payload=dict(params),
         )
 
     if tool_name == "email_read_message":
@@ -4401,6 +4460,7 @@ def run_email_tool(
             query=query,
             subject_or_sender=subject_or_sender,
             mode=mode,
+            param_payload=dict(params),
         )
 
     if tool_name == "email_search":
@@ -4413,6 +4473,7 @@ def run_email_tool(
             email_workflows,
             query=query,
             mode=mode,
+            param_payload=dict(params),
         )
 
     if tool_name == "email_compose":
@@ -4433,6 +4494,7 @@ def run_email_tool(
             subject=subject,
             body=body,
             mode=mode,
+            param_payload=dict(params),
         )
 
     if tool_name == "email_reply":
@@ -4455,6 +4517,7 @@ def run_email_tool(
             body=body,
             subject_or_sender=subject_or_sender,
             mode=mode,
+            param_payload=dict(params),
         )
 
     result = EmailWorkflowResult(
@@ -4463,7 +4526,14 @@ def run_email_tool(
         app=app,
         error=f"Unknown email tool: {tool_name}",
     )
-    return build_email_tool_result(tool_name, result, email_workflows, query=app, mode=mode)
+    return build_email_tool_result(
+        tool_name,
+        result,
+        email_workflows,
+        query=app,
+        mode=mode,
+        param_payload=dict(params),
+    )
 
 
 def run_package_tool(
@@ -7044,10 +7114,12 @@ def handle_command(
     communication_action = detect_communication_tool_action(
         normalized,
         communication_workflows,
+        session.events,
     )
     email_action = detect_email_tool_action(
         normalized,
         email_workflows,
+        session.events,
     )
     if email_action is not None:
         append_routing_decision(
