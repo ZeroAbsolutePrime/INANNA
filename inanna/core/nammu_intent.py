@@ -1,101 +1,95 @@
 from __future__ import annotations
 
 import json
+import re
 import time
 import urllib.error
 import urllib.request
 from dataclasses import dataclass, field
+from pathlib import Path
 from typing import Any
 
 
 LM_URL = "http://localhost:1234/v1/chat/completions"
 # NOTE: On slow hardware, use 7B as primary (faster than 14B)
 # On DGX Spark, swap back to 14B as primary
-MODEL_PRIMARY = "qwen2.5-7b-instruct-1m"    # faster on current hardware
-MODEL_FALLBACK = "qwen2.5-14b-instruct"      # slower but more accurate
-TIMEOUT_PRIMARY = 20   # seconds — 7B on slow CPU/shared VRAM
-TIMEOUT_FALLBACK = 35  # seconds — 14B fallback
+MODEL_PRIMARY = "qwen2.5-7b-instruct-1m"
+MODEL_FALLBACK = "qwen2.5-14b-instruct"
+TIMEOUT_PRIMARY = 20
+TIMEOUT_FALLBACK = 35
 
-NAMMU_EMAIL_PROMPT = """You are NAMMU, the intent extraction core of INANNA NYX.
-Your only job: read the operator message and return a JSON intent object.
-Never refuse. Never explain. Return JSON only.
-Work in any language - the operator may write in English, Spanish, Catalan, or others.
+GOVERNANCE_SIGNALS_PATH = Path(__file__).resolve().parent.parent / "config" / "governance_signals.json"
 
-Available intents:
-  email_read_inbox    Read the email inbox
-  email_search        Search emails by keyword/sender/subject
-  email_read_message  Read a specific email
-  email_compose       Compose a new email
-  email_reply         Reply to an email
-  comm_read_messages  Read messages from Signal/WhatsApp
-  comm_send_message   Send a message via Signal/WhatsApp
-  comm_list_contacts  List contacts in messaging app
-  none                Not an email or communication request
+DOMAIN_ORDER = [
+    "email",
+    "communication",
+    "document",
+    "browser",
+    "calendar",
+    "desktop",
+    "filesystem",
+    "process",
+    "package",
+    "network",
+    "information",
+]
 
-Parameters for email_read_inbox:
-  app: "thunderbird" (default) or "protonmail"
-  max_emails: integer or null (null = use default 15)
-  period: "today" | "yesterday" | "this_week" | null
-  urgency_only: true if operator asks for urgent/important only
-  output_format: "summary" (default) | "list"
-
-Parameters for email_search:
-  query: search string (sender name, keyword, subject fragment)
-  app: "thunderbird" (default)
-  period: "today" | "yesterday" | "this_week" | null
-
-Parameters for email_read_message:
-  subject_or_sender: name or subject keyword to find
-  app: "thunderbird" (default)
-
-Parameters for email_compose:
-  to: recipient
-  subject: subject line
-  body: message body
-  app: "thunderbird" (default)
-
-Parameters for email_reply:
-  subject_or_sender: email to reply to
-  body: reply text
-  app: "thunderbird" (default)
-
-Parameters for comm_read_messages:
-  app: "signal" | "whatsapp"
-
-Parameters for comm_send_message:
-  app: "signal" | "whatsapp"
-  contact: contact name
-  message: message text
-
-IMPORTANT: Return ONLY raw JSON. No explanation. No markdown. No prose.
-Examples of correct output:
-User: "anything from Matxalen?" -> {"intent":"email_search","params":{"query":"Matxalen","app":"thunderbird"},"confidence":0.97}
-User: "urgent emails?" -> {"intent":"email_read_inbox","params":{"app":"thunderbird","urgency_only":true,"output_format":"summary"},"confidence":0.95}
-User: "last 5 emails" -> {"intent":"email_read_inbox","params":{"app":"thunderbird","max_emails":5,"output_format":"list"},"confidence":0.98}
-User: "hello how are you" -> {"intent":"none","params":{},"confidence":0.99}
-
-Return exactly this JSON (no markdown, no explanation, nothing else):
-{"intent": "...", "params": {...}, "confidence": 0.0-1.0}"""
-
-VALID_INTENTS = {
-    "email_read_inbox",
-    "email_search",
-    "email_read_message",
-    "email_compose",
-    "email_reply",
-    "comm_read_messages",
-    "comm_send_message",
-    "comm_list_contacts",
-    "none",
+INTENT_TO_DOMAIN = {
+    "email_read_inbox": "email",
+    "email_search": "email",
+    "email_read_message": "email",
+    "email_compose": "email",
+    "email_reply": "email",
+    "comm_read_messages": "communication",
+    "comm_send_message": "communication",
+    "comm_list_contacts": "communication",
+    "doc_read": "document",
+    "doc_write": "document",
+    "doc_open": "document",
+    "doc_export_pdf": "document",
+    "browser_read": "browser",
+    "browser_search": "browser",
+    "browser_open": "browser",
+    "calendar_today": "calendar",
+    "calendar_upcoming": "calendar",
+    "calendar_read_ics": "calendar",
+    "desktop_open_app": "desktop",
+    "desktop_read_window": "desktop",
+    "desktop_click": "desktop",
+    "desktop_type": "desktop",
+    "desktop_screenshot": "desktop",
+    "read_file": "filesystem",
+    "write_file": "filesystem",
+    "list_dir": "filesystem",
+    "search_files": "filesystem",
+    "file_info": "filesystem",
+    "list_processes": "process",
+    "run_command": "process",
+    "system_info": "process",
+    "kill_process": "process",
+    "search_packages": "package",
+    "list_packages": "package",
+    "install_package": "package",
+    "remove_package": "package",
+    "launch_app": "package",
+    "ping": "network",
+    "resolve_host": "network",
+    "scan_ports": "network",
+    "web_search": "information",
+    "none": "none",
 }
+
+VALID_INTENTS = set(INTENT_TO_DOMAIN)
 
 URGENCY_KEYWORDS = {
     "urgent",
     "urgente",
+    "urgentes",
     "asap",
     "immediately",
     "important",
     "importante",
+    "importantes",
     "critical",
     "deadline",
     "plazo",
@@ -106,12 +100,225 @@ URGENCY_KEYWORDS = {
     "due tomorrow",
 }
 
+DESKTOP_APP_KEYWORDS = {
+    "firefox",
+    "chrome",
+    "edge",
+    "signal",
+    "whatsapp",
+    "telegram",
+    "discord",
+    "slack",
+    "thunderbird",
+    "libreoffice",
+    "writer",
+    "calc",
+    "impress",
+    "terminal",
+    "files",
+    "nautilus",
+    "notepad",
+}
+
+FILESYSTEM_LOCATION_WORDS = {
+    "documents",
+    "downloads",
+    "desktop",
+    "folder",
+    "directory",
+    "home",
+    "notes",
+}
+
+NAMMU_UNIVERSAL_PROMPT = """You are NAMMU, the intent extraction core of INANNA NYX.
+Your only job: read the operator message and return a JSON intent object.
+Never refuse. Never explain. Return JSON only. Work in any language.
+
+Available intents by domain:
+
+EMAIL:
+  email_read_inbox    {app, max_emails, period, urgency_only, output_format}
+  email_search        {query, app, period}
+  email_read_message  {subject_or_sender, app}
+  email_compose       {to, subject, body, app}
+  email_reply         {subject_or_sender, body, app}
+
+COMMUNICATION:
+  comm_read_messages  {app}
+  comm_send_message   {app, contact, message}
+  comm_list_contacts  {app}
+
+DOCUMENT:
+  doc_read            {path}
+  doc_write           {path, content, title, format}
+  doc_open            {path}
+  doc_export_pdf      {path, output_dir}
+
+BROWSER:
+  browser_read        {url, js}
+  browser_search      {query}
+  browser_open        {url, browser}
+
+CALENDAR:
+  calendar_today      {}
+  calendar_upcoming   {days}
+  calendar_read_ics   {path}
+
+DESKTOP:
+  desktop_open_app    {app}
+  desktop_read_window {app_name, max_depth}
+  desktop_click       {label, app_name}
+  desktop_type        {text, submit}
+  desktop_screenshot  {app_name}
+
+FILESYSTEM:
+  read_file           {path}
+  write_file          {path, content, overwrite}
+  list_dir            {path}
+  search_files        {directory, pattern}
+  file_info           {path}
+
+PROCESS:
+  list_processes      {filter, sort, limit}
+  run_command         {command, timeout}
+  system_info         {}
+  kill_process        {pid}
+
+PACKAGE:
+  search_packages     {query}
+  list_packages       {filter}
+  install_package     {package}
+  remove_package      {package}
+  launch_app          {app}
+
+NETWORK:
+  ping                {host}
+  resolve_host        {host}
+  scan_ports          {host, port_range}
+
+INFORMATION:
+  web_search          {query}
+
+NONE:
+  none                {} (not a tool request - conversation)
+
+Return exactly:
+{"intent":"...","params":{...},"confidence":0.0-1.0,"domain":"..."}
+
+IMPORTANT: JSON only. No markdown. No explanation. No prose.
+
+Examples:
+"anything from Matxalen?" -> {"intent":"email_search","params":{"query":"Matxalen","app":"thunderbird"},"confidence":0.97,"domain":"email"}
+"read ~/report.pdf" -> {"intent":"doc_read","params":{"path":"~/report.pdf"},"confidence":0.99,"domain":"document"}
+"search the web for NixOS" -> {"intent":"browser_search","params":{"query":"NixOS"},"confidence":0.98,"domain":"browser"}
+"what's on my calendar today" -> {"intent":"calendar_today","params":{},"confidence":0.99,"domain":"calendar"}
+"open firefox" -> {"intent":"desktop_open_app","params":{"app":"firefox"},"confidence":0.97,"domain":"desktop"}
+"list my documents folder" -> {"intent":"list_dir","params":{"path":"~/Documents"},"confidence":0.95,"domain":"filesystem"}
+"ping google.com" -> {"intent":"ping","params":{"host":"google.com"},"confidence":0.98,"domain":"network"}
+"what is the latest news about NixOS" -> {"intent":"web_search","params":{"query":"latest news about NixOS"},"confidence":0.94,"domain":"information"}
+"hello how are you" -> {"intent":"none","params":{},"confidence":0.99,"domain":"none"}"""
+
+# Legacy alias kept so older imports and tests do not break.
+NAMMU_EMAIL_PROMPT = NAMMU_UNIVERSAL_PROMPT
+
+
+def _load_domain_signals() -> dict[str, list[str]]:
+    signals: dict[str, list[str]] = {domain: [] for domain in DOMAIN_ORDER}
+    try:
+        payload = json.loads(GOVERNANCE_SIGNALS_PATH.read_text(encoding="utf-8"))
+    except Exception:
+        return signals
+
+    domain_hints = payload.get("domain_hints", {})
+    if isinstance(domain_hints, dict):
+        alias_map = {
+            "email": "email",
+            "communication": "communication",
+            "document": "document",
+            "browser": "browser",
+            "calendar": "calendar",
+            "desktop": "desktop",
+            "filesystem": "filesystem",
+            "process": "process",
+            "packages": "package",
+            "web": "information",
+        }
+        for source_name, canonical_name in alias_map.items():
+            values = domain_hints.get(source_name, [])
+            if isinstance(values, list):
+                signals[canonical_name].extend(str(value).lower().strip() for value in values if str(value).strip())
+
+    tool_signals = payload.get("tool_signals", [])
+    if isinstance(tool_signals, list):
+        for signal in tool_signals:
+            cleaned = str(signal).lower().strip()
+            if not cleaned:
+                continue
+            if any(token in cleaned for token in ("ping", "resolve", "scan ports", "port scan", "check ports")):
+                signals["network"].append(cleaned)
+            elif any(token in cleaned for token in ("search the web", "look up", "current news", "news about", "latest news")):
+                signals["information"].append(cleaned)
+
+    for domain, values in signals.items():
+        deduped: list[str] = []
+        seen: set[str] = set()
+        for value in values:
+            if value and value not in seen:
+                seen.add(value)
+                deduped.append(value)
+        signals[domain] = deduped
+    return signals
+
+
+DOMAIN_SIGNALS = _load_domain_signals()
+
+
+def _classify_domain_fast(text_lower: str) -> str:
+    cleaned = " ".join(str(text_lower or "").lower().strip().split())
+    if not cleaned:
+        return "none"
+
+    if re.match(r"^(?:open|launch|start|switch to|focus on)\s+\S+", cleaned):
+        for token in DESKTOP_APP_KEYWORDS:
+            if token in cleaned:
+                return "desktop"
+
+    if re.match(r"^(?:read|open)\s+.+\.(?:txt|md|rst|log|docx|odt|pdf|xlsx|xls|ods|csv)\b", cleaned):
+        return "document"
+
+    if re.match(r"^(?:read|show)\s+.+\s+window$", cleaned):
+        return "desktop"
+
+    if re.match(r"^(?:list|show|what is in)\s+.+", cleaned):
+        for token in FILESYSTEM_LOCATION_WORDS:
+            if token in cleaned:
+                return "filesystem"
+
+    if re.match(r"^(?:search the web for|look up online|find online)\s+", cleaned):
+        return "browser"
+
+    if re.match(r"^(?:ping|resolve|scan ports?)\b", cleaned):
+        return "network"
+
+    for domain in DOMAIN_ORDER:
+        if any(signal in cleaned for signal in DOMAIN_SIGNALS.get(domain, [])):
+            return domain
+
+    if any(keyword in cleaned for keyword in URGENCY_KEYWORDS):
+        return "email"
+
+    if re.match(r"^(?:anything|something|news|emails?|messages?|mail)\s+from\s+[\w]", cleaned):
+        return "email"
+
+    return "none"
+
 
 @dataclass
 class IntentResult:
     intent: str
     params: dict[str, Any] = field(default_factory=dict)
     confidence: float = 0.0
+    domain: str = ""
     language_detected: str = "en"
     model_used: str = ""
     latency_ms: float = 0.0
@@ -129,7 +336,11 @@ class IntentResult:
             "tool": self.intent,
             "params": dict(self.params),
             "query": self._build_query(),
-            "reason": f"NAMMU intent extraction (confidence={self.confidence:.2f})",
+            "reason": (
+                f"NAMMU intent extraction (domain={self.domain or 'unknown'}, "
+                f"confidence={self.confidence:.2f})"
+            ),
+            "domain": self.domain,
         }
 
     def _build_query(self) -> str:
@@ -157,6 +368,51 @@ class IntentResult:
             return f"Send {params.get('app', '')} message to {params.get('contact', '')}"
         if self.intent == "comm_list_contacts":
             return f"List {params.get('app', '')} contacts"
+        if self.intent in {"doc_read", "doc_open", "doc_export_pdf", "read_file", "file_info", "list_dir"}:
+            return str(params.get("path", "")).strip()
+        if self.intent in {"doc_write", "write_file"}:
+            return str(params.get("path", "")).strip()
+        if self.intent == "search_files":
+            return str(params.get("directory", "")).strip()
+        if self.intent in {"browser_read", "browser_open"}:
+            return str(params.get("url", "")).strip()
+        if self.intent in {"browser_search", "web_search"}:
+            return str(params.get("query", "")).strip()
+        if self.intent == "calendar_upcoming":
+            days = params.get("days")
+            return f"Upcoming calendar ({days} days)" if days else "Upcoming calendar"
+        if self.intent == "calendar_today":
+            return "Today's calendar"
+        if self.intent == "calendar_read_ics":
+            return str(params.get("path", "")).strip()
+        if self.intent == "desktop_open_app":
+            return str(params.get("app", "")).strip()
+        if self.intent == "desktop_read_window":
+            return str(params.get("app_name", "")).strip() or "active window"
+        if self.intent == "desktop_click":
+            return str(params.get("label", "")).strip()
+        if self.intent == "desktop_type":
+            return str(params.get("text", "")).strip()
+        if self.intent == "desktop_screenshot":
+            return str(params.get("app_name", "")).strip() or "desktop"
+        if self.intent == "list_processes":
+            return str(params.get("filter", "")).strip()
+        if self.intent == "run_command":
+            return str(params.get("command", "")).strip()
+        if self.intent == "system_info":
+            return "system info"
+        if self.intent == "kill_process":
+            return str(params.get("pid", "")).strip()
+        if self.intent in {"search_packages", "list_packages"}:
+            return str(params.get("query", "") or params.get("filter", "")).strip()
+        if self.intent in {"install_package", "remove_package"}:
+            return str(params.get("package", "")).strip()
+        if self.intent == "launch_app":
+            return str(params.get("app", "")).strip()
+        if self.intent in {"ping", "resolve_host"}:
+            return str(params.get("host", "")).strip()
+        if self.intent == "scan_ports":
+            return f"{params.get('host', '')} {params.get('port_range', '')}".strip()
         return self.intent
 
 
@@ -194,14 +450,26 @@ def extract_intent(
     user_input: str,
     conversation_context: list[dict[str, str]] | None = None,
 ) -> IntentResult:
+    return extract_intent_universal(user_input, conversation_context=conversation_context)
+
+
+def extract_intent_universal(
+    user_input: str,
+    conversation_context: list[dict[str, str]] | None = None,
+    domain_hint: str | None = None,
+) -> IntentResult:
     if not str(user_input or "").strip():
-        return IntentResult(intent="none", error="empty input")
+        return IntentResult(intent="none", domain="none", error="empty input")
+
+    resolved_domain = str(domain_hint or _classify_domain_fast(str(user_input).lower())).strip().lower() or "none"
 
     result = _call_llm(
         user_input=user_input,
         model=MODEL_PRIMARY,
         timeout=TIMEOUT_PRIMARY,
         conversation_context=conversation_context,
+        prompt=NAMMU_UNIVERSAL_PROMPT,
+        domain_hint=resolved_domain,
     )
     if result.success:
         return result
@@ -211,12 +479,15 @@ def extract_intent(
         model=MODEL_FALLBACK,
         timeout=TIMEOUT_FALLBACK,
         conversation_context=conversation_context,
+        prompt=NAMMU_UNIVERSAL_PROMPT,
+        domain_hint=resolved_domain,
     )
     if fallback.success:
         return fallback
 
     return IntentResult(
         intent="none",
+        domain=resolved_domain,
         error="LLM unavailable - falling back to regex routing",
     )
 
@@ -226,9 +497,18 @@ def _call_llm(
     model: str,
     timeout: int,
     conversation_context: list[dict[str, str]] | None,
+    prompt: str = NAMMU_EMAIL_PROMPT,
+    domain_hint: str = "",
 ) -> IntentResult:
     t0 = time.monotonic()
-    messages: list[dict[str, str]] = [{"role": "system", "content": NAMMU_EMAIL_PROMPT}]
+    messages: list[dict[str, str]] = [{"role": "system", "content": prompt}]
+    if domain_hint and domain_hint != "none":
+        messages.append(
+            {
+                "role": "system",
+                "content": f"Likely domain: {domain_hint}. Prefer intents from that domain if they fit.",
+            }
+        )
     if conversation_context:
         for turn in conversation_context[-2:]:
             role = str(turn.get("role", "")).strip()
@@ -242,7 +522,7 @@ def _call_llm(
             "model": model,
             "messages": messages,
             "temperature": 0.1,
-            "max_tokens": 150,
+            "max_tokens": 220,
         }
     ).encode("utf-8")
 
@@ -266,20 +546,37 @@ def _call_llm(
         if not isinstance(params, dict):
             params = {}
         confidence = float(parsed.get("confidence", 0.0) or 0.0)
+        language_detected = str(parsed.get("language_detected", "en") or "en").strip() or "en"
+        parsed_domain = str(parsed.get("domain", "") or "").strip().lower()
+        domain = _infer_domain(intent, parsed_domain, domain_hint)
         return IntentResult(
             intent=intent,
             params=params,
             confidence=confidence,
+            domain=domain,
+            language_detected=language_detected,
             model_used=model,
             latency_ms=latency_ms,
             raw_response=raw,
         )
-    except urllib.error.URLError:
-        return IntentResult(intent="none", error=f"LLM not reachable: {model}")
+    except urllib.error.URLError as exc:
+        return IntentResult(intent="none", domain=domain_hint or "none", error=f"LLM not reachable: {exc}")
+    except OSError as exc:
+        return IntentResult(intent="none", domain=domain_hint or "none", error=str(exc))
     except json.JSONDecodeError as exc:
-        return IntentResult(intent="none", error=f"JSON parse error: {exc}")
+        return IntentResult(intent="none", domain=domain_hint or "none", error=f"JSON parse error: {exc}")
     except Exception as exc:
-        return IntentResult(intent="none", error=str(exc))
+        return IntentResult(intent="none", domain=domain_hint or "none", error=str(exc))
+
+
+def _infer_domain(intent: str, parsed_domain: str, fallback_domain: str) -> str:
+    if parsed_domain in DOMAIN_ORDER or parsed_domain == "none":
+        return parsed_domain
+    if intent in INTENT_TO_DOMAIN:
+        return INTENT_TO_DOMAIN[intent]
+    if fallback_domain in DOMAIN_ORDER or fallback_domain == "none":
+        return fallback_domain
+    return "none"
 
 
 def build_comprehension(

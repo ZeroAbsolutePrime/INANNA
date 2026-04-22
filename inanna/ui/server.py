@@ -90,6 +90,7 @@ from main import (
     build_memory_log_report,
     build_network_audit_entry,
     build_network_status_payload,
+    build_nammu_tool_action,
     build_profile_status_payload,
     build_proposal_history_payload,
     build_realm_access_warning_lines,
@@ -143,6 +144,7 @@ from main import (
     load_current_realm,
     maybe_capture_reflection_proposal,
     needs_onboarding,
+    nammu_first_routing,
     normalize_tool_name,
     observe_session_communication,
     parse_user_realm_command,
@@ -882,7 +884,16 @@ class InterfaceServer:
                 "proposal": created,
             }
 
-        calendar_action = detect_calendar_tool_action(
+        nammu_action = build_nammu_tool_action(
+            nammu_first_routing(
+                text,
+                self.session.events,
+            ),
+            self.filesystem_faculty,
+        )
+        nammu_tool_name = str(nammu_action.get("tool", "")) if nammu_action is not None else ""
+
+        calendar_action = nammu_action if nammu_tool_name in {"calendar_today", "calendar_upcoming", "calendar_read_ics"} else detect_calendar_tool_action(
             text,
             self.calendar_workflows,
         )
@@ -911,7 +922,7 @@ class InterfaceServer:
                 responses.append({"type": "system", "text": outcome["proposal"]["line"]})
             return {"responses": responses}
 
-        email_action = detect_email_tool_action(
+        email_action = nammu_action if nammu_tool_name in {"email_read_inbox", "email_read_message", "email_search", "email_compose", "email_reply"} else detect_email_tool_action(
             text,
             self.email_workflows,
             self.session.events,
@@ -962,7 +973,7 @@ class InterfaceServer:
                 responses.append({"type": "system", "text": outcome["proposal"]["line"]})
             return {"responses": responses}
 
-        communication_action = detect_communication_tool_action(
+        communication_action = nammu_action if nammu_tool_name in {"comm_read_messages", "comm_send_message", "comm_list_contacts"} else detect_communication_tool_action(
             text,
             self.communication_workflows,
             self.session.events,
@@ -1010,7 +1021,7 @@ class InterfaceServer:
                 responses.append({"type": "system", "text": outcome["proposal"]["line"]})
             return {"responses": responses}
 
-        desktop_action = detect_desktop_tool_action(
+        desktop_action = nammu_action if nammu_tool_name in {"desktop_open_app", "desktop_read_window", "desktop_click", "desktop_type", "desktop_screenshot"} else detect_desktop_tool_action(
             text,
             self.desktop_faculty,
         )
@@ -1056,7 +1067,7 @@ class InterfaceServer:
                 responses.append({"type": "assistant", "text": outcome["assistant_text"]})
             return {"responses": responses}
 
-        browser_action = detect_browser_tool_action(
+        browser_action = nammu_action if nammu_tool_name in {"browser_read", "browser_search", "browser_open"} else detect_browser_tool_action(
             text,
             self.browser_workflows,
         )
@@ -1102,7 +1113,7 @@ class InterfaceServer:
                 responses.append({"type": "assistant", "text": outcome["assistant_text"]})
             return {"responses": responses}
 
-        document_action = detect_document_tool_action(
+        document_action = nammu_action if nammu_tool_name in {"doc_read", "doc_write", "doc_open", "doc_export_pdf"} else detect_document_tool_action(
             text,
             self.document_workflows,
         )
@@ -1148,7 +1159,7 @@ class InterfaceServer:
                 responses.append({"type": "assistant", "text": outcome["assistant_text"]})
             return {"responses": responses}
 
-        filesystem_action = detect_filesystem_tool_action(
+        filesystem_action = nammu_action if nammu_tool_name in {"read_file", "write_file", "list_dir", "search_files", "file_info"} else detect_filesystem_tool_action(
             text,
             self.filesystem_faculty,
             profile_manager=self.profile_manager,
@@ -1197,7 +1208,7 @@ class InterfaceServer:
                 responses.append({"type": "assistant", "text": outcome["assistant_text"]})
             return {"responses": responses}
 
-        process_action = detect_process_tool_action(
+        process_action = nammu_action if nammu_tool_name in {"list_processes", "run_command", "system_info", "kill_process"} else detect_process_tool_action(
             text,
             self.process_faculty,
         )
@@ -1243,7 +1254,7 @@ class InterfaceServer:
                 responses.append({"type": "assistant", "text": outcome["assistant_text"]})
             return {"responses": responses}
 
-        package_action = self._package_followup_action(text)
+        package_action = nammu_action if nammu_tool_name in {"search_packages", "list_packages", "install_package", "remove_package", "launch_app"} else self._package_followup_action(text)
         if package_action is None:
             package_action = detect_package_tool_action(
                 text,
@@ -1296,6 +1307,53 @@ class InterfaceServer:
                         "query": str(package_action["query"]),
                         "tool": str(package_action["tool"]),
                         "params": dict(package_action.get("params", {})),
+                    }
+                },
+                "approve",
+            )
+            responses = list(outcome["operator_payloads"])
+            if outcome["assistant_text"]:
+                responses.append({"type": "assistant", "text": outcome["assistant_text"]})
+            return {"responses": responses}
+
+        generic_nammu_action = (
+            nammu_action
+            if nammu_tool_name in {"web_search", "ping", "resolve_host", "scan_ports"}
+            else None
+        )
+        if generic_nammu_action is not None:
+            self._record_routing_decision("operator", text)
+            self._record_governance_decision(
+                "tool",
+                str(generic_nammu_action.get("reason", "Governed NAMMU tool use.")),
+                text,
+            )
+            if bool(generic_nammu_action.get("requires_proposal", False)):
+                created = create_tool_use_proposal(
+                    proposal=self.proposal,
+                    session=self.session,
+                    user_input=text,
+                    tool=str(generic_nammu_action["tool"]),
+                    query=str(generic_nammu_action["query"]),
+                    params=dict(generic_nammu_action.get("params", {})),
+                )
+                return {
+                    "response": {
+                        "type": "operator",
+                        "text": (
+                            f'tool proposed: {generic_nammu_action["tool"]} - '
+                            f'"{generic_nammu_action["query"]}"'
+                        ),
+                    },
+                    "proposal": {**created, "line": created["tool_line"]},
+                }
+            outcome = self.complete_tool_resolution(
+                {
+                    "payload": {
+                        "original_input": text,
+                        "query": str(generic_nammu_action["query"]),
+                        "tool": str(generic_nammu_action["tool"]),
+                        "params": dict(generic_nammu_action.get("params", {})),
                     }
                 },
                 "approve",

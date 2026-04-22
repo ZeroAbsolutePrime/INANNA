@@ -7,6 +7,19 @@
 
 ---
 
+## Phase Status
+
+  9.1  The Intent Engine         <- ACTIVE
+  9.2  Operator Profile          <- pending
+  9.3  Constitutional Filter     <- pending
+  9.4  Comprehension Layer       <- pending (email comprehension built in 8.3b)
+  9.5  Feedback Loop             <- pending
+  9.6  Multilingual Core         <- pending
+  9.7  NAMMU Constitution        <- pending
+  9.8  Capability Proof          <- pending
+
+---
+
 ## The Problem This Cycle Solves
 
 Cycle 7 gave INANNA a body.

@@ -12,6 +12,23 @@ HELP_COMMON = """𒀭 INANNA NYX — Available Commands
     Just type naturally — INANNA will respond.
     Use "analyse [question]" for structured reasoning.
 
+  NATURAL LANGUAGE
+    INANNA understands your intent regardless of phrasing.
+    You do not need exact commands. Examples:
+
+    "anything from Matxalen?"        finds her emails
+    "Вїtengo algo urgente?"           checks urgent emails (Spanish)
+    "resumeix els correus d'ahir"    yesterday's emails (Catalan)
+    "read ~/proposal.pdf"            reads a document
+    "search the web for NixOS"       web search
+    "what's on my calendar?"         today's events
+    "open firefox"                   opens Firefox
+    "list my downloads"              filesystem listing
+
+    On fast hardware: NAMMU uses full LLM understanding.
+    On slow hardware: NAMMU uses intelligent regex fallback.
+    Both produce correct results. Speed differs.
+
   YOUR PROFILE
     my-profile                    Show your profile
     my-profile edit [field] [val] Update a field

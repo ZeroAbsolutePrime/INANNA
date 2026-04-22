@@ -9,6 +9,8 @@ from core.nammu_intent import (
     URGENCY_KEYWORDS,
     EmailComprehension,
     IntentResult,
+    NAMMU_UNIVERSAL_PROMPT,
+    _classify_domain_fast,
     _call_llm,
     build_comprehension,
     extract_intent,
@@ -18,11 +20,17 @@ from main import _has_email_comm_signal
 
 class NammuIntentTests(unittest.TestCase):
     def test_intent_result_instantiates_correctly(self) -> None:
-        result = IntentResult(intent="email_search", params={"query": "Matxalen"}, confidence=0.97)
+        result = IntentResult(
+            intent="email_search",
+            params={"query": "Matxalen"},
+            confidence=0.97,
+            domain="email",
+        )
 
         self.assertEqual(result.intent, "email_search")
         self.assertEqual(result.params["query"], "Matxalen")
         self.assertAlmostEqual(result.confidence, 0.97)
+        self.assertEqual(result.domain, "email")
 
     def test_intent_result_success_true_for_non_none_intent(self) -> None:
         self.assertTrue(IntentResult(intent="email_read_inbox").success)
@@ -168,6 +176,13 @@ class NammuIntentTests(unittest.TestCase):
 
         self.assertEqual(result.intent, "email_read_inbox")
         self.assertTrue(result.params["urgency_only"])
+
+    def test_classify_domain_fast_identifies_email_urgency(self) -> None:
+        self.assertEqual("email", _classify_domain_fast("urgentes?"))
+
+    def test_universal_prompt_names_information_and_package_domains(self) -> None:
+        self.assertIn("INFORMATION:", NAMMU_UNIVERSAL_PROMPT)
+        self.assertIn("PACKAGE:", NAMMU_UNIVERSAL_PROMPT)
 
 
 if __name__ == "__main__":

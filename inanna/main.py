@@ -47,7 +47,7 @@ from core.filesystem_faculty import FileInfo, FileSystemFaculty, FileSystemResul
 from core.governance import GovernanceLayer
 from core.guardian import GuardianFaculty
 from core.memory import Memory
-from core.nammu_intent import extract_intent
+from core.nammu_intent import _classify_domain_fast, extract_intent, extract_intent_universal
 from core.nammu import IntentClassifier
 from core.nammu_memory import (
     ROUTING_LOG_FILE,
@@ -2019,6 +2019,77 @@ def _extract_intent_with_timeout(
     if thread.is_alive():
         return None
     return holder[0]
+
+
+def nammu_first_routing(
+    text: str,
+    conversation_context: list[dict[str, str]] | None = None,
+) -> dict[str, Any] | None:
+    """Try NAMMU universal intent extraction first, then fall through to regex."""
+    normalized = str(text or "").strip()
+    domain = _classify_domain_fast(normalized.lower())
+    if domain == "none":
+        return None
+
+    holder: list[IntentResult | None] = [None]
+
+    def _run_universal_intent() -> None:
+        holder[0] = extract_intent_universal(
+            normalized,
+            conversation_context=conversation_context,
+            domain_hint=domain,
+        )
+
+    thread = threading.Thread(target=_run_universal_intent, daemon=True)
+    thread.start()
+    thread.join(timeout=3.0)
+    if thread.is_alive():
+        return None
+
+    result = holder[0]
+    if result is None or not result.success or result.confidence < 0.75:
+        return None
+    return result.to_tool_request()
+
+
+def _nammu_request_requires_proposal(
+    tool_request: dict[str, Any],
+    filesystem_faculty: FileSystemFaculty,
+) -> bool:
+    tool_name = str(tool_request.get("tool", "")).strip().lower()
+    if tool_name in EMAIL_TOOL_NAMES:
+        return email_request_requires_proposal(tool_request)
+    if tool_name in COMMUNICATION_TOOL_NAMES:
+        return communication_request_requires_proposal(tool_request)
+    if tool_name in DOCUMENT_TOOL_NAMES:
+        return document_request_requires_proposal(tool_request)
+    if tool_name in BROWSER_TOOL_NAMES:
+        return browser_request_requires_proposal(tool_request)
+    if tool_name in DESKTOP_TOOL_NAMES:
+        return desktop_request_requires_proposal(tool_request)
+    if tool_name in FILESYSTEM_TOOL_NAMES:
+        return filesystem_request_requires_proposal(tool_request, filesystem_faculty)
+    if tool_name in PROCESS_TOOL_NAMES:
+        return process_request_requires_proposal(tool_request)
+    if tool_name in PACKAGE_TOOL_NAMES:
+        return package_request_requires_proposal(tool_request)
+    if tool_name in CALENDAR_TOOL_NAMES:
+        return False
+    if tool_name in NETWORK_TOOL_NAMES or tool_name == "web_search":
+        return True
+    return False
+
+
+def build_nammu_tool_action(
+    tool_request: dict[str, Any] | None,
+    filesystem_faculty: FileSystemFaculty,
+) -> dict[str, Any] | None:
+    if tool_request is None:
+        return None
+    return {
+        **tool_request,
+        "requires_proposal": _nammu_request_requires_proposal(tool_request, filesystem_faculty),
+    }
 
 
 def detect_desktop_tool_action(
@@ -8168,16 +8239,28 @@ def handle_command(
             f"{created['line']}"
         )
 
-    calendar_action = detect_calendar_tool_action(
+    nammu_action = build_nammu_tool_action(
+        nammu_first_routing(
+            normalized,
+            session.events,
+        ),
+        filesystem_faculty,
+    )
+    nammu_tool_name = str(nammu_action.get("tool", "")) if nammu_action is not None else ""
+
+    calendar_action = nammu_action if nammu_tool_name in CALENDAR_TOOL_NAMES else detect_calendar_tool_action(
         normalized,
         calendar_workflows,
     )
-    communication_action = detect_communication_tool_action(
+    communication_action = (
+        nammu_action
+        if nammu_tool_name in COMMUNICATION_TOOL_NAMES
+        else detect_communication_tool_action(
         normalized,
         communication_workflows,
         session.events,
-    )
-    email_action = detect_email_tool_action(
+    ))
+    email_action = nammu_action if nammu_tool_name in EMAIL_TOOL_NAMES else detect_email_tool_action(
         normalized,
         email_workflows,
         session.events,
@@ -8359,7 +8442,7 @@ def handle_command(
             reflective_memory=reflective_memory,
         )
 
-    desktop_action = detect_desktop_tool_action(
+    desktop_action = nammu_action if nammu_tool_name in DESKTOP_TOOL_NAMES else detect_desktop_tool_action(
         normalized,
         desktop_faculty,
     )
@@ -8424,7 +8507,7 @@ def handle_command(
             reflective_memory=reflective_memory,
         )
 
-    browser_action = detect_browser_tool_action(
+    browser_action = nammu_action if nammu_tool_name in BROWSER_TOOL_NAMES else detect_browser_tool_action(
         normalized,
         browser_workflows,
     )
@@ -8491,7 +8574,7 @@ def handle_command(
             reflective_memory=reflective_memory,
         )
 
-    document_action = detect_document_tool_action(
+    document_action = nammu_action if nammu_tool_name in DOCUMENT_TOOL_NAMES else detect_document_tool_action(
         normalized,
         document_workflows,
     )
@@ -8557,7 +8640,7 @@ def handle_command(
             reflective_memory=reflective_memory,
         )
 
-    filesystem_action = detect_filesystem_tool_action(
+    filesystem_action = nammu_action if nammu_tool_name in FILESYSTEM_TOOL_NAMES else detect_filesystem_tool_action(
         normalized,
         filesystem_faculty,
         profile_manager=profile_manager,
@@ -8625,7 +8708,7 @@ def handle_command(
             reflective_memory=reflective_memory,
         )
 
-    process_action = detect_process_tool_action(
+    process_action = nammu_action if nammu_tool_name in PROCESS_TOOL_NAMES else detect_process_tool_action(
         normalized,
         process_faculty,
     )
@@ -8690,7 +8773,7 @@ def handle_command(
             reflective_memory=reflective_memory,
         )
 
-    package_action = detect_package_tool_action(
+    package_action = nammu_action if nammu_tool_name in PACKAGE_TOOL_NAMES else detect_package_tool_action(
         normalized,
         package_faculty,
     )
@@ -8748,6 +8831,72 @@ def handle_command(
             package_faculty=package_faculty,
             desktop_faculty=desktop_faculty,
             communication_workflows=communication_workflows,
+            session_audit=session_audit,
+            active_realm_name=active_realm_name,
+            conversation_state=conversation_state,
+            reflective_memory=reflective_memory,
+        )
+
+    generic_nammu_action = (
+        nammu_action
+        if nammu_tool_name in NETWORK_TOOL_NAMES or nammu_tool_name == "web_search"
+        else None
+    )
+    if generic_nammu_action is not None:
+        append_routing_decision(
+            routing_log,
+            session,
+            "operator",
+            normalized,
+            nammu_dir=nammu_dir,
+        )
+        append_governance_event(
+            resolve_nammu_dir(session, nammu_dir),
+            session.session_id,
+            "tool",
+            str(generic_nammu_action.get("reason", "Governed NAMMU tool use.")),
+            normalized[:60],
+        )
+        if bool(generic_nammu_action.get("requires_proposal", False)):
+            created = create_tool_use_proposal(
+                proposal=proposal,
+                session=session,
+                user_input=normalized,
+                tool=str(generic_nammu_action["tool"]),
+                query=str(generic_nammu_action["query"]),
+                params=dict(generic_nammu_action.get("params", {})),
+            )
+            return (
+                f'operator > tool proposed: {generic_nammu_action["tool"]} - "{generic_nammu_action["query"]}"\n'
+                'Type "approve" to execute or "reject" to cancel.\n'
+                f"{created['tool_line']}"
+            )
+        return complete_tool_resolution(
+            {
+                "payload": {
+                    "original_input": normalized,
+                    "query": str(generic_nammu_action["query"]),
+                    "tool": str(generic_nammu_action["tool"]),
+                    "params": dict(generic_nammu_action.get("params", {})),
+                }
+            },
+            "approve",
+            session,
+            proposal,
+            memory,
+            engine,
+            startup_context,
+            operator or OperatorFaculty(),
+            guardian_metrics,
+            active_token=active_token,
+            user_log=user_log,
+            faculty_monitor=faculty_monitor,
+            filesystem_faculty=filesystem_faculty,
+            process_faculty=process_faculty,
+            package_faculty=package_faculty,
+            desktop_faculty=desktop_faculty,
+            communication_workflows=communication_workflows,
+            email_workflows=email_workflows,
             session_audit=session_audit,
             active_realm_name=active_realm_name,
             conversation_state=conversation_state,
