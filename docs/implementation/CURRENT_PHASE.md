@@ -1,9 +1,9 @@
-# CURRENT PHASE: Cycle 8 - Phase 8.5 - Browser Faculty
+# CURRENT PHASE: Cycle 8 - Phase 8.6 - Calendar Faculty
 **Status: ACTIVE**
 **Authorized by: ZAERA (Guardian) + Claude (Command Center)**
 **Date opened: 2026-04-22**
 **Cycle: 8 - The Desktop Bridge**
-**Replaces: Cycle 8 Phase 8.4 - Document Faculty (COMPLETE)**
+**Replaces: Cycle 8 Phase 8.5 - Browser Faculty (COMPLETE)**
 
 ---
 
@@ -16,88 +16,69 @@
 5. CODEX_DOCTRINE.md
 6. ABSOLUTE_PROTOCOL.md
 
-All documentation in this phase must be complete and permanent.
-
 ---
 
-## Current System State
+## Current System State (discovered before writing this phase)
 
-Browsers installed:
-  Firefox    (firefox.exe)
-  Chrome     (chrome.exe)
-  Edge       (Microsoft.Edge v147.0.3912.72)
+Calendar infrastructure found:
+  Thunderbird 24.2 with Lightning calendar built-in
+  Local SQLite: calendar-data/local.sqlite (819KB, schema intact)
+  cal_events table: 0 local events (events are remote)
+  Remote calendar: Google Calendar via CalDAV
+  prefs.js confirms: calendar.caldav.googleResync active
+  moz-storage-calendar:// = local cache URI
 
-Python libraries available:
-  playwright: INSTALLED  ← primary browser automation
-  httpx:      INSTALLED  ← fast HTTP client for direct fetching
-  urllib:     stdlib     ← fallback, always available
-  selenium:   not installed
-  beautifulsoup4: not installed  ← must install
+Windows Calendar: microsoft.windowscommunicationsapps installed
 
-Tools registered: 35 across 9 categories
+Python calendar libraries: NONE installed
+  icalendar, caldav, vobject — all missing
+
+Key insight:
+  Events live in Google Calendar (remote CalDAV).
+  The local SQLite is empty — it's just a cache.
+  To read real events we need either:
+    (a) CalDAV client talking directly to Google Calendar
+    (b) Read Thunderbird's ICS cache files if they exist
+    (c) Use Google Calendar API (requires OAuth2)
+  The safest offline approach: install icalendar + parse
+  any .ics files that exist, and provide CalDAV infrastructure
+  for when credentials are available.
+
+Tools registered: 38 across 10 categories
 Tests passing: 543
-Phase: Cycle 8 - Phase 8.4 - Document Faculty
+Phase: Cycle 8 - Phase 8.5 - Browser Faculty
 
 ---
 
-## What This Phase Is
+## Architecture Decision
 
-The Browser Faculty gives INANNA the ability to:
-  - Fetch web pages and extract readable content
-  - Navigate to URLs
-  - Search the web for current information
-  - Fill forms and click buttons (governed)
-  - Read page content without opening a visual browser
+The Calendar Faculty uses a three-level approach:
 
-This is different from web_search (which queries a search API).
-The Browser Faculty works with any URL — local, intranet, public.
+### Level 1 — Local SQLite (instant, no network)
+Read Thunderbird's calendar-data/local.sqlite directly.
+Schema is known: cal_events, cal_todos tables.
+Works offline. Zero latency. No credentials needed.
+Currently has 0 events — events are remote.
+Will populate as Thunderbird syncs.
 
----
+### Level 2 — ICS File Reader (offline, file-based)
+Parse any .ics files found in Thunderbird profile
+or user's filesystem. icalendar library.
+Works offline. No credentials needed.
+Standard format — works for any calendar export.
 
-## Architecture: Two Levels
+### Level 3 — CalDAV Client (online, real events)
+Connect to Google Calendar via CalDAV.
+Requires: caldav library + stored credentials.
+Returns real future/past events from Google Calendar.
+Credentials: NOT stored in this phase.
+Infrastructure built, activation deferred until
+ZAERA configures credentials.
 
-### Level 1 — Headless HTTP (primary, no browser needed)
-
-For reading web pages, INANNA does NOT need to open Firefox.
-It fetches the URL directly with httpx and parses the HTML.
-This is fast, reliable, and works without any visible browser.
-
-```
-"read the page at https://example.com"
-  → BrowserDirectFetcher.fetch(url)
-  → httpx.get(url) → HTML
-  → extract readable text (strip tags)
-  → return PageRecord(title, content, url)
-  → CROWN summarizes
-```
-
-This covers 90% of use cases.
-No UI automation. No browser process. No screenshots.
-Works on any hardware. Works on NixOS headlessly.
-
-### Level 2 — Playwright (for JS-heavy pages and form interaction)
-
-Some pages require JavaScript to render content.
-For these, Playwright opens a headless browser process,
-navigates, waits for JS, and reads the DOM.
-
-```
-"fill the contact form at https://example.com/contact"
-  → PlaywrightBrowser.navigate(url)
-  → page.fill('#name', 'ZAERA')   [proposal required]
-  → page.click('submit')          [mandatory proposal]
-  → return result
-```
-
-Playwright is used only when Level 1 is insufficient.
-Playwright is HEADLESS by default — no visible browser window.
-Using it with a visible browser requires explicit request.
-
-### Level 3 — Desktop Faculty (visible browser control)
-
-When the user explicitly wants to control the visible Firefox
-window (e.g. "open this in Firefox"), the Desktop Faculty
-handles it via AT-SPI2/Windows UI Automation.
+This follows the same ground-truth principle as email:
+  Level 1 reads what exists locally (instant).
+  Level 3 reads what exists remotely (when configured).
+  No hallucination at either level.
 
 ---
 
@@ -105,601 +86,718 @@ handles it via AT-SPI2/Windows UI Automation.
 
 ```
 OBSERVATION (no proposal needed):
-  - Fetching any public URL and reading content
-  - Reading current page title/URL
-  - Searching for information
+  - Reading calendar events (local or remote)
+  - Listing today's events / upcoming events
+  - Searching events by date or keyword
 
 LIGHT ACTION (proposal required):
-  - Navigating to a URL in a visible browser
-  - Opening a new browser tab
-  - Typing into a search field
+  - Creating a new calendar event
+  - Updating event title/time
 
-CONSEQUENTIAL ACTION (always mandatory proposal):
-  - Submitting any form
-  - Clicking "Submit", "Buy", "Confirm", "Delete"
-  - Filling in personal data fields
-  - Any action that sends data to a server
+CONSEQUENTIAL ACTION (mandatory proposal):
+  - Deleting a calendar event
+  - Sharing an event
+  - Accepting/declining invitations
 
-FORBIDDEN (never, regardless of approval):
-  - Entering passwords into web forms
-  - Accessing banking or payment pages
-  - Actions involving financial transactions
-  - Bypassing CAPTCHAs
+FORBIDDEN (never):
+  - Accessing other users' private calendars
+  - Modifying past events that have already occurred
 ```
 
 ---
 
 ## What You Are Building
 
-### Task 1 — Install missing libraries
+### Task 1 — Install Python calendar libraries
 
 ```bash
-pip install beautifulsoup4 lxml --break-system-packages
+pip install icalendar recurring-ical-events --break-system-packages
 ```
 
-Playwright browsers (headless Chromium):
+Note: caldav requires network for actual CalDAV connections.
+Install it but the connection is not used in tests:
 ```bash
-py -3 -m playwright install chromium
+pip install caldav --break-system-packages
 ```
 
-Note: if playwright install fails (requires network),
-implement a graceful fallback to httpx-only mode.
+If caldav fails to install, it is optional — skip gracefully.
+icalendar is REQUIRED. recurring-ical-events is REQUIRED.
 
-### Task 2 — inanna/core/browser_workflows.py
+### Task 2 — inanna/core/calendar_workflows.py
 
-Create: inanna/core/browser_workflows.py
+Create: inanna/core/calendar_workflows.py
 
 ```python
 """
-INANNA NYX Browser Faculty
-Fetches web pages, reads content, and interacts with web UIs.
+INANNA NYX Calendar Faculty
+Reads, creates, and manages calendar events.
 
-Two-level architecture:
-  Level 1: BrowserDirectFetcher — httpx + BeautifulSoup
-           No browser process needed. Fast. Works headlessly.
-           Primary approach for reading public web pages.
+Three-level architecture:
+  Level 1: ThunderbirdCalendarReader
+    Reads local SQLite database directly.
+    Zero latency. Works offline.
+    Returns events from cal_events and cal_todos tables.
+    NOTE: Currently 0 events (remote calendar not yet synced).
+    Will populate as Thunderbird syncs with Google Calendar.
 
-  Level 2: PlaywrightBrowser — headless Chromium via Playwright
-           For JS-heavy pages and form interaction.
-           Used only when Level 1 is insufficient.
+  Level 2: ICSFileReader
+    Parses .ics files from filesystem.
+    Uses icalendar library.
+    Works for exported calendars and .ics attachments.
+    Standard iCalendar RFC 5545 format.
+
+  Level 3: CalDAVClient
+    Connects to Google Calendar via CalDAV protocol.
+    Requires: caldav library + configured credentials.
+    Infrastructure present. Not activated in this phase.
+    Activation: when ZAERA configures calendar credentials.
 
 Governance:
-  Fetching/reading URLs: no proposal (observation)
-  Navigating visible browser: proposal required
-  Submitting forms: ALWAYS mandatory proposal
-  Entering passwords: FORBIDDEN
+  Reading events: no proposal (observation)
+  Creating events: proposal required
+  Deleting events: ALWAYS mandatory proposal
+  Accessing others' calendars: FORBIDDEN
+
+Thunderbird calendar SQLite path:
+  C:\\Users\\{user}\\AppData\\Roaming\\Thunderbird\\Profiles\\
+  {profile}\\calendar-data\\local.sqlite
+
+ICS schema (RFC 5545):
+  VEVENT: calendar event
+  VTODO: task/todo item
+  VCALENDAR: container
 
 See docs/platform_architecture.md for platform context.
 See docs/cycle8_master_plan.md for Cycle 8 architecture.
 """
 from __future__ import annotations
 
+import glob
+import os
+import sqlite3
 from dataclasses import dataclass, field
+from datetime import date, datetime, timezone, timedelta
+from pathlib import Path
 from typing import Optional
-from urllib.parse import urlparse
-
-from core.desktop_faculty import DesktopFaculty
 
 
 @dataclass
-class PageRecord:
-    """Structured content extracted from a web page."""
-    url: str = ""
+class CalendarEvent:
+    """Structured representation of a calendar event."""
+    uid: str = ""
     title: str = ""
-    content: str = ""      # readable text, stripped of HTML
-    links: list[str] = field(default_factory=list)
-    word_count: int = 0
-    status_code: int = 0
-    error: Optional[str] = None
+    start: Optional[datetime] = None
+    end: Optional[datetime] = None
+    location: str = ""
+    description: str = ""
+    status: str = ""         # CONFIRMED, TENTATIVE, CANCELLED
+    is_all_day: bool = False
+    recurrence: str = ""
+    calendar_name: str = ""
+    source: str = ""         # sqlite, ics, caldav
 
     @property
-    def success(self) -> bool:
-        return self.error is None and bool(self.content)
+    def start_str(self) -> str:
+        if not self.start:
+            return ""
+        if self.is_all_day:
+            return self.start.strftime("%Y-%m-%d")
+        return self.start.strftime("%Y-%m-%d %H:%M")
 
-    def summary_line(self) -> str:
-        parts = [f"browser > {self.url[:60]}"]
-        if self.title:
-            parts.append(self.title[:50])
-        if self.word_count:
-            parts.append(f"{self.word_count} words")
-        return " | ".join(parts)
+    @property
+    def end_str(self) -> str:
+        if not self.end:
+            return ""
+        if self.is_all_day:
+            return self.end.strftime("%Y-%m-%d")
+        return self.end.strftime("%Y-%m-%d %H:%M")
+
+    def one_line(self) -> str:
+        parts = [self.start_str, self.title[:60]]
+        if self.location:
+            parts.append(f"@ {self.location[:40]}")
+        return " | ".join(p for p in parts if p)
 
 
 @dataclass
-class BrowserActionResult:
-    """Result of a browser interaction (click, fill, navigate)."""
-    success: bool
-    action: str = ""       # navigate | fill | click | search
-    url: str = ""
-    output: str = ""
-    consequential: bool = False
+class CalendarResult:
+    """Result of a calendar read operation."""
+    success: bool = True
+    source: str = ""
+    events: list[CalendarEvent] = field(default_factory=list)
+    todos: list[CalendarEvent] = field(default_factory=list)
     error: Optional[str] = None
 
-
-# URL safety check — prevents accessing sensitive local resources
-FORBIDDEN_URL_PATTERNS = [
-    "localhost",
-    "127.0.0.1",
-    "0.0.0.0",
-    "::1",
-    "file://",
-    "192.168.",
-    "10.",
-    "172.16.",
-]
+    def summary_line(self) -> str:
+        total = len(self.events) + len(self.todos)
+        return f"calendar > {self.source}: {total} items ({len(self.events)} events, {len(self.todos)} todos)"
 
 
-def is_safe_url(url: str) -> bool:
-    """
-    Returns True if the URL is safe to fetch.
-    Blocks localhost, internal networks, and file:// URLs
-    to prevent SSRF and local file disclosure.
-    Exception: allow localhost only for explicitly configured
-    internal services (future: whitelist via config).
-    """
-    url_lower = url.lower()
-    return not any(pattern in url_lower for pattern in FORBIDDEN_URL_PATTERNS)
+# ── TIMESTAMP HELPERS ─────────────────────────────────────────────────
 
-
-def clean_html_to_text(html: str) -> str:
-    """
-    Extract readable text from HTML.
-    Uses BeautifulSoup if available, falls back to regex.
-    """
+def _tb_ts_to_datetime(ts: int | None) -> Optional[datetime]:
+    """Convert Thunderbird's microsecond epoch timestamp to datetime."""
+    if ts is None:
+        return None
     try:
-        from bs4 import BeautifulSoup
-        soup = BeautifulSoup(html, "lxml")
-        # Remove script, style, nav, footer
-        for tag in soup(["script", "style", "nav", "footer",
-                         "header", "aside", "noscript"]):
-            tag.decompose()
-        text = soup.get_text(separator="\n", strip=True)
-        # Collapse excessive blank lines
-        import re
-        text = re.sub(r"\n{3,}", "\n\n", text)
-        return text.strip()
-    except ImportError:
-        # Fallback: simple regex tag stripper
-        import re
-        text = re.sub(r"<[^>]+>", " ", html)
-        text = re.sub(r"\s{2,}", " ", text)
-        return text.strip()
+        # Thunderbird stores times in microseconds since epoch
+        return datetime.fromtimestamp(ts / 1_000_000, tz=timezone.utc)
+    except (OSError, ValueError, OverflowError):
+        return None
 
 
-def extract_title(html: str) -> str:
-    """Extract page title from HTML."""
-    import re
-    m = re.search(r"<title[^>]*>(.*?)</title>", html, re.IGNORECASE | re.DOTALL)
-    return m.group(1).strip() if m else ""
+# ── LEVEL 1: THUNDERBIRD SQLITE READER ───────────────────────────────
+
+def find_thunderbird_calendar_db() -> Optional[str]:
+    """Auto-discover Thunderbird's calendar SQLite file."""
+    appdata = os.environ.get("APPDATA", "")
+    if appdata:
+        pattern = os.path.join(
+            appdata, "Thunderbird", "Profiles", "*",
+            "calendar-data", "local.sqlite"
+        )
+    else:
+        home = os.path.expanduser("~")
+        pattern = os.path.join(
+            home, ".thunderbird", "*",
+            "calendar-data", "local.sqlite"
+        )
+    matches = glob.glob(pattern)
+    return matches[0] if matches else None
 
 
-# ── LEVEL 1: DIRECT HTTP FETCHER ─────────────────────────────────────
-
-class BrowserDirectFetcher:
+class ThunderbirdCalendarReader:
     """
-    Fetches web pages directly using httpx.
-    No browser process. Fast. Headless.
-    Primary approach for reading public web content.
+    Reads calendar events directly from Thunderbird's local SQLite.
+    Zero network. Zero credentials. Ground truth from local cache.
+    NOTE: Returns 0 events if remote calendar has not synced locally.
     """
 
-    DEFAULT_TIMEOUT = 15  # seconds
-    MAX_CONTENT_BYTES = 2 * 1024 * 1024  # 2MB
+    def __init__(self, db_path: str | None = None) -> None:
+        self.db_path = db_path or find_thunderbird_calendar_db()
 
-    def fetch(self, url: str) -> PageRecord:
-        """
-        Fetch a URL and return readable content.
-        No proposal needed — observation only.
-        """
-        if not is_safe_url(url):
-            return PageRecord(
-                url=url,
-                error=f"URL blocked: internal/local addresses not accessible"
+    def is_available(self) -> bool:
+        return bool(self.db_path and Path(self.db_path).exists())
+
+    def read_events(
+        self,
+        start_date: Optional[date] = None,
+        end_date: Optional[date] = None,
+        max_events: int = 50,
+    ) -> CalendarResult:
+        """Read events from local SQLite calendar database."""
+        if not self.is_available():
+            return CalendarResult(
+                success=False,
+                source="thunderbird_sqlite",
+                error="Thunderbird calendar database not found",
             )
-
-        # Ensure URL has scheme
-        if not url.startswith(("http://", "https://")):
-            url = "https://" + url
-
+        result = CalendarResult(success=True, source="thunderbird_sqlite")
         try:
-            import httpx
-            headers = {
-                "User-Agent": (
-                    "Mozilla/5.0 (compatible; INANNA-NYX/1.0; "
-                    "+https://github.com/ZeroAbsolutePrime/INANNA)"
-                ),
-                "Accept": "text/html,application/xhtml+xml,*/*",
-                "Accept-Language": "en,es;q=0.9,ca;q=0.8",
-            }
-            with httpx.Client(
-                timeout=self.DEFAULT_TIMEOUT,
-                follow_redirects=True,
-                headers=headers,
-            ) as client:
-                response = client.get(url)
+            conn = sqlite3.connect(self.db_path)
+            cur = conn.cursor()
 
-            content_type = response.headers.get("content-type", "")
-            if "text/html" not in content_type and "text/plain" not in content_type:
-                # Non-HTML content — return raw or note
-                if "application/pdf" in content_type:
-                    return PageRecord(
-                        url=str(response.url),
-                        title="PDF document",
-                        content=f"[PDF at {url}] — use doc_read to read PDF files.",
-                        status_code=response.status_code,
-                    )
-                return PageRecord(
-                    url=str(response.url),
-                    title=f"Non-HTML content ({content_type})",
-                    content=f"Content type: {content_type}",
-                    status_code=response.status_code,
+            # Query events
+            cur.execute("""
+                SELECT cal_id, id, title, event_start, event_end,
+                       ical_status, flags, recurrence_id
+                FROM cal_events
+                ORDER BY event_start ASC
+                LIMIT ?
+            """, (max_events,))
+            for row in cur.fetchall():
+                cal_id, uid, title, ev_start, ev_end, status, flags, rec_id = row
+                start_dt = _tb_ts_to_datetime(ev_start)
+                end_dt = _tb_ts_to_datetime(ev_end)
+
+                # Apply date filter if provided
+                if start_date and start_dt and start_dt.date() < start_date:
+                    continue
+                if end_date and start_dt and start_dt.date() > end_date:
+                    continue
+
+                # flags & 2 = all-day event
+                is_all_day = bool(flags and (flags & 2))
+                # Get location and description from cal_properties
+                location = ""
+                description = ""
+                cur2 = conn.cursor()
+                cur2.execute(
+                    "SELECT key, value FROM cal_properties WHERE item_id=?",
+                    (uid,)
                 )
+                for key, value in cur2.fetchall():
+                    if key == "LOCATION":
+                        location = value or ""
+                    elif key == "DESCRIPTION":
+                        description = (value or "")[:200]
 
-            html = response.text[:self.MAX_CONTENT_BYTES]
-            title = extract_title(html)
-            text = clean_html_to_text(html)
+                result.events.append(CalendarEvent(
+                    uid=uid or "",
+                    title=title or "(no title)",
+                    start=start_dt,
+                    end=end_dt,
+                    location=location,
+                    description=description,
+                    status=status or "CONFIRMED",
+                    is_all_day=is_all_day,
+                    recurrence=rec_id or "",
+                    source="sqlite",
+                ))
 
-            return PageRecord(
-                url=str(response.url),
-                title=title,
-                content=text[:8000],   # cap at 8000 chars for CROWN
-                word_count=len(text.split()),
-                status_code=response.status_code,
-            )
+            # Query todos
+            cur.execute("""
+                SELECT id, title, todo_due, ical_status
+                FROM cal_todos
+                ORDER BY todo_due ASC
+                LIMIT ?
+            """, (max_events,))
+            for row in cur.fetchall():
+                uid, title, due, status = row
+                due_dt = _tb_ts_to_datetime(due)
+                result.todos.append(CalendarEvent(
+                    uid=uid or "",
+                    title=title or "(no title)",
+                    start=due_dt,
+                    status=status or "NEEDS-ACTION",
+                    source="sqlite",
+                ))
 
-        except ImportError:
-            return self._fetch_urllib(url)
-        except Exception as e:
-            return PageRecord(url=url, error=str(e))
+            conn.close()
+        except sqlite3.Error as e:
+            result.success = False
+            result.error = f"SQLite error: {e}"
+        return result
 
-    def _fetch_urllib(self, url: str) -> PageRecord:
-        """Stdlib fallback when httpx not available."""
-        import urllib.request
-        try:
-            req = urllib.request.Request(
-                url,
-                headers={"User-Agent": "INANNA-NYX/1.0"},
-            )
-            with urllib.request.urlopen(req, timeout=10) as r:
-                html = r.read(self.MAX_CONTENT_BYTES).decode("utf-8", errors="replace")
-            title = extract_title(html)
-            text = clean_html_to_text(html)
-            return PageRecord(
-                url=url, title=title,
-                content=text[:8000],
-                word_count=len(text.split()),
-                status_code=200,
-            )
-        except Exception as e:
-            return PageRecord(url=url, error=str(e))
+    def read_today(self) -> CalendarResult:
+        today = date.today()
+        return self.read_events(start_date=today, end_date=today)
 
-    def search(self, query: str, engine: str = "duckduckgo") -> PageRecord:
-        """
-        Perform a web search and return results page content.
-        Uses DuckDuckGo HTML search (no API key required).
-        No proposal needed.
-        """
-        import urllib.parse
-        if engine == "duckduckgo":
-            url = f"https://html.duckduckgo.com/html/?q={urllib.parse.quote(query)}"
-        else:
-            url = f"https://www.google.com/search?q={urllib.parse.quote(query)}"
-        record = self.fetch(url)
-        record.url = f"search:{query}"
-        return record
+    def read_upcoming(self, days: int = 7) -> CalendarResult:
+        today = date.today()
+        end = today + timedelta(days=days)
+        return self.read_events(start_date=today, end_date=end)
 
 
-# ── LEVEL 2: PLAYWRIGHT BROWSER ──────────────────────────────────────
+# ── LEVEL 2: ICS FILE READER ──────────────────────────────────────────
 
-class PlaywrightBrowser:
+class ICSFileReader:
     """
-    Headless browser automation via Playwright.
-    Used for JS-heavy pages and form interaction.
-    Requires: playwright + chromium install.
+    Reads .ics (iCalendar) files from the filesystem.
+    Uses the icalendar library (RFC 5545).
+    Works for exported calendars, .ics email attachments, etc.
+    """
 
-    All form submission requires mandatory proposal approval.
-    Passwords and financial data: FORBIDDEN.
+    def read_file(self, path: str | Path) -> CalendarResult:
+        """Parse an .ics file and return structured events."""
+        p = Path(path).expanduser().resolve()
+        result = CalendarResult(source=f"ics:{p.name}")
+
+        if not p.exists():
+            result.success = False
+            result.error = f"File not found: {p}"
+            return result
+
+        try:
+            from icalendar import Calendar
+        except ImportError:
+            result.success = False
+            result.error = "icalendar not installed. Run: pip install icalendar"
+            return result
+
+        try:
+            raw = p.read_bytes()
+            cal = Calendar.from_ical(raw)
+            for component in cal.walk():
+                if component.name == "VEVENT":
+                    result.events.append(self._parse_vevent(component))
+                elif component.name == "VTODO":
+                    result.todos.append(self._parse_vtodo(component))
+            result.success = True
+        except Exception as e:
+            result.success = False
+            result.error = f"Could not parse ICS: {e}"
+        return result
+
+    def _parse_vevent(self, component) -> CalendarEvent:
+        """Parse a VEVENT component into CalendarEvent."""
+        def get(key: str, default: str = "") -> str:
+            val = component.get(key)
+            return str(val) if val else default
+
+        def get_dt(key: str) -> Optional[datetime]:
+            val = component.get(key)
+            if val is None:
+                return None
+            dt = val.dt if hasattr(val, "dt") else val
+            if isinstance(dt, datetime):
+                return dt
+            if isinstance(dt, date):
+                return datetime(dt.year, dt.month, dt.day, tzinfo=timezone.utc)
+            return None
+
+        start = get_dt("DTSTART")
+        end = get_dt("DTEND")
+        # Detect all-day events
+        dtstart_raw = component.get("DTSTART")
+        is_all_day = (
+            dtstart_raw is not None
+            and isinstance(
+                dtstart_raw.dt if hasattr(dtstart_raw, "dt") else dtstart_raw,
+                date
+            )
+            and not isinstance(
+                dtstart_raw.dt if hasattr(dtstart_raw, "dt") else dtstart_raw,
+                datetime
+            )
+        )
+
+        return CalendarEvent(
+            uid=get("UID"),
+            title=get("SUMMARY", "(no title)"),
+            start=start,
+            end=end,
+            location=get("LOCATION"),
+            description=get("DESCRIPTION")[:200],
+            status=get("STATUS", "CONFIRMED"),
+            is_all_day=is_all_day,
+            source="ics",
+        )
+
+    def _parse_vtodo(self, component) -> CalendarEvent:
+        """Parse a VTODO component into CalendarEvent."""
+        def get(key: str, default: str = "") -> str:
+            val = component.get(key)
+            return str(val) if val else default
+
+        return CalendarEvent(
+            uid=get("UID"),
+            title=get("SUMMARY", "(no title)"),
+            status=get("STATUS", "NEEDS-ACTION"),
+            description=get("DESCRIPTION")[:200],
+            source="ics",
+        )
+
+
+# ── LEVEL 3: CALDAV CLIENT (infrastructure, not yet activated) ────────
+
+class CalDAVClient:
+    """
+    Connects to Google Calendar (or any CalDAV server).
+    Infrastructure present. NOT activated in Phase 8.6.
+    Activation requires: credentials configuration by ZAERA.
+
+    To activate (future):
+    1. ZAERA configures credentials in data/{realm}/calendar_config.json
+    2. CalDAVClient.is_configured() returns True
+    3. CalDAVClient.read_events() returns real Google Calendar events
+
+    Google Calendar CalDAV URL:
+      https://apidata.googleusercontent.com/caldav/v2/{user}/events/
+    """
+
+    def is_configured(self) -> bool:
+        """Returns True when credentials are configured."""
+        # TODO Phase 8.6 extension: check data/{realm}/calendar_config.json
+        return False
+
+    def read_events(
+        self,
+        start_date: Optional[date] = None,
+        end_date: Optional[date] = None,
+    ) -> CalendarResult:
+        """
+        Read events from CalDAV server.
+        Currently returns empty result with explanation.
+        Will return real events once credentials are configured.
+        """
+        if not self.is_configured():
+            return CalendarResult(
+                success=True,
+                source="caldav",
+                events=[],
+                error=None,
+            )
+        try:
+            import caldav
+        except ImportError:
+            return CalendarResult(
+                success=False,
+                source="caldav",
+                error="caldav not installed. Run: pip install caldav",
+            )
+        # Full CalDAV implementation deferred to credential configuration phase
+        return CalendarResult(
+            success=False,
+            source="caldav",
+            error="CalDAV credentials not configured",
+        )
+
+
+# ── CALENDAR WORKFLOWS ────────────────────────────────────────────────
+
+@dataclass
+class CalendarComprehension:
+    """
+    Structured summary of calendar events.
+    Produced after reading — given to CROWN for natural presentation.
+    No LLM needed — pure deterministic analysis.
+    """
+    total_events: int = 0
+    today_events: list[CalendarEvent] = field(default_factory=list)
+    upcoming_events: list[CalendarEvent] = field(default_factory=list)
+    overdue_todos: list[CalendarEvent] = field(default_factory=list)
+    period_label: str = ""
+    source: str = ""
+    has_remote_calendar: bool = False
+
+    def to_crown_context(self) -> str:
+        """Format for CROWN to present naturally."""
+        lines = [f"CALENDAR ({self.period_label or 'upcoming'} — source: {self.source})"]
+        if self.total_events == 0:
+            lines.append("No events found in local calendar.")
+            if self.has_remote_calendar:
+                lines.append(
+                    "Note: Your Google Calendar is configured but events"
+                    " have not synced to the local cache yet."
+                    " Open Thunderbird to trigger a sync, then ask again."
+                )
+            return "\n".join(lines)
+
+        lines.append(f"Total: {self.total_events} events")
+        if self.today_events:
+            lines.append("TODAY:")
+            for e in self.today_events[:5]:
+                lines.append(f"  {e.one_line()}")
+        if self.upcoming_events:
+            lines.append("UPCOMING:")
+            for e in self.upcoming_events[:5]:
+                lines.append(f"  {e.one_line()}")
+        if self.overdue_todos:
+            lines.append("OVERDUE TODOS:")
+            for t in self.overdue_todos[:3]:
+                lines.append(f"  {t.title}")
+        return "\n".join(lines)
+
+
+def build_calendar_comprehension(
+    result: CalendarResult,
+    period_label: str = "",
+) -> CalendarComprehension:
+    """
+    Build structured comprehension from CalendarResult.
+    Separates today's events from upcoming. Detects overdue todos.
+    No LLM. Deterministic. No hallucination.
+    """
+    now = datetime.now(tz=timezone.utc)
+    today = date.today()
+
+    comp = CalendarComprehension(
+        total_events=len(result.events),
+        period_label=period_label,
+        source=result.source,
+        has_remote_calendar=True,  # Known from prefs.js inspection
+    )
+
+    for event in result.events:
+        if event.start and event.start.date() == today:
+            comp.today_events.append(event)
+        elif event.start and event.start.date() > today:
+            comp.upcoming_events.append(event)
+
+    for todo in result.todos:
+        if todo.start and todo.start < now:
+            comp.overdue_todos.append(todo)
+
+    return comp
+
+
+class CalendarWorkflows:
+    """
+    Orchestrates calendar reading and event management.
+    Uses ThunderbirdCalendarReader (Level 1) as primary.
+    Uses ICSFileReader (Level 2) for .ics files.
+    CalDAV (Level 3) deferred until credentials configured.
     """
 
     def __init__(self) -> None:
-        self._available: bool | None = None
+        self.sqlite_reader = ThunderbirdCalendarReader()
+        self.ics_reader = ICSFileReader()
+        self.caldav_client = CalDAVClient()
 
-    def is_available(self) -> bool:
-        if self._available is None:
-            try:
-                import playwright
-                self._available = True
-            except ImportError:
-                self._available = False
-        return self._available
+    def read_today(self) -> tuple[CalendarResult, CalendarComprehension]:
+        """Read today's events. No proposal needed."""
+        result = self.sqlite_reader.read_today()
+        comp = build_calendar_comprehension(result, period_label="today")
+        return result, comp
 
-    def fetch_js(self, url: str) -> PageRecord:
-        """
-        Fetch a JS-rendered page using headless Chromium.
-        Returns readable text after JS execution.
-        No proposal needed — observation.
-        """
-        if not is_safe_url(url):
-            return PageRecord(url=url, error="URL blocked: internal address")
-
-        if not self.is_available():
-            return PageRecord(
-                url=url,
-                error="Playwright not available. Run: py -3 -m playwright install chromium"
-            )
-
-        if not url.startswith(("http://", "https://")):
-            url = "https://" + url
-
-        try:
-            from playwright.sync_api import sync_playwright
-            with sync_playwright() as p:
-                browser = p.chromium.launch(headless=True)
-                page = browser.new_page()
-                page.goto(url, timeout=20000, wait_until="domcontentloaded")
-                title = page.title()
-                content = page.inner_text("body")
-                browser.close()
-            return PageRecord(
-                url=url,
-                title=title,
-                content=content[:8000],
-                word_count=len(content.split()),
-                status_code=200,
-            )
-        except Exception as e:
-            return PageRecord(url=url, error=str(e))
-
-    def navigate_and_fill(
-        self,
-        url: str,
-        fields: dict[str, str],
-    ) -> BrowserActionResult:
-        """
-        Navigate to URL and fill form fields.
-        REQUIRES proposal approval for each field.
-        Submitting the form requires MANDATORY separate proposal.
-        """
-        if not self.is_available():
-            return BrowserActionResult(
-                success=False, action="fill",
-                error="Playwright not available"
-            )
-        # Implementation deferred to Phase 8.5 extended
-        # (requires multi-step proposal flow)
-        return BrowserActionResult(
-            success=False, action="fill",
-            error="Form filling not yet implemented in this phase"
+    def read_upcoming(self, days: int = 7) -> tuple[CalendarResult, CalendarComprehension]:
+        """Read upcoming events for the next N days. No proposal needed."""
+        result = self.sqlite_reader.read_upcoming(days=days)
+        comp = build_calendar_comprehension(
+            result, period_label=f"next {days} days"
         )
+        return result, comp
 
+    def read_ics_file(
+        self, path: str
+    ) -> tuple[CalendarResult, CalendarComprehension]:
+        """Read a .ics file. No proposal needed."""
+        result = self.ics_reader.read_file(path)
+        comp = build_calendar_comprehension(result, period_label="ics file")
+        return result, comp
 
-# ── BROWSER WORKFLOWS ────────────────────────────────────────────────
-
-class BrowserWorkflows:
-    """
-    Orchestrates browser operations.
-    Uses BrowserDirectFetcher (Level 1) as primary.
-    Uses PlaywrightBrowser (Level 2) for JS-heavy pages.
-    Uses Desktop Faculty (Level 3) for visible browser control.
-    """
-
-    def __init__(self, desktop: DesktopFaculty) -> None:
-        self.desktop = desktop
-        self.fetcher = BrowserDirectFetcher()
-        self.playwright = PlaywrightBrowser()
-
-    def read_page(self, url: str, js: bool = False) -> PageRecord:
-        """
-        Read a web page and return structured content.
-        js=True forces Playwright for JS-heavy pages.
-        No proposal needed — observation only.
-        """
-        if js and self.playwright.is_available():
-            return self.playwright.fetch_js(url)
-        return self.fetcher.fetch(url)
-
-    def search_web(self, query: str) -> PageRecord:
-        """
-        Search the web and return results.
-        No proposal needed — observation only.
-        """
-        return self.fetcher.search(query)
-
-    def open_in_browser(
-        self, url: str, browser: str = "firefox"
-    ) -> BrowserActionResult:
-        """
-        Open URL in a visible browser window.
-        Requires proposal approval — light action.
-        """
-        result = self.desktop.open_app(f"{browser} {url}")
-        return BrowserActionResult(
-            success=result.success,
-            action="navigate",
-            url=url,
-            output=f"Opened {url} in {browser}",
-            error=result.error,
-        )
-
-    def format_page_result(self, record: PageRecord) -> str:
-        """Format PageRecord for CROWN."""
-        if not record.success:
-            return f"browser > error: {record.error}"
-        lines = [
-            f"browser > {record.url}",
-            f"Title: {record.title}" if record.title else "",
-            f"Words: {record.word_count}",
-            "",
-            "CONTENT:",
-            record.content[:3000],
-        ]
-        return "\n".join(l for l in lines if l is not None)
-
-    def format_search_result(self, record: PageRecord, query: str) -> str:
-        """Format search result for CROWN."""
-        if not record.success:
-            return f"browser > search error: {record.error}"
-        return (
-            f"browser > search results for: {query}\n"
-            f"{record.content[:3000]}"
-        )
+    def format_result(
+        self, result: CalendarResult, comp: CalendarComprehension
+    ) -> str:
+        """Format calendar result for CROWN."""
+        if not result.success and result.error:
+            return f"calendar > error: {result.error}"
+        return comp.to_crown_context()
 ```
 
-### Task 3 — Register browser tools in tools.json
+### Task 3 — Register calendar tools in tools.json
 
-Add to inanna/config/tools.json under category "browser":
+Add to inanna/config/tools.json under category "calendar":
 
 ```json
-"browser_read": {
-  "display_name": "Read Web Page",
-  "description": "Fetch and read any web page URL",
-  "category": "browser",
+"calendar_today": {
+  "display_name": "Today's Events",
+  "description": "Read today's calendar events from Thunderbird",
+  "category": "calendar",
+  "requires_approval": false,
+  "enabled": true,
+  "parameters": {}
+},
+"calendar_upcoming": {
+  "display_name": "Upcoming Events",
+  "description": "Read upcoming calendar events for next N days",
+  "category": "calendar",
   "requires_approval": false,
   "enabled": true,
   "parameters": {
-    "url": "URL to fetch (https:// added if missing)",
-    "js": "Use JS rendering for dynamic pages (default: false)"
+    "days": "Number of days to look ahead (default: 7)"
   }
 },
-"browser_search": {
-  "display_name": "Web Search",
-  "description": "Search the web via DuckDuckGo and return results",
-  "category": "browser",
+"calendar_read_ics": {
+  "display_name": "Read ICS File",
+  "description": "Parse a .ics calendar file from the filesystem",
+  "category": "calendar",
   "requires_approval": false,
   "enabled": true,
   "parameters": {
-    "query": "Search query"
-  }
-},
-"browser_open": {
-  "display_name": "Open in Browser",
-  "description": "Open a URL in Firefox, Chrome, or Edge",
-  "category": "browser",
-  "requires_approval": true,
-  "enabled": true,
-  "parameters": {
-    "url": "URL to open",
-    "browser": "Browser to use: firefox, chrome, edge (default: firefox)"
+    "path": "Path to .ics file"
   }
 }
 ```
 
-Total tools after this phase: 38
+Total tools after this phase: 41
 
-### Task 4 — Wire BrowserWorkflows into server.py and main.py
+### Task 4 — Wire CalendarWorkflows into server.py and main.py
 
-Add BROWSER_TOOL_NAMES:
+Add CALENDAR_TOOL_NAMES:
 ```python
-BROWSER_TOOL_NAMES = {
-    "browser_read",
-    "browser_search",
-    "browser_open",
+CALENDAR_TOOL_NAMES = {
+    "calendar_today",
+    "calendar_upcoming",
+    "calendar_read_ics",
 }
 ```
 
 Instantiate in InterfaceServer.__init__:
 ```python
-from core.browser_workflows import BrowserWorkflows
-self.browser_workflows = BrowserWorkflows(self.desktop_faculty)
+from core.calendar_workflows import CalendarWorkflows
+self.calendar_workflows = CalendarWorkflows()
 ```
 
-Add run_browser_tool() following the established pattern.
-
-For browser_read and browser_search: no proposal.
-For browser_open: proposal required.
-
-Note on web_search vs browser_search:
-  web_search (existing): calls the search API via the engine
-  browser_search (new): fetches DuckDuckGo HTML results directly
-  Both coexist — web_search is preferred when API is available
+Add run_calendar_tool() following the established pattern.
+All 3 calendar tools require no proposal — observation only.
 
 ### Task 5 — Natural language routing in main.py
 
-Add browser domain hints to governance_signals.json:
+Add calendar domain hints to governance_signals.json:
 ```json
-"browser": [
-  "open url", "go to", "navigate to", "visit",
-  "read the page", "what does the page say",
-  "fetch", "browse to", "open website", "open site",
-  "search the web", "look up online", "find online",
-  "what is on", "read the website",
-  "open firefox", "open chrome", "open edge",
-  "open in browser", "show me the website"
+"calendar": [
+  "calendar", "events", "schedule", "agenda",
+  "what do i have today", "what is today", "today's events",
+  "this week", "next week", "upcoming", "appointments",
+  "do i have anything", "what is scheduled",
+  "show me my calendar", "my schedule",
+  "read ics", "open ics", "ics file"
 ]
 ```
 
-Add extract_browser_tool_request() in main.py:
+Add extract_calendar_tool_request() in main.py:
 
 Patterns:
-  "go to [url]" → browser_open(url=url)
-  "open [url] in firefox" → browser_open(url, browser=firefox)
-  "read the page at [url]" → browser_read(url=url)
-  "fetch [url]" → browser_read(url=url)
-  "search the web for [query]" → browser_search(query=query)
-  "look up [query] online" → browser_search(query=query)
-  "what is [topic]?" → browser_search(query=topic)
-    (only when web_search is not triggered first)
+  "what do I have today" → calendar_today()
+  "show my calendar today" → calendar_today()
+  "upcoming events" → calendar_upcoming(days=7)
+  "next week" → calendar_upcoming(days=14)
+  "next N days" → calendar_upcoming(days=N)
+  "read ics file at [path]" → calendar_read_ics(path)
 
 ### Task 6 — Update help_system.py
 
-Add BROWSER section to HELP_COMMON:
+Add CALENDAR section to HELP_COMMON:
 ```
-  BROWSER (Firefox, Chrome, Edge)
-    "read the page at https://example.com"
-                                       Fetch and read URL (no approval)
-    "search the web for NixOS install" Web search (no approval)
-    "go to https://example.com"        Open in Firefox (approval)
-    "open https://example.com in chrome"
-                                       Open in Chrome (approval)
+  CALENDAR (Thunderbird / Google Calendar)
+    "what do I have today"         Today's events (no approval)
+    "upcoming events"              Next 7 days (no approval)
+    "next 14 days"                 Next 14 days (no approval)
+    "read ics file at ~/path.ics"  Read .ics file (no approval)
 
-  Note: passwords and financial forms are never accessible
-  Internal/local addresses (localhost, 192.168.x.x) are blocked
+  Note: Google Calendar events sync via Thunderbird Lightning.
+  Open Thunderbird to trigger a sync if events are missing.
+  CalDAV direct connection available in future phase.
 ```
 
 ### Task 7 — Update identity.py
 
-CURRENT_PHASE = "Cycle 8 - Phase 8.5 - Browser Faculty"
+CURRENT_PHASE = "Cycle 8 - Phase 8.6 - Calendar Faculty"
 
-### Task 8 — Tests (all offline — no actual network calls)
+### Task 8 — Tests (all offline — no actual calendar access)
 
-Create inanna/tests/test_browser_workflows.py (20 tests):
+Create inanna/tests/test_calendar_workflows.py (20 tests):
 
-  - BrowserWorkflows instantiates
-  - BrowserDirectFetcher instantiates
-  - PlaywrightBrowser instantiates
-  - is_safe_url("https://example.com") returns True
-  - is_safe_url("http://localhost:8080") returns False
-  - is_safe_url("http://192.168.1.1") returns False
-  - is_safe_url("file:///etc/passwd") returns False
-  - clean_html_to_text removes script and style tags
-  - clean_html_to_text preserves text content
-  - extract_title finds title in HTML
-  - extract_title returns empty string when no title
-  - PageRecord defaults are correct
-  - PageRecord.success True when content present
-  - PageRecord.success False when error set
-  - PageRecord.summary_line includes URL
-  - BrowserDirectFetcher._fetch_urllib handles connection error gracefully
-    (mock urllib to raise URLError)
-  - BrowserDirectFetcher.fetch blocks internal URLs
-  - BROWSER_TOOL_NAMES contains all 3 tools
-  - browser_read in tools.json with requires_approval=False
-  - browser_open in tools.json with requires_approval=True
+  - CalendarWorkflows instantiates
+  - ThunderbirdCalendarReader instantiates
+  - ICSFileReader instantiates
+  - CalDAVClient instantiates
+  - CalDAVClient.is_configured() returns False (not yet configured)
+  - CalendarEvent defaults are correct
+  - CalendarEvent.start_str returns empty string when start is None
+  - CalendarEvent.start_str returns formatted date string
+  - CalendarEvent.one_line includes title
+  - CalendarResult.summary_line includes event count
+  - find_thunderbird_calendar_db returns a path or None (no exception)
+  - ThunderbirdCalendarReader.is_available() returns bool
+  - _tb_ts_to_datetime handles None gracefully
+  - _tb_ts_to_datetime converts valid timestamp correctly
+  - build_calendar_comprehension returns correct total_events
+  - build_calendar_comprehension sets has_remote_calendar=True
+  - CalendarComprehension.to_crown_context includes period label
+  - CalendarComprehension.to_crown_context notes empty local cache
+    and mentions Google Calendar sync (when 0 events)
+  - CALENDAR_TOOL_NAMES contains all 3 tools
+  - calendar_today in tools.json with requires_approval=False
 
-### Task 9 — docs/nixos_browser_faculty.md (mandatory)
+### Task 9 — docs/nixos_calendar_faculty.md (mandatory)
 
-Create: docs/nixos_browser_faculty.md
+Create: docs/nixos_calendar_faculty.md
 
 Document:
-  - NixOS packages for browser libraries:
-      python311Packages.httpx
-      python311Packages.beautifulsoup4
-      python311Packages.lxml
-      python311Packages.playwright (note: browser binaries separate)
-  - Firefox NixOS package: programs.firefox.enable = true
-  - Playwright on NixOS: special considerations for browser binaries
-  - Environment variables for browser paths
-  - How BrowserDirectFetcher works without a visible browser
-  - Level 1 vs Level 2 on NixOS
+  - NixOS packages:
+      python311Packages.icalendar
+      python311Packages.caldav (optional)
+      python311Packages.recurring-ical-events
+  - Thunderbird on NixOS: programs.thunderbird.enable = true
+  - Calendar SQLite path on NixOS:
+      ~/.thunderbird/{profile}/calendar-data/local.sqlite
+  - Google Calendar CalDAV URL format
+  - How to trigger Thunderbird calendar sync via CLI:
+      thunderbird -calendar (opens calendar view, triggers sync)
+  - Future: CalDAV credentials configuration path
 
 Update test_identity.py, test_operator.py, test_commands.py.
 
@@ -707,73 +805,88 @@ Update test_identity.py, test_operator.py, test_commands.py.
 
 ## Permitted file changes
 
-inanna/core/browser_workflows.py       <- NEW
+inanna/core/calendar_workflows.py      <- NEW
 inanna/main.py                         <- MODIFY
 inanna/ui/server.py                    <- MODIFY
-inanna/config/tools.json               <- MODIFY: add 3 browser tools
-inanna/config/governance_signals.json  <- MODIFY: browser hints
-inanna/requirements.txt                <- MODIFY: beautifulsoup4, lxml
-inanna/core/help_system.py             <- MODIFY: browser section
+inanna/config/tools.json               <- MODIFY: 3 calendar tools
+inanna/config/governance_signals.json  <- MODIFY: calendar hints
+inanna/requirements.txt                <- MODIFY: icalendar, caldav
+inanna/core/help_system.py             <- MODIFY: calendar section
 inanna/identity.py                     <- MODIFY
-inanna/tests/test_browser_workflows.py <- NEW
+inanna/tests/test_calendar_workflows.py <- NEW
 inanna/tests/test_identity.py          <- MODIFY
 inanna/tests/test_operator.py          <- MODIFY
 inanna/tests/test_commands.py          <- MODIFY
-docs/nixos_browser_faculty.md          <- NEW (mandatory)
+docs/nixos_calendar_faculty.md         <- NEW (mandatory)
 
 ---
 
 ## What You Are NOT Building
 
-- No form filling in this phase (future extension)
-- No cookie/session management
-- No login to web services via browser
-- No screenshot analysis (Level 1 is text-only)
-- No calendar (Phase 8.6)
-- No voice changes, no auth changes
-- Do NOT make actual network calls in tests
+- No event creation in this phase (future extension)
+- No event deletion
+- No CalDAV credential configuration
+- No recurring event expansion (infrastructure present, not wired)
+- No browser automation, no email changes
+- Do NOT attempt to open Thunderbird in tests
+- Do NOT make network calls in tests
+
+---
+
+## Important Note for Codex: Zero Events Is Not a Bug
+
+When ThunderbirdCalendarReader.read_today() returns 0 events:
+  This is CORRECT BEHAVIOUR.
+  The local SQLite is empty because events are in Google Calendar
+  (remote CalDAV, not yet synced locally).
+  The CalendarComprehension.to_crown_context() MUST explain this
+  clearly to ZAERA — tell her to open Thunderbird to sync,
+  then ask again. Do NOT say "no events found" without context.
+  Do NOT invent events. Do NOT hallucinate.
 
 ---
 
 ## Definition of Done
 
-- [ ] core/browser_workflows.py complete
-- [ ] beautifulsoup4 + lxml installed
-- [ ] playwright chromium installed (graceful fallback if fails)
-- [ ] 3 browser tools in tools.json (38 total)
-- [ ] is_safe_url blocks localhost and internal IPs
-- [ ] BrowserWorkflows wired into server.py and main.py
-- [ ] Natural language routing for browser commands
-- [ ] help_system.py updated
-- [ ] docs/nixos_browser_faculty.md written
-- [ ] CURRENT_PHASE = "Cycle 8 - Phase 8.5 - Browser Faculty"
+- [ ] core/calendar_workflows.py complete with all 3 levels
+- [ ] icalendar installed, caldav installed (or graceful skip)
+- [ ] 3 calendar tools in tools.json (41 total)
+- [ ] CALENDAR_TOOL_NAMES in main.py
+- [ ] CalendarWorkflows wired into server.py
+- [ ] Natural language routing for calendar commands
+- [ ] help_system.py updated with calendar section
+- [ ] to_crown_context correctly explains empty local cache
+- [ ] docs/nixos_calendar_faculty.md written
+- [ ] CURRENT_PHASE = "Cycle 8 - Phase 8.6 - Calendar Faculty"
 - [ ] All tests pass: py -3 -m unittest discover -s tests
-- [ ] Pushed as cycle8-phase5-complete
+- [ ] Pushed as cycle8-phase6-complete
 
 ---
 
 ## Handoff
 
-Commit: cycle8-phase5-complete
+Commit: cycle8-phase6-complete
 Push immediately to origin/main.
-Report: docs/implementation/CYCLE8_PHASE5_REPORT.md
+Report: docs/implementation/CYCLE8_PHASE6_REPORT.md
 
 The report MUST include:
-  - Whether Playwright chromium installed successfully
-  - Which fallback is active if not
-  - Test of browser_read against a real URL (if network available)
-  - NixOS equivalents for all new dependencies
+  - icalendar and caldav install status
+  - ThunderbirdCalendarReader availability check result
+  - Thunderbird SQLite path confirmed
+  - NixOS equivalents for all dependencies
+  - Note on zero events and why this is correct
 
-Stop. Do not begin Phase 8.6 without new CURRENT_PHASE.md.
+Stop. Do not begin Phase 8.7 without new CURRENT_PHASE.md.
 
 ---
 
 *Written by: Claude (Command Center)*
 *Guardian approval: ZAERA*
 *Date: 2026-04-22*
-*The browser is the window to the world.*
-*INANNA reads through it.*
-*INANNA never touches passwords.*
-*INANNA never submits without your word.*
-*The web is observation.*
-*Action requires blessing.*
+*Time is the architecture of intention.*
+*The calendar is the map of what matters.*
+*INANNA reads it honestly —*
+*zero events with context*
+*is more truthful than invented presence.*
+*When the hardware arrives,*
+*CalDAV will speak the full truth.*
