@@ -93,9 +93,10 @@ class Engine:
 
         try:
             self._call_openai_compatible(
-                [{"role": "user", "content": "Connection check. Reply with ok."}]
+                [{"role": "user", "content": "hi"}],
+                timeout=2,
             )
-        except (OSError, ValueError, error.URLError):
+        except Exception:
             self.fallback_mode = True
             self._connected = False
             return False
@@ -289,7 +290,11 @@ class Engine:
             return f"{text} (from realm: {realm_name})"
         return text
 
-    def _call_openai_compatible(self, messages: list[dict[str, str]]) -> str:
+    def _call_openai_compatible(
+        self,
+        messages: list[dict[str, str]],
+        timeout: float | None = None,
+    ) -> str:
         endpoint = self.model_url.rstrip("/")
         if not endpoint.endswith("/chat/completions"):
             endpoint = f"{endpoint}/chat/completions"
@@ -308,7 +313,8 @@ class Engine:
             headers["Authorization"] = f"Bearer {self.api_key}"
 
         response = request.urlopen(
-            request.Request(endpoint, data=payload, headers=headers, method="POST")
+            request.Request(endpoint, data=payload, headers=headers, method="POST"),
+            timeout=timeout,
         )
         body = json.loads(response.read().decode("utf-8"))
         return body["choices"][0]["message"]["content"].strip()

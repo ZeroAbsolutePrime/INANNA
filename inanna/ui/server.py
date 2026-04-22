@@ -451,13 +451,14 @@ class InterfaceServer:
         print(
             f"Auto-login: {self.guardian_user.display_name} ({self.guardian_user.role}) | session active"
         )
-        sync_profile_grounding(
-            self.engine,
-            self.profile_manager,
-            self.active_user,
-            self.active_token,
-            self.reflective_memory,
-        )
+        if self.engine._connected:
+            sync_profile_grounding(
+                self.engine,
+                self.profile_manager,
+                self.active_user,
+                self.active_token,
+                self.reflective_memory,
+            )
         self.startup_context = self.memory.load_startup_context(
             user_id=self._memory_scope_user_id()
         )

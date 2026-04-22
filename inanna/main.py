@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import os
 import re
+import threading
 import time
 from dataclasses import MISSING
 from datetime import datetime, timezone
@@ -1131,7 +1132,7 @@ def extract_communication_tool_request(
         return None
 
     if _has_email_comm_signal(lowered):
-        intent_result = extract_intent(
+        intent_result = _extract_intent_with_timeout(
             normalized,
             conversation_context=conversation_context,
         )
@@ -1269,11 +1270,11 @@ def extract_email_tool_request(
         return None
 
     if _has_email_comm_signal(lowered):
-        intent_result = extract_intent(
+        intent_result = _extract_intent_with_timeout(
             normalized,
             conversation_context=conversation_context,
         )
-        if intent_result.success and intent_result.confidence >= 0.75:
+        if intent_result is not None and intent_result.success and intent_result.confidence >= 0.75:
             tool_request = intent_result.to_tool_request()
             if tool_request is not None and str(tool_request.get("tool", "")) in EMAIL_TOOL_NAMES:
                 return tool_request
@@ -1492,6 +1493,27 @@ def detect_email_tool_action(
 def _has_email_comm_signal(text_lower: str) -> bool:
     lowered = str(text_lower or "").lower()
     return any(signal in lowered for signal in EMAIL_COMM_SIGNAL_FALLBACKS)
+
+
+def _extract_intent_with_timeout(
+    user_input: str,
+    conversation_context: list[dict[str, str]] | None = None,
+    timeout_s: float = 3.0,
+) -> IntentResult | None:
+    holder: list[IntentResult | None] = [None]
+
+    def _run_intent() -> None:
+        holder[0] = extract_intent(
+            user_input,
+            conversation_context=conversation_context,
+        )
+
+    thread = threading.Thread(target=_run_intent, daemon=True)
+    thread.start()
+    thread.join(timeout=timeout_s)
+    if thread.is_alive():
+        return None
+    return holder[0]
 
 
 def detect_desktop_tool_action(
