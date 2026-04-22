@@ -1,9 +1,9 @@
-# CURRENT PHASE: Cycle 8 - Phase 8.4 - Document Faculty
+# CURRENT PHASE: Cycle 8 - Phase 8.5 - Browser Faculty
 **Status: ACTIVE**
 **Authorized by: ZAERA (Guardian) + Claude (Command Center)**
 **Date opened: 2026-04-22**
 **Cycle: 8 - The Desktop Bridge**
-**Replaces: Cycle 8 Phase 8.3c - The Startup Fix (COMPLETE)**
+**Replaces: Cycle 8 Phase 8.4 - Document Faculty (COMPLETE)**
 
 ---
 
@@ -13,938 +13,767 @@
 2. docs/cycle8_master_plan.md
 3. docs/cycle9_master_plan.md
 4. docs/implementation/CURRENT_PHASE.md (this file)
-5. CODEX_DOCTRINE.md (canonical location)
+5. CODEX_DOCTRINE.md
 6. ABSOLUTE_PROTOCOL.md
 
-All documentation produced in this phase must be complete,
-honest, and permanent. Future AI reading this project
-depends on what is written here.
+All documentation in this phase must be complete and permanent.
 
 ---
 
 ## Current System State
 
-LibreOffice 24.2.4.2 installed:
-  swriter.exe   (Writer — word processor)
-  scalc.exe     (Calc — spreadsheet)
-  simpress.exe  (Impress — presentations)
+Browsers installed:
+  Firefox    (firefox.exe)
+  Chrome     (chrome.exe)
+  Edge       (Microsoft.Edge v147.0.3912.72)
 
-Python document libraries: NOT YET INSTALLED
-  python-docx, python-pptx, openpyxl, pymupdf — all missing
+Python libraries available:
+  playwright: INSTALLED  ← primary browser automation
+  httpx:      INSTALLED  ← fast HTTP client for direct fetching
+  urllib:     stdlib     ← fallback, always available
+  selenium:   not installed
+  beautifulsoup4: not installed  ← must install
 
-Tools registered: 31 across 8 categories
-Tests passing: 520
-Phase: Cycle 8 - Phase 8.3c - The Startup Fix
+Tools registered: 35 across 9 categories
+Tests passing: 543
+Phase: Cycle 8 - Phase 8.4 - Document Faculty
 
 ---
 
 ## What This Phase Is
 
-Phase 8.3 gave INANNA access to email.
-Phase 8.4 gives INANNA access to documents.
+The Browser Faculty gives INANNA the ability to:
+  - Fetch web pages and extract readable content
+  - Navigate to URLs
+  - Search the web for current information
+  - Fill forms and click buttons (governed)
+  - Read page content without opening a visual browser
 
-Documents are the second most important communication
-medium after email. INANNA must be able to:
-  - Read any document (ODT, DOCX, PDF, TXT)
-  - Write a new document from natural language
-  - Edit existing documents
-  - Save and export documents
-  - Summarize long documents
-
-Unlike email, documents exist as files. The Document Faculty
-works at two levels:
-  Level 1 — File level: read/write document files directly
-             using Python libraries (python-docx, etc.)
-             No UI automation needed. Fast, reliable, exact.
-  Level 2 — Application level: open documents in LibreOffice
-             and interact with the UI via Desktop Faculty
-             (for complex editing, formatting, macros)
-
-Level 1 is the primary approach — it is hardware-agnostic,
-works without LibreOffice running, and produces no hallucination.
-Level 2 is used only when Level 1 cannot accomplish the task
-(e.g., rendering a document to PDF with LibreOffice formatting).
-
-This follows the same ground-truth principle as ThunderbirdDirectReader:
-access data at the source, not through the UI.
+This is different from web_search (which queries a search API).
+The Browser Faculty works with any URL — local, intranet, public.
 
 ---
 
-## Architecture Principle
+## Architecture: Two Levels
+
+### Level 1 — Headless HTTP (primary, no browser needed)
+
+For reading web pages, INANNA does NOT need to open Firefox.
+It fetches the URL directly with httpx and parses the HTML.
+This is fast, reliable, and works without any visible browser.
 
 ```
-Document request
-    ↓
-DocumentWorkflows.read_document(path)
-    ↓
-Level 1: DocumentDirectReader
-  ├── .txt  → open() read
-  ├── .md   → open() read
-  ├── .docx → python-docx extract_text()
-  ├── .odt  → odfpy or zipfile XML parse
-  ├── .pdf  → pymupdf page.get_text()
-  └── .xlsx / .ods → openpyxl / odfpy
-    ↓
-Returns: DocumentRecord(title, content, pages, word_count)
-    ↓
-Comprehension: structure + summary + key_points
-    ↓
-CROWN presents naturally
+"read the page at https://example.com"
+  → BrowserDirectFetcher.fetch(url)
+  → httpx.get(url) → HTML
+  → extract readable text (strip tags)
+  → return PageRecord(title, content, url)
+  → CROWN summarizes
 ```
 
-Level 2 (LibreOffice UI) used only for:
-  - Creating richly formatted documents
-  - Rendering to PDF via LibreOffice export
-  - Complex table editing
-  - Mail merge operations
+This covers 90% of use cases.
+No UI automation. No browser process. No screenshots.
+Works on any hardware. Works on NixOS headlessly.
+
+### Level 2 — Playwright (for JS-heavy pages and form interaction)
+
+Some pages require JavaScript to render content.
+For these, Playwright opens a headless browser process,
+navigates, waits for JS, and reads the DOM.
+
+```
+"fill the contact form at https://example.com/contact"
+  → PlaywrightBrowser.navigate(url)
+  → page.fill('#name', 'ZAERA')   [proposal required]
+  → page.click('submit')          [mandatory proposal]
+  → return result
+```
+
+Playwright is used only when Level 1 is insufficient.
+Playwright is HEADLESS by default — no visible browser window.
+Using it with a visible browser requires explicit request.
+
+### Level 3 — Desktop Faculty (visible browser control)
+
+When the user explicitly wants to control the visible Firefox
+window (e.g. "open this in Firefox"), the Desktop Faculty
+handles it via AT-SPI2/Windows UI Automation.
+
+---
+
+## Governance Model
+
+```
+OBSERVATION (no proposal needed):
+  - Fetching any public URL and reading content
+  - Reading current page title/URL
+  - Searching for information
+
+LIGHT ACTION (proposal required):
+  - Navigating to a URL in a visible browser
+  - Opening a new browser tab
+  - Typing into a search field
+
+CONSEQUENTIAL ACTION (always mandatory proposal):
+  - Submitting any form
+  - Clicking "Submit", "Buy", "Confirm", "Delete"
+  - Filling in personal data fields
+  - Any action that sends data to a server
+
+FORBIDDEN (never, regardless of approval):
+  - Entering passwords into web forms
+  - Accessing banking or payment pages
+  - Actions involving financial transactions
+  - Bypassing CAPTCHAs
+```
 
 ---
 
 ## What You Are Building
 
-### Task 1 — Add Python document libraries to requirements.txt
+### Task 1 — Install missing libraries
 
-Add to inanna/requirements.txt:
-```
-# Document Faculty
-python-docx>=1.1.0
-python-pptx>=0.6.23
-openpyxl>=3.1.0
-pymupdf>=1.24.0
-odfpy>=1.4.1
+```bash
+pip install beautifulsoup4 lxml --break-system-packages
 ```
 
-Also pip install them immediately:
-```
-pip install python-docx python-pptx openpyxl pymupdf odfpy --break-system-packages
-```
-
-Verify each installs cleanly. If pymupdf fails (it requires
-build tools), use pypdf as fallback for PDF:
-```
-pip install pypdf --break-system-packages
+Playwright browsers (headless Chromium):
+```bash
+py -3 -m playwright install chromium
 ```
 
-### Task 2 — inanna/core/document_workflows.py
+Note: if playwright install fails (requires network),
+implement a graceful fallback to httpx-only mode.
 
-Create: inanna/core/document_workflows.py
+### Task 2 — inanna/core/browser_workflows.py
+
+Create: inanna/core/browser_workflows.py
 
 ```python
 """
-INANNA NYX Document Faculty
-Reads, writes, and manages documents.
+INANNA NYX Browser Faculty
+Fetches web pages, reads content, and interacts with web UIs.
 
-Supported formats:
-  Read:   .txt .md .docx .odt .pdf .xlsx .ods .csv
-  Write:  .txt .md .docx .odt
-  Export: .pdf (via LibreOffice CLI)
+Two-level architecture:
+  Level 1: BrowserDirectFetcher — httpx + BeautifulSoup
+           No browser process needed. Fast. Works headlessly.
+           Primary approach for reading public web pages.
 
-Architecture:
-  Level 1 (primary): Direct file reading via Python libraries
-    - No UI automation needed
-    - Works without LibreOffice running
-    - Ground truth data — no hallucination
-  Level 2 (secondary): LibreOffice Desktop Faculty
-    - Used for complex formatting tasks
-    - Requires LibreOffice to be installed
+  Level 2: PlaywrightBrowser — headless Chromium via Playwright
+           For JS-heavy pages and form interaction.
+           Used only when Level 1 is insufficient.
 
 Governance:
-  Reading documents: no proposal required (observation)
-  Writing new documents: proposal required
-  Editing existing documents: proposal required (consequential)
-  Deleting documents: FORBIDDEN (by design, Phase 7 rule)
+  Fetching/reading URLs: no proposal (observation)
+  Navigating visible browser: proposal required
+  Submitting forms: ALWAYS mandatory proposal
+  Entering passwords: FORBIDDEN
 
-See docs/platform_architecture.md for full platform context.
+See docs/platform_architecture.md for platform context.
 See docs/cycle8_master_plan.md for Cycle 8 architecture.
 """
 from __future__ import annotations
 
-import csv
-import io
-import zipfile
 from dataclasses import dataclass, field
-from pathlib import Path
 from typing import Optional
+from urllib.parse import urlparse
 
 from core.desktop_faculty import DesktopFaculty
 
 
 @dataclass
-class DocumentRecord:
-    """Structured representation of a document's content."""
-    path: str = ""
+class PageRecord:
+    """Structured content extracted from a web page."""
+    url: str = ""
     title: str = ""
-    format: str = ""         # txt, md, docx, odt, pdf, xlsx, csv
-    content: str = ""        # full text content
+    content: str = ""      # readable text, stripped of HTML
+    links: list[str] = field(default_factory=list)
     word_count: int = 0
-    page_count: int = 0
-    sheet_names: list[str] = field(default_factory=list)  # for spreadsheets
+    status_code: int = 0
     error: Optional[str] = None
 
     @property
     def success(self) -> bool:
-        return self.error is None and bool(self.content or self.sheet_names)
+        return self.error is None and bool(self.content)
 
     def summary_line(self) -> str:
-        parts = [f"doc > {self.format}"]
+        parts = [f"browser > {self.url[:60]}"]
         if self.title:
             parts.append(self.title[:50])
         if self.word_count:
             parts.append(f"{self.word_count} words")
-        if self.page_count:
-            parts.append(f"{self.page_count} pages")
         return " | ".join(parts)
 
 
 @dataclass
-class DocumentWriteResult:
-    """Result of a document write operation."""
+class BrowserActionResult:
+    """Result of a browser interaction (click, fill, navigate)."""
     success: bool
-    path: str = ""
-    format: str = ""
-    word_count: int = 0
+    action: str = ""       # navigate | fill | click | search
+    url: str = ""
+    output: str = ""
+    consequential: bool = False
     error: Optional[str] = None
 
 
-# ── DOCUMENT DIRECT READER ───────────────────────────────────────────
-# Reads document files directly — no UI automation, no hallucination.
-# This is the primary reading path for all document types.
+# URL safety check — prevents accessing sensitive local resources
+FORBIDDEN_URL_PATTERNS = [
+    "localhost",
+    "127.0.0.1",
+    "0.0.0.0",
+    "::1",
+    "file://",
+    "192.168.",
+    "10.",
+    "172.16.",
+]
 
-class DocumentDirectReader:
+
+def is_safe_url(url: str) -> bool:
     """
-    Reads documents directly from the file system.
-    No LibreOffice required. No UI automation.
-    Returns structured DocumentRecord objects.
+    Returns True if the URL is safe to fetch.
+    Blocks localhost, internal networks, and file:// URLs
+    to prevent SSRF and local file disclosure.
+    Exception: allow localhost only for explicitly configured
+    internal services (future: whitelist via config).
+    """
+    url_lower = url.lower()
+    return not any(pattern in url_lower for pattern in FORBIDDEN_URL_PATTERNS)
+
+
+def clean_html_to_text(html: str) -> str:
+    """
+    Extract readable text from HTML.
+    Uses BeautifulSoup if available, falls back to regex.
+    """
+    try:
+        from bs4 import BeautifulSoup
+        soup = BeautifulSoup(html, "lxml")
+        # Remove script, style, nav, footer
+        for tag in soup(["script", "style", "nav", "footer",
+                         "header", "aside", "noscript"]):
+            tag.decompose()
+        text = soup.get_text(separator="\n", strip=True)
+        # Collapse excessive blank lines
+        import re
+        text = re.sub(r"\n{3,}", "\n\n", text)
+        return text.strip()
+    except ImportError:
+        # Fallback: simple regex tag stripper
+        import re
+        text = re.sub(r"<[^>]+>", " ", html)
+        text = re.sub(r"\s{2,}", " ", text)
+        return text.strip()
+
+
+def extract_title(html: str) -> str:
+    """Extract page title from HTML."""
+    import re
+    m = re.search(r"<title[^>]*>(.*?)</title>", html, re.IGNORECASE | re.DOTALL)
+    return m.group(1).strip() if m else ""
+
+
+# ── LEVEL 1: DIRECT HTTP FETCHER ─────────────────────────────────────
+
+class BrowserDirectFetcher:
+    """
+    Fetches web pages directly using httpx.
+    No browser process. Fast. Headless.
+    Primary approach for reading public web content.
     """
 
-    def read(self, path: str | Path) -> DocumentRecord:
+    DEFAULT_TIMEOUT = 15  # seconds
+    MAX_CONTENT_BYTES = 2 * 1024 * 1024  # 2MB
+
+    def fetch(self, url: str) -> PageRecord:
         """
-        Read any supported document format.
-        Auto-detects format from file extension.
+        Fetch a URL and return readable content.
+        No proposal needed — observation only.
         """
-        p = Path(path).expanduser().resolve()
-        if not p.exists():
-            return DocumentRecord(
-                path=str(p),
-                error=f"File not found: {p}"
+        if not is_safe_url(url):
+            return PageRecord(
+                url=url,
+                error=f"URL blocked: internal/local addresses not accessible"
             )
 
-        suffix = p.suffix.lower()
-        record = DocumentRecord(path=str(p), format=suffix.lstrip("."))
+        # Ensure URL has scheme
+        if not url.startswith(("http://", "https://")):
+            url = "https://" + url
 
         try:
-            if suffix in (".txt", ".md", ".rst", ".log"):
-                return self._read_text(p, record)
-            elif suffix == ".docx":
-                return self._read_docx(p, record)
-            elif suffix == ".odt":
-                return self._read_odt(p, record)
-            elif suffix == ".pdf":
-                return self._read_pdf(p, record)
-            elif suffix in (".xlsx", ".xls"):
-                return self._read_xlsx(p, record)
-            elif suffix == ".ods":
-                return self._read_ods(p, record)
-            elif suffix == ".csv":
-                return self._read_csv(p, record)
-            else:
-                record.error = f"Unsupported format: {suffix}"
-                return record
-        except Exception as e:
-            record.error = str(e)
-            return record
+            import httpx
+            headers = {
+                "User-Agent": (
+                    "Mozilla/5.0 (compatible; INANNA-NYX/1.0; "
+                    "+https://github.com/ZeroAbsolutePrime/INANNA)"
+                ),
+                "Accept": "text/html,application/xhtml+xml,*/*",
+                "Accept-Language": "en,es;q=0.9,ca;q=0.8",
+            }
+            with httpx.Client(
+                timeout=self.DEFAULT_TIMEOUT,
+                follow_redirects=True,
+                headers=headers,
+            ) as client:
+                response = client.get(url)
 
-    def _read_text(self, p: Path, r: DocumentRecord) -> DocumentRecord:
-        content = p.read_text(encoding="utf-8", errors="replace")
-        r.title = p.stem
-        r.content = content
-        r.word_count = len(content.split())
-        r.page_count = max(1, content.count("\f") + 1)
-        return r
-
-    def _read_docx(self, p: Path, r: DocumentRecord) -> DocumentRecord:
-        try:
-            import docx
-            doc = docx.Document(str(p))
-            paragraphs = [para.text for para in doc.paragraphs if para.text.strip()]
-            # Extract title from first heading or filename
-            for para in doc.paragraphs:
-                if para.style.name.startswith("Heading") and para.text.strip():
-                    r.title = para.text.strip()
-                    break
-            if not r.title:
-                r.title = p.stem
-            r.content = "\n".join(paragraphs)
-            r.word_count = len(r.content.split())
-            # Approximate page count from section breaks
-            r.page_count = max(1, len(doc.sections))
-            return r
-        except ImportError:
-            r.error = "python-docx not installed. Run: pip install python-docx"
-            return r
-
-    def _read_odt(self, p: Path, r: DocumentRecord) -> DocumentRecord:
-        # ODT is a ZIP containing XML — readable without odfpy
-        try:
-            import odf.opendocument
-            import odf.text
-            doc = odf.opendocument.load(str(p))
-            texts = []
-            for elem in doc.text.childNodes:
-                if hasattr(elem, 'data'):
-                    texts.append(elem.data)
-                elif elem.qname[1] == 'p':
-                    text = elem.firstChild.data if elem.firstChild else ""
-                    if text.strip():
-                        texts.append(text)
-            r.title = p.stem
-            r.content = "\n".join(t for t in texts if t.strip())
-            r.word_count = len(r.content.split())
-            return r
-        except ImportError:
-            pass
-        # Fallback: read XML directly from ZIP
-        try:
-            with zipfile.ZipFile(str(p)) as z:
-                with z.open("content.xml") as f:
-                    import xml.etree.ElementTree as ET
-                    tree = ET.parse(f)
-                    texts = []
-                    for elem in tree.iter():
-                        if elem.text and elem.text.strip():
-                            texts.append(elem.text.strip())
-                    r.title = p.stem
-                    r.content = "\n".join(texts)
-                    r.word_count = len(r.content.split())
-                    return r
-        except Exception as e:
-            r.error = f"Could not read ODT: {e}"
-            return r
-
-    def _read_pdf(self, p: Path, r: DocumentRecord) -> DocumentRecord:
-        try:
-            import fitz  # pymupdf
-            doc = fitz.open(str(p))
-            r.page_count = len(doc)
-            r.title = doc.metadata.get("title") or p.stem
-            pages = []
-            for page in doc:
-                pages.append(page.get_text())
-            r.content = "\n\n".join(pages)
-            r.word_count = len(r.content.split())
-            doc.close()
-            return r
-        except ImportError:
-            pass
-        # Fallback: pypdf
-        try:
-            import pypdf
-            reader = pypdf.PdfReader(str(p))
-            r.page_count = len(reader.pages)
-            r.title = (reader.metadata.get("/Title") or p.stem) if reader.metadata else p.stem
-            pages = [page.extract_text() or "" for page in reader.pages]
-            r.content = "\n\n".join(pages)
-            r.word_count = len(r.content.split())
-            return r
-        except ImportError:
-            r.error = "No PDF library installed. Run: pip install pymupdf"
-            return r
-
-    def _read_xlsx(self, p: Path, r: DocumentRecord) -> DocumentRecord:
-        try:
-            import openpyxl
-            wb = openpyxl.load_workbook(str(p), read_only=True, data_only=True)
-            r.title = p.stem
-            r.sheet_names = wb.sheetnames
-            lines = []
-            for sheet_name in wb.sheetnames:
-                ws = wb[sheet_name]
-                lines.append(f"=== Sheet: {sheet_name} ===")
-                for row in ws.iter_rows(max_row=100, values_only=True):
-                    row_text = "\t".join(
-                        str(v) if v is not None else "" for v in row
+            content_type = response.headers.get("content-type", "")
+            if "text/html" not in content_type and "text/plain" not in content_type:
+                # Non-HTML content — return raw or note
+                if "application/pdf" in content_type:
+                    return PageRecord(
+                        url=str(response.url),
+                        title="PDF document",
+                        content=f"[PDF at {url}] — use doc_read to read PDF files.",
+                        status_code=response.status_code,
                     )
-                    if row_text.strip():
-                        lines.append(row_text)
-            r.content = "\n".join(lines)
-            r.word_count = len(r.content.split())
-            wb.close()
-            return r
-        except ImportError:
-            r.error = "openpyxl not installed. Run: pip install openpyxl"
-            return r
-
-    def _read_ods(self, p: Path, r: DocumentRecord) -> DocumentRecord:
-        # ODS is a ZIP containing XML
-        try:
-            with zipfile.ZipFile(str(p)) as z:
-                with z.open("content.xml") as f:
-                    import xml.etree.ElementTree as ET
-                    tree = ET.parse(f)
-                    ns = {
-                        "table": "urn:oasis:names:tc:opendocument:xmlns:table:1.0",
-                        "text":  "urn:oasis:names:tc:opendocument:xmlns:text:1.0",
-                    }
-                    lines = []
-                    for sheet in tree.iter("{urn:oasis:names:tc:opendocument:xmlns:table:1.0}table"):
-                        name = sheet.get("{urn:oasis:names:tc:opendocument:xmlns:table:1.0}name", "")
-                        lines.append(f"=== Sheet: {name} ===")
-                        r.sheet_names.append(name)
-                        for row in sheet.iter("{urn:oasis:names:tc:opendocument:xmlns:table:1.0}table-row"):
-                            cells = []
-                            for cell in row.iter("{urn:oasis:names:tc:opendocument:xmlns:table:1.0}table-cell"):
-                                t = cell.find("{urn:oasis:names:tc:opendocument:xmlns:text:1.0}p")
-                                cells.append(t.text if t is not None and t.text else "")
-                            row_text = "\t".join(cells)
-                            if row_text.strip():
-                                lines.append(row_text)
-                    r.title = p.stem
-                    r.content = "\n".join(lines)
-                    r.word_count = len(r.content.split())
-                    return r
-        except Exception as e:
-            r.error = f"Could not read ODS: {e}"
-            return r
-
-    def _read_csv(self, p: Path, r: DocumentRecord) -> DocumentRecord:
-        try:
-            content = p.read_text(encoding="utf-8", errors="replace")
-            reader = csv.reader(io.StringIO(content))
-            rows = list(reader)
-            r.title = p.stem
-            r.content = "\n".join("\t".join(row) for row in rows[:200])
-            r.word_count = sum(len(row) for row in rows)
-            return r
-        except Exception as e:
-            r.error = f"Could not read CSV: {e}"
-            return r
-
-
-# ── DOCUMENT WRITER ──────────────────────────────────────────────────
-
-class DocumentWriter:
-    """
-    Writes new documents to the file system.
-    Supports .txt, .md, .docx formats.
-    Writing always requires proposal approval (governed).
-    """
-
-    def write_text(
-        self, path: str | Path, content: str
-    ) -> DocumentWriteResult:
-        """Write plain text or markdown file."""
-        p = Path(path).expanduser().resolve()
-        try:
-            p.parent.mkdir(parents=True, exist_ok=True)
-            p.write_text(content, encoding="utf-8")
-            return DocumentWriteResult(
-                success=True,
-                path=str(p),
-                format=p.suffix.lstrip("."),
-                word_count=len(content.split()),
-            )
-        except Exception as e:
-            return DocumentWriteResult(success=False, path=str(p), error=str(e))
-
-    def write_docx(
-        self,
-        path: str | Path,
-        title: str = "",
-        content: str = "",
-        paragraphs: list[str] | None = None,
-    ) -> DocumentWriteResult:
-        """Write a .docx document."""
-        try:
-            import docx
-        except ImportError:
-            return DocumentWriteResult(
-                success=False,
-                path=str(path),
-                error="python-docx not installed. Run: pip install python-docx",
-            )
-        p = Path(path).expanduser().resolve()
-        try:
-            p.parent.mkdir(parents=True, exist_ok=True)
-            doc = docx.Document()
-            if title:
-                doc.add_heading(title, level=1)
-            # Split content into paragraphs if not provided explicitly
-            paras = paragraphs or (content.split("\n\n") if content else [])
-            for para_text in paras:
-                para_text = para_text.strip()
-                if para_text.startswith("# "):
-                    doc.add_heading(para_text[2:], level=1)
-                elif para_text.startswith("## "):
-                    doc.add_heading(para_text[3:], level=2)
-                elif para_text.startswith("### "):
-                    doc.add_heading(para_text[4:], level=3)
-                elif para_text:
-                    doc.add_paragraph(para_text)
-            doc.save(str(p))
-            full_content = title + "\n\n" + content
-            return DocumentWriteResult(
-                success=True,
-                path=str(p),
-                format="docx",
-                word_count=len(full_content.split()),
-            )
-        except Exception as e:
-            return DocumentWriteResult(success=False, path=str(p), error=str(e))
-
-    def export_pdf_via_libreoffice(
-        self, input_path: str | Path, output_dir: str | Path | None = None
-    ) -> DocumentWriteResult:
-        """
-        Export any document to PDF using LibreOffice CLI.
-        Requires LibreOffice to be installed.
-        Does not require the UI — uses headless mode.
-        """
-        import subprocess
-        p = Path(input_path).expanduser().resolve()
-        if not p.exists():
-            return DocumentWriteResult(
-                success=False, path=str(p),
-                error=f"Input file not found: {p}"
-            )
-        out_dir = Path(output_dir).expanduser().resolve() if output_dir else p.parent
-        # LibreOffice headless export
-        cmd = [
-            "soffice", "--headless", "--convert-to", "pdf",
-            "--outdir", str(out_dir), str(p)
-        ]
-        try:
-            result = subprocess.run(
-                cmd, capture_output=True, text=True, timeout=30
-            )
-            pdf_path = out_dir / (p.stem + ".pdf")
-            if pdf_path.exists():
-                return DocumentWriteResult(
-                    success=True,
-                    path=str(pdf_path),
-                    format="pdf",
+                return PageRecord(
+                    url=str(response.url),
+                    title=f"Non-HTML content ({content_type})",
+                    content=f"Content type: {content_type}",
+                    status_code=response.status_code,
                 )
-            return DocumentWriteResult(
-                success=False, path=str(pdf_path),
-                error=f"PDF not created. stderr: {result.stderr[:200]}"
-            )
-        except subprocess.TimeoutExpired:
-            return DocumentWriteResult(
-                success=False, path=str(p),
-                error="LibreOffice timed out during PDF export"
-            )
-        except FileNotFoundError:
-            return DocumentWriteResult(
-                success=False, path=str(p),
-                error="LibreOffice (soffice) not found. Is it installed?"
+
+            html = response.text[:self.MAX_CONTENT_BYTES]
+            title = extract_title(html)
+            text = clean_html_to_text(html)
+
+            return PageRecord(
+                url=str(response.url),
+                title=title,
+                content=text[:8000],   # cap at 8000 chars for CROWN
+                word_count=len(text.split()),
+                status_code=response.status_code,
             )
 
+        except ImportError:
+            return self._fetch_urllib(url)
+        except Exception as e:
+            return PageRecord(url=url, error=str(e))
 
-# ── DOCUMENT WORKFLOWS ───────────────────────────────────────────────
+    def _fetch_urllib(self, url: str) -> PageRecord:
+        """Stdlib fallback when httpx not available."""
+        import urllib.request
+        try:
+            req = urllib.request.Request(
+                url,
+                headers={"User-Agent": "INANNA-NYX/1.0"},
+            )
+            with urllib.request.urlopen(req, timeout=10) as r:
+                html = r.read(self.MAX_CONTENT_BYTES).decode("utf-8", errors="replace")
+            title = extract_title(html)
+            text = clean_html_to_text(html)
+            return PageRecord(
+                url=url, title=title,
+                content=text[:8000],
+                word_count=len(text.split()),
+                status_code=200,
+            )
+        except Exception as e:
+            return PageRecord(url=url, error=str(e))
 
-@dataclass
-class DocumentComprehension:
+    def search(self, query: str, engine: str = "duckduckgo") -> PageRecord:
+        """
+        Perform a web search and return results page content.
+        Uses DuckDuckGo HTML search (no API key required).
+        No proposal needed.
+        """
+        import urllib.parse
+        if engine == "duckduckgo":
+            url = f"https://html.duckduckgo.com/html/?q={urllib.parse.quote(query)}"
+        else:
+            url = f"https://www.google.com/search?q={urllib.parse.quote(query)}"
+        record = self.fetch(url)
+        record.url = f"search:{query}"
+        return record
+
+
+# ── LEVEL 2: PLAYWRIGHT BROWSER ──────────────────────────────────────
+
+class PlaywrightBrowser:
     """
-    Structured comprehension of a document.
-    Produced after reading — given to CROWN for natural presentation.
-    No LLM needed — pure deterministic analysis.
+    Headless browser automation via Playwright.
+    Used for JS-heavy pages and form interaction.
+    Requires: playwright + chromium install.
+
+    All form submission requires mandatory proposal approval.
+    Passwords and financial data: FORBIDDEN.
     """
-    title: str = ""
-    format: str = ""
-    word_count: int = 0
-    page_count: int = 0
-    summary_lines: list[str] = field(default_factory=list)
-    key_points: list[str] = field(default_factory=list)
-    suggested_actions: list[str] = field(default_factory=list)
 
-    def to_crown_context(self) -> str:
-        """Format for CROWN to present naturally."""
-        lines = [
-            f"DOCUMENT: {self.title} ({self.format})",
-            f"Size: {self.word_count} words"
-            + (f", {self.page_count} pages" if self.page_count > 1 else ""),
-        ]
-        if self.key_points:
-            lines.append("KEY POINTS:")
-            for kp in self.key_points[:5]:
-                lines.append(f"  - {kp}")
-        if self.suggested_actions:
-            lines.append("SUGGESTED ACTIONS:")
-            for a in self.suggested_actions[:3]:
-                lines.append(f"  - {a}")
-        return "\n".join(lines)
+    def __init__(self) -> None:
+        self._available: bool | None = None
+
+    def is_available(self) -> bool:
+        if self._available is None:
+            try:
+                import playwright
+                self._available = True
+            except ImportError:
+                self._available = False
+        return self._available
+
+    def fetch_js(self, url: str) -> PageRecord:
+        """
+        Fetch a JS-rendered page using headless Chromium.
+        Returns readable text after JS execution.
+        No proposal needed — observation.
+        """
+        if not is_safe_url(url):
+            return PageRecord(url=url, error="URL blocked: internal address")
+
+        if not self.is_available():
+            return PageRecord(
+                url=url,
+                error="Playwright not available. Run: py -3 -m playwright install chromium"
+            )
+
+        if not url.startswith(("http://", "https://")):
+            url = "https://" + url
+
+        try:
+            from playwright.sync_api import sync_playwright
+            with sync_playwright() as p:
+                browser = p.chromium.launch(headless=True)
+                page = browser.new_page()
+                page.goto(url, timeout=20000, wait_until="domcontentloaded")
+                title = page.title()
+                content = page.inner_text("body")
+                browser.close()
+            return PageRecord(
+                url=url,
+                title=title,
+                content=content[:8000],
+                word_count=len(content.split()),
+                status_code=200,
+            )
+        except Exception as e:
+            return PageRecord(url=url, error=str(e))
+
+    def navigate_and_fill(
+        self,
+        url: str,
+        fields: dict[str, str],
+    ) -> BrowserActionResult:
+        """
+        Navigate to URL and fill form fields.
+        REQUIRES proposal approval for each field.
+        Submitting the form requires MANDATORY separate proposal.
+        """
+        if not self.is_available():
+            return BrowserActionResult(
+                success=False, action="fill",
+                error="Playwright not available"
+            )
+        # Implementation deferred to Phase 8.5 extended
+        # (requires multi-step proposal flow)
+        return BrowserActionResult(
+            success=False, action="fill",
+            error="Form filling not yet implemented in this phase"
+        )
 
 
-def build_document_comprehension(record: DocumentRecord) -> DocumentComprehension:
+# ── BROWSER WORKFLOWS ────────────────────────────────────────────────
+
+class BrowserWorkflows:
     """
-    Build structured comprehension from a DocumentRecord.
-    Extracts key points from content heuristically.
-    No LLM — deterministic. No hallucination.
-    """
-    comp = DocumentComprehension(
-        title=record.title,
-        format=record.format,
-        word_count=record.word_count,
-        page_count=record.page_count,
-    )
-    if not record.content:
-        return comp
-
-    lines = [l.strip() for l in record.content.splitlines() if l.strip()]
-
-    # Extract key points: headings, short bold-like lines, numbered items
-    for line in lines[:200]:
-        if len(line) < 120 and (
-            line.startswith("#")
-            or line[0].isupper() and line.endswith(":")
-            or (line[0].isdigit() and ". " in line[:5])
-        ):
-            kp = line.lstrip("#").strip().rstrip(":")
-            if kp and len(kp) > 5:
-                comp.key_points.append(kp)
-        if len(comp.key_points) >= 8:
-            break
-
-    # Summary: first 3 non-empty lines of real content
-    content_lines = [
-        l for l in lines if len(l) > 20 and not l.startswith("#")
-    ]
-    comp.summary_lines = content_lines[:3]
-
-    # Suggested actions
-    if record.format == "pdf":
-        comp.suggested_actions.append("Ask INANNA to summarize specific sections")
-    if record.word_count > 2000:
-        comp.suggested_actions.append("Ask for a shorter summary")
-    if record.format in ("xlsx", "ods", "csv"):
-        comp.suggested_actions.append("Ask INANNA to explain the data")
-
-    return comp
-
-
-class DocumentWorkflows:
-    """
-    Orchestrates document reading and writing.
-    Uses DocumentDirectReader (Level 1) as primary approach.
-    Uses Desktop Faculty (Level 2) only when necessary.
+    Orchestrates browser operations.
+    Uses BrowserDirectFetcher (Level 1) as primary.
+    Uses PlaywrightBrowser (Level 2) for JS-heavy pages.
+    Uses Desktop Faculty (Level 3) for visible browser control.
     """
 
     def __init__(self, desktop: DesktopFaculty) -> None:
         self.desktop = desktop
-        self.reader = DocumentDirectReader()
-        self.writer = DocumentWriter()
+        self.fetcher = BrowserDirectFetcher()
+        self.playwright = PlaywrightBrowser()
 
-    def read_document(self, path: str) -> tuple[DocumentRecord, DocumentComprehension]:
+    def read_page(self, url: str, js: bool = False) -> PageRecord:
         """
-        Read any document and return record + comprehension.
+        Read a web page and return structured content.
+        js=True forces Playwright for JS-heavy pages.
         No proposal needed — observation only.
         """
-        record = self.reader.read(path)
-        comp = build_document_comprehension(record)
-        return record, comp
+        if js and self.playwright.is_available():
+            return self.playwright.fetch_js(url)
+        return self.fetcher.fetch(url)
 
-    def write_document(
-        self,
-        path: str,
-        content: str,
-        title: str = "",
-        format: str = "txt",
-    ) -> DocumentWriteResult:
+    def search_web(self, query: str) -> PageRecord:
         """
-        Write a new document.
-        Requires proposal approval — writing is consequential.
+        Search the web and return results.
+        No proposal needed — observation only.
         """
-        p = Path(path).expanduser()
-        suffix = p.suffix.lower() or f".{format}"
-        if suffix in (".docx",):
-            return self.writer.write_docx(p, title=title, content=content)
-        else:
-            # txt, md, odt (odt as text for now)
-            if title:
-                content = f"# {title}\n\n{content}"
-            return self.writer.write_text(p, content)
+        return self.fetcher.search(query)
 
-    def open_in_libreoffice(self, path: str) -> bool:
+    def open_in_browser(
+        self, url: str, browser: str = "firefox"
+    ) -> BrowserActionResult:
         """
-        Open a document in LibreOffice via Desktop Faculty.
-        Requires proposal approval.
+        Open URL in a visible browser window.
+        Requires proposal approval — light action.
         """
-        result = self.desktop.open_app(f"soffice \"{path}\"")
-        return result.success
+        result = self.desktop.open_app(f"{browser} {url}")
+        return BrowserActionResult(
+            success=result.success,
+            action="navigate",
+            url=url,
+            output=f"Opened {url} in {browser}",
+            error=result.error,
+        )
 
-    def export_to_pdf(
-        self, input_path: str, output_dir: str | None = None
-    ) -> DocumentWriteResult:
-        """
-        Export document to PDF using LibreOffice headless CLI.
-        Requires proposal approval.
-        """
-        return self.writer.export_pdf_via_libreoffice(input_path, output_dir)
-
-    def format_read_result(
-        self, record: DocumentRecord, comp: DocumentComprehension
-    ) -> str:
-        """Format document read result for CROWN."""
+    def format_page_result(self, record: PageRecord) -> str:
+        """Format PageRecord for CROWN."""
         if not record.success:
-            return f"doc > error: {record.error}"
-        return comp.to_crown_context() + "\n\nCONTENT (first 1500 chars):\n" + record.content[:1500]
+            return f"browser > error: {record.error}"
+        lines = [
+            f"browser > {record.url}",
+            f"Title: {record.title}" if record.title else "",
+            f"Words: {record.word_count}",
+            "",
+            "CONTENT:",
+            record.content[:3000],
+        ]
+        return "\n".join(l for l in lines if l is not None)
 
-    def format_write_result(self, result: DocumentWriteResult) -> str:
-        """Format document write result for CROWN."""
-        if not result.success:
-            return f"doc > write error: {result.error}"
+    def format_search_result(self, record: PageRecord, query: str) -> str:
+        """Format search result for CROWN."""
+        if not record.success:
+            return f"browser > search error: {record.error}"
         return (
-            f"doc > written: {result.path}\n"
-            f"Format: {result.format} | Words: {result.word_count}"
+            f"browser > search results for: {query}\n"
+            f"{record.content[:3000]}"
         )
 ```
 
-### Task 3 — Register document tools in tools.json
+### Task 3 — Register browser tools in tools.json
 
-Add to inanna/config/tools.json under category "document":
+Add to inanna/config/tools.json under category "browser":
 
 ```json
-"doc_read": {
-  "display_name": "Read Document",
-  "description": "Read any document file: txt, md, docx, odt, pdf, xlsx, csv",
-  "category": "document",
+"browser_read": {
+  "display_name": "Read Web Page",
+  "description": "Fetch and read any web page URL",
+  "category": "browser",
   "requires_approval": false,
   "enabled": true,
   "parameters": {
-    "path": "File path to read (supports ~ expansion)"
+    "url": "URL to fetch (https:// added if missing)",
+    "js": "Use JS rendering for dynamic pages (default: false)"
   }
 },
-"doc_write": {
-  "display_name": "Write Document",
-  "description": "Write a new document file",
-  "category": "document",
+"browser_search": {
+  "display_name": "Web Search",
+  "description": "Search the web via DuckDuckGo and return results",
+  "category": "browser",
+  "requires_approval": false,
+  "enabled": true,
+  "parameters": {
+    "query": "Search query"
+  }
+},
+"browser_open": {
+  "display_name": "Open in Browser",
+  "description": "Open a URL in Firefox, Chrome, or Edge",
+  "category": "browser",
   "requires_approval": true,
   "enabled": true,
   "parameters": {
-    "path": "File path to write",
-    "content": "Document content",
-    "title": "Document title (optional)",
-    "format": "Format: txt, md, docx (default: txt)"
-  }
-},
-"doc_open": {
-  "display_name": "Open in LibreOffice",
-  "description": "Open a document in LibreOffice for viewing or editing",
-  "category": "document",
-  "requires_approval": true,
-  "enabled": true,
-  "parameters": {
-    "path": "File path to open"
-  }
-},
-"doc_export_pdf": {
-  "display_name": "Export to PDF",
-  "description": "Export a document to PDF using LibreOffice",
-  "category": "document",
-  "requires_approval": true,
-  "enabled": true,
-  "parameters": {
-    "path": "Input document path",
-    "output_dir": "Output directory (optional, defaults to same as input)"
+    "url": "URL to open",
+    "browser": "Browser to use: firefox, chrome, edge (default: firefox)"
   }
 }
 ```
 
-Total tools after this phase: 35
+Total tools after this phase: 38
 
-### Task 4 — Wire DocumentWorkflows into server.py and main.py
+### Task 4 — Wire BrowserWorkflows into server.py and main.py
 
-Add DOCUMENT_TOOL_NAMES:
+Add BROWSER_TOOL_NAMES:
 ```python
-DOCUMENT_TOOL_NAMES = {
-    "doc_read",
-    "doc_write",
-    "doc_open",
-    "doc_export_pdf",
+BROWSER_TOOL_NAMES = {
+    "browser_read",
+    "browser_search",
+    "browser_open",
 }
 ```
 
 Instantiate in InterfaceServer.__init__:
 ```python
-from core.document_workflows import DocumentWorkflows
-self.document_workflows = DocumentWorkflows(self.desktop_faculty)
+from core.browser_workflows import BrowserWorkflows
+self.browser_workflows = BrowserWorkflows(self.desktop_faculty)
 ```
 
-Add run_document_tool() following the established pattern.
+Add run_browser_tool() following the established pattern.
 
-For doc_read: call read_document(), build comprehension,
-pass to_crown_context() as tool_result_summary.
-No proposal needed — pure observation.
+For browser_read and browser_search: no proposal.
+For browser_open: proposal required.
 
-For doc_write, doc_open, doc_export_pdf: require proposal.
+Note on web_search vs browser_search:
+  web_search (existing): calls the search API via the engine
+  browser_search (new): fetches DuckDuckGo HTML results directly
+  Both coexist — web_search is preferred when API is available
 
 ### Task 5 — Natural language routing in main.py
 
-Add document domain hints to governance_signals.json:
+Add browser domain hints to governance_signals.json:
 ```json
-"document": [
-  "read document", "open document", "read file", "open file",
-  "read the", "summarize document", "what does the document say",
-  "write a document", "create a document", "write a letter",
-  "create a report", "write a report", "save as pdf",
-  "export to pdf", "open in libreoffice", "open with libreoffice",
-  "read pdf", "read docx", "read odt", "read the pdf",
-  "what is in the file", "show me the document"
+"browser": [
+  "open url", "go to", "navigate to", "visit",
+  "read the page", "what does the page say",
+  "fetch", "browse to", "open website", "open site",
+  "search the web", "look up online", "find online",
+  "what is on", "read the website",
+  "open firefox", "open chrome", "open edge",
+  "open in browser", "show me the website"
 ]
 ```
 
-Add extract_document_tool_request() in main.py:
+Add extract_browser_tool_request() in main.py:
 
-Patterns (with natural_match guard following the email pattern):
-  "read [path]" → doc_read(path=path)
-  "read the document at [path]" → doc_read
-  "summarize [path]" → doc_read (output_format=summary)
-  "write a document called [name] with [content]" → doc_write
-  "open [path] in libreoffice" → doc_open
-  "export [path] to pdf" → doc_export_pdf
-  "create a letter to [name] saying [content]" → doc_write
+Patterns:
+  "go to [url]" → browser_open(url=url)
+  "open [url] in firefox" → browser_open(url, browser=firefox)
+  "read the page at [url]" → browser_read(url=url)
+  "fetch [url]" → browser_read(url=url)
+  "search the web for [query]" → browser_search(query=query)
+  "look up [query] online" → browser_search(query=query)
+  "what is [topic]?" → browser_search(query=topic)
+    (only when web_search is not triggered first)
 
 ### Task 6 — Update help_system.py
 
-Add DOCUMENTS section to HELP_COMMON:
+Add BROWSER section to HELP_COMMON:
 ```
-  DOCUMENTS (LibreOffice, PDF, DOCX, ODT)
-    "read the document at ~/path/to/file.pdf"
-                                       Read any document (no approval)
-    "summarize ~/report.docx"          Summarize document (no approval)
-    "write a document called report.txt saying..."
-                                       Write document (approval required)
-    "open ~/proposal.odt in libreoffice"
-                                       Open in LibreOffice (approval)
-    "export ~/letter.docx to pdf"      Export to PDF (approval)
+  BROWSER (Firefox, Chrome, Edge)
+    "read the page at https://example.com"
+                                       Fetch and read URL (no approval)
+    "search the web for NixOS install" Web search (no approval)
+    "go to https://example.com"        Open in Firefox (approval)
+    "open https://example.com in chrome"
+                                       Open in Chrome (approval)
 
-  Supported: .txt .md .docx .odt .pdf .xlsx .ods .csv
-  (reading never requires approval — writing always does)
+  Note: passwords and financial forms are never accessible
+  Internal/local addresses (localhost, 192.168.x.x) are blocked
 ```
 
 ### Task 7 — Update identity.py
 
-CURRENT_PHASE = "Cycle 8 - Phase 8.4 - Document Faculty"
+CURRENT_PHASE = "Cycle 8 - Phase 8.5 - Browser Faculty"
 
-### Task 8 — Tests (all offline — no actual files required)
+### Task 8 — Tests (all offline — no actual network calls)
 
-Create inanna/tests/test_document_workflows.py (20 tests):
+Create inanna/tests/test_browser_workflows.py (20 tests):
 
-  - DocumentWorkflows instantiates
-  - DocumentDirectReader instantiates
-  - DocumentWriter instantiates
-  - DocumentRecord defaults are correct
-  - DocumentRecord.success False when error set
-  - DocumentRecord.success True when content present
-  - DocumentRecord.summary_line includes format
-  - build_document_comprehension returns correct word_count
-  - build_document_comprehension extracts headings as key_points
-  - build_document_comprehension.to_crown_context includes title
-  - DocumentDirectReader._read_csv reads temp CSV correctly
-  - DocumentDirectReader._read_text reads temp txt correctly
-  - DocumentDirectReader handles missing file gracefully
-  - DocumentDirectReader handles unsupported format gracefully
-  - DocumentWriter.write_text creates file with correct content
-  - DocumentWriter.write_text returns correct word_count
-  - DOCUMENT_TOOL_NAMES contains all 4 tools
-  - doc_read in tools.json with requires_approval=False
-  - doc_write in tools.json with requires_approval=True
-  - doc_open in tools.json with requires_approval=True
+  - BrowserWorkflows instantiates
+  - BrowserDirectFetcher instantiates
+  - PlaywrightBrowser instantiates
+  - is_safe_url("https://example.com") returns True
+  - is_safe_url("http://localhost:8080") returns False
+  - is_safe_url("http://192.168.1.1") returns False
+  - is_safe_url("file:///etc/passwd") returns False
+  - clean_html_to_text removes script and style tags
+  - clean_html_to_text preserves text content
+  - extract_title finds title in HTML
+  - extract_title returns empty string when no title
+  - PageRecord defaults are correct
+  - PageRecord.success True when content present
+  - PageRecord.success False when error set
+  - PageRecord.summary_line includes URL
+  - BrowserDirectFetcher._fetch_urllib handles connection error gracefully
+    (mock urllib to raise URLError)
+  - BrowserDirectFetcher.fetch blocks internal URLs
+  - BROWSER_TOOL_NAMES contains all 3 tools
+  - browser_read in tools.json with requires_approval=False
+  - browser_open in tools.json with requires_approval=True
 
-Update test_identity.py: CURRENT_PHASE assertion.
-Update test_operator.py: PERMITTED_TOOLS includes doc tools.
-Update test_commands.py: tool registry count updated to 35.
+### Task 9 — docs/nixos_browser_faculty.md (mandatory)
 
----
+Create: docs/nixos_browser_faculty.md
 
-## NixOS Notes (for docs/nixos_document_faculty.md — create this)
+Document:
+  - NixOS packages for browser libraries:
+      python311Packages.httpx
+      python311Packages.beautifulsoup4
+      python311Packages.lxml
+      python311Packages.playwright (note: browser binaries separate)
+  - Firefox NixOS package: programs.firefox.enable = true
+  - Playwright on NixOS: special considerations for browser binaries
+  - Environment variables for browser paths
+  - How BrowserDirectFetcher works without a visible browser
+  - Level 1 vs Level 2 on NixOS
 
-On NixOS, the Python libraries are declared in configuration.nix:
-
-```nix
-environment.systemPackages = with pkgs; [
-  python311Packages.python-docx
-  python311Packages.pymupdf
-  python311Packages.openpyxl
-  # odfpy may need to be added as a custom package
-  libreoffice-fresh  # for headless PDF export
-];
-```
-
-LibreOffice CLI path on NixOS:
-  soffice = ${pkgs.libreoffice-fresh}/bin/soffice
-
-The DocumentWriter.export_pdf_via_libreoffice() method
-uses `soffice` — this works identically on Windows and NixOS.
+Update test_identity.py, test_operator.py, test_commands.py.
 
 ---
 
 ## Permitted file changes
 
-inanna/core/document_workflows.py      <- NEW
-inanna/main.py                         <- MODIFY: routing, DOCUMENT_TOOL_NAMES
-inanna/ui/server.py                    <- MODIFY: wire DocumentWorkflows
-inanna/config/tools.json               <- MODIFY: add 4 document tools
-inanna/config/governance_signals.json  <- MODIFY: document domain hints
-inanna/requirements.txt                <- MODIFY: add document libraries
-inanna/core/help_system.py             <- MODIFY: document section
-inanna/identity.py                     <- MODIFY: CURRENT_PHASE
-inanna/tests/test_document_workflows.py <- NEW
+inanna/core/browser_workflows.py       <- NEW
+inanna/main.py                         <- MODIFY
+inanna/ui/server.py                    <- MODIFY
+inanna/config/tools.json               <- MODIFY: add 3 browser tools
+inanna/config/governance_signals.json  <- MODIFY: browser hints
+inanna/requirements.txt                <- MODIFY: beautifulsoup4, lxml
+inanna/core/help_system.py             <- MODIFY: browser section
+inanna/identity.py                     <- MODIFY
+inanna/tests/test_browser_workflows.py <- NEW
 inanna/tests/test_identity.py          <- MODIFY
 inanna/tests/test_operator.py          <- MODIFY
 inanna/tests/test_commands.py          <- MODIFY
-docs/nixos_document_faculty.md         <- NEW (mandatory documentation)
+docs/nixos_browser_faculty.md          <- NEW (mandatory)
 
 ---
 
 ## What You Are NOT Building
 
-- No IMAP/SMTP (that was email)
-- No browser automation (Phase 8.5)
+- No form filling in this phase (future extension)
+- No cookie/session management
+- No login to web services via browser
+- No screenshot analysis (Level 1 is text-only)
 - No calendar (Phase 8.6)
-- No voice changes
-- No auth changes
-- Do not attempt to start LibreOffice in tests
+- No voice changes, no auth changes
+- Do NOT make actual network calls in tests
 
 ---
 
 ## Definition of Done
 
-- [ ] core/document_workflows.py complete with all classes
-- [ ] Python document libraries installed and working
-- [ ] 4 document tools in tools.json (35 total)
-- [ ] Document domain hints in governance_signals.json
-- [ ] DocumentWorkflows wired into server.py and main.py
-- [ ] help_system.py updated with document section
-- [ ] docs/nixos_document_faculty.md written
-- [ ] CURRENT_PHASE = "Cycle 8 - Phase 8.4 - Document Faculty"
+- [ ] core/browser_workflows.py complete
+- [ ] beautifulsoup4 + lxml installed
+- [ ] playwright chromium installed (graceful fallback if fails)
+- [ ] 3 browser tools in tools.json (38 total)
+- [ ] is_safe_url blocks localhost and internal IPs
+- [ ] BrowserWorkflows wired into server.py and main.py
+- [ ] Natural language routing for browser commands
+- [ ] help_system.py updated
+- [ ] docs/nixos_browser_faculty.md written
+- [ ] CURRENT_PHASE = "Cycle 8 - Phase 8.5 - Browser Faculty"
 - [ ] All tests pass: py -3 -m unittest discover -s tests
-- [ ] Pushed as cycle8-phase4-complete
+- [ ] Pushed as cycle8-phase5-complete
 
 ---
 
 ## Handoff
 
-Commit: cycle8-phase4-complete
+Commit: cycle8-phase5-complete
 Push immediately to origin/main.
-Report: docs/implementation/CYCLE8_PHASE4_REPORT.md
+Report: docs/implementation/CYCLE8_PHASE5_REPORT.md
 
 The report MUST include:
-  - Which Python libraries were installed successfully
-  - Which formats were tested and confirmed working
-  - Any formats that failed and why
-  - NixOS equivalents for all dependencies
+  - Whether Playwright chromium installed successfully
+  - Which fallback is active if not
+  - Test of browser_read against a real URL (if network available)
+  - NixOS equivalents for all new dependencies
 
-Stop. Do not begin Phase 8.5 without new CURRENT_PHASE.md.
+Stop. Do not begin Phase 8.6 without new CURRENT_PHASE.md.
 
 ---
 
 *Written by: Claude (Command Center)*
 *Guardian approval: ZAERA*
 *Date: 2026-04-22*
-*Documents are memory made permanent.*
-*INANNA reads what ZAERA writes.*
-*INANNA writes what ZAERA speaks.*
-*The document faculty is the bridge*
-*between thought and record.*
-*No hallucination — only what is on the page.*
-*No invention — only what ZAERA approves.*
+*The browser is the window to the world.*
+*INANNA reads through it.*
+*INANNA never touches passwords.*
+*INANNA never submits without your word.*
+*The web is observation.*
+*Action requires blessing.*
