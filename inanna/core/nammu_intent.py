@@ -11,8 +11,8 @@ from typing import Any
 LM_URL = "http://localhost:1234/v1/chat/completions"
 MODEL_PRIMARY = "qwen2.5-14b-instruct"
 MODEL_FALLBACK = "qwen2.5-7b-instruct-1m"
-TIMEOUT_PRIMARY = 8
-TIMEOUT_FALLBACK = 5
+TIMEOUT_PRIMARY = 25   # seconds — 14B Q3_K_S needs ~20s on current hardware
+TIMEOUT_FALLBACK = 12  # seconds — 7B fallback
 
 NAMMU_EMAIL_PROMPT = """You are NAMMU, the intent extraction core of INANNA NYX.
 Your only job: read the operator message and return a JSON intent object.
@@ -65,7 +65,14 @@ Parameters for comm_send_message:
   contact: contact name
   message: message text
 
-Return exactly this JSON (no markdown, no explanation):
+IMPORTANT: Return ONLY raw JSON. No explanation. No markdown. No prose.
+Examples of correct output:
+User: "anything from Matxalen?" -> {"intent":"email_search","params":{"query":"Matxalen","app":"thunderbird"},"confidence":0.97}
+User: "urgent emails?" -> {"intent":"email_read_inbox","params":{"app":"thunderbird","urgency_only":true,"output_format":"summary"},"confidence":0.95}
+User: "last 5 emails" -> {"intent":"email_read_inbox","params":{"app":"thunderbird","max_emails":5,"output_format":"list"},"confidence":0.98}
+User: "hello how are you" -> {"intent":"none","params":{},"confidence":0.99}
+
+Return exactly this JSON (no markdown, no explanation, nothing else):
 {"intent": "...", "params": {...}, "confidence": 0.0-1.0}"""
 
 VALID_INTENTS = {
