@@ -1,15 +1,15 @@
-# CURRENT PHASE: Cycle 9 - Phase 9.4 - The Comprehension Layer
+# CURRENT PHASE: Cycle 9 - Phase 9.5 - The Feedback Loop
 **Status: ACTIVE**
 **Authorized by: ZAERA (Guardian) + Claude (Command Center)**
 **Date: 2026-04-22**
 **Cycle: 9 — NAMMU Reborn: The Living Interpreter**
-**Replaces: Cycle 9 Phase 9.3 - The Constitutional Filter (COMPLETE)**
+**Replaces: Cycle 9 Phase 9.4 - The Comprehension Layer (COMPLETE)**
 
 ---
 
 ## MANDATORY READING — in this exact order
 
-1. docs/nammu_vision.md
+1. docs/nammu_vision.md              ← Dimension I: The Feedback Loop
 2. docs/cycle9_master_plan.md
 3. docs/implementation/CURRENT_PHASE.md (this file)
 4. CODEX_DOCTRINE.md
@@ -19,346 +19,293 @@
 
 ## What Already Exists (audited before writing this phase)
 
-Comprehension classes already built in Cycle 8:
+From Phase 9.2, OperatorProfile has:
+  record_correction(original_text, misrouted_to,
+                    correct_intent, correct_params)
+  routing_corrections: list[dict] — stores up to 20 corrections
+  to_nammu_context() — includes corrections as few-shot examples
 
-  core/nammu_intent.py:
-    EmailComprehension — total, unread, urgent, summaries, actions
-    build_comprehension(emails, period, urgency_filter) → EmailComprehension
-    WIRED in server.py lines 3568-3581 (email_read_inbox + email_search)
+From Phase 9.2, server.py has:
+  nammu-correct command (records correction manually)
+  nammu-learn command (records shorthands manually)
+  profile saved after every tool execution
 
-  core/document_workflows.py:
-    DocumentComprehension — title, format, word_count, key_points, actions
-    build_document_comprehension(record) → DocumentComprehension
-    to_crown_context() → str
-    NOT WIRED in server.py
-
-  core/calendar_workflows.py:
-    CalendarComprehension — total, today, upcoming, overdue, source
-    build_calendar_comprehension(result, period) → CalendarComprehension
-    to_crown_context() → str
-    NOT WIRED in server.py
-
-  core/browser_workflows.py:
-    PageRecord — url, title, content, word_count
-    format_page_result(record) → str  (basic formatting only)
-    NO structured comprehension exists
-    NOT WIRED specifically (falls through to generic handler)
-
-server.py current state:
-  Line 3567: is_email_comprehension flag (only email handled)
-  Line 3603: if is_email_comprehension: → special CROWN instruction
-  Line 3617: elif result_is_empty: → hallucination guard
-  Line 3629: else: → generic handler
-
-What is missing:
-  - Document comprehension not wired → raw text to CROWN
-  - Calendar comprehension not wired → raw text to CROWN
-  - Browser has no comprehension class → raw text to CROWN
-  - No structured CROWN instructions for doc/calendar/browser
+The routing_log.jsonl records every routing decision.
+724 tests passing.
 
 ---
 
-## What Phase 9.4 Builds
+## What Is Missing
 
-Wire all existing comprehension into server.py.
-Add BrowserComprehension for the browser faculty.
-Give CROWN structured, domain-specific instructions for every
-faculty — not just email.
+The correction mechanism exists but is PASSIVE.
+The operator must explicitly type `nammu-correct` to teach NAMMU.
 
-The principle (from nammu_vision.md):
-  Tools return raw data.
-  Comprehension turns raw data into meaning.
-  CROWN receives meaning, not raw data.
-  This eliminates hallucination. CROWN presents what exists.
+Phase 9.5 makes the feedback loop ACTIVE:
+
+1. NAMMU detects when it routed incorrectly
+   (operator rephrases immediately after, asks something related,
+   or explicitly says "no, I meant...")
+
+2. NAMMU asks for confirmation before recording a correction
+
+3. Every correction immediately enriches the operator profile
+   for the NEXT routing call — the profile is used live
+
+4. The routing log is analysed periodically to surface patterns:
+   "You've corrected this 3 times — shall I learn this permanently?"
+
+---
+
+## What Phase 9.5 Builds
+
+### The Three Feedback Mechanisms
+
+**Mechanism 1 — Explicit correction (already exists, enhance)**
+`nammu-correct <intent> [query]`
+Already records to OperatorProfile.routing_corrections.
+Enhancement: parse query parameter from the command.
+
+**Mechanism 2 — Implicit misroute detection**
+After NAMMU routes to a tool and the operator immediately says
+something like "no", "that's wrong", "I meant X", "not what I asked"
+— NAMMU detects this, records the session context, and asks:
+"Should I remember that '[original phrase]' means [X]?"
+
+**Mechanism 3 — Pattern surfacing**
+After 5+ corrections in a session, NAMMU surfaces a summary:
+"I've been corrected 5 times today. The most common pattern:
+[X] → [Y]. Shall I add this as a permanent learning?"
 
 ---
 
 ## What You Are Building
 
-### Task 1 — Add BrowserComprehension to browser_workflows.py
+### Task 1 — Enhance nammu-correct command in server.py
 
-The browser faculty currently has no comprehension class.
-Add one alongside the existing PageRecord:
+Current: `nammu-correct <intent>`
+Enhanced: `nammu-correct <intent> [query_or_params]`
 
 ```python
-@dataclass
-class BrowserComprehension:
-    """
-    Structured summary of a fetched web page or search result.
-    Given to CROWN for natural presentation.
-    No LLM needed — pure deterministic analysis.
-    """
-    url: str = ""
-    title: str = ""
-    word_count: int = 0
-    is_search: bool = False
-    query: str = ""            # if is_search, the original query
-    excerpt: str = ""          # first 400 chars of meaningful content
-    key_topics: list[str] = field(default_factory=list)
-    is_pdf: bool = False
-    status_code: int = 0
-    error: Optional[str] = None
+elif command_name == "nammu-correct":
+    parts = raw_cmd.strip().split(None, 2)
+    if len(parts) >= 2:
+        correct_intent = parts[1].strip()
+        # Optional: extract query/params from parts[2]
+        correct_params = {}
+        if len(parts) == 3:
+            param_str = parts[2].strip()
+            # Try to parse as JSON first
+            try:
+                correct_params = json.loads(param_str)
+            except (json.JSONDecodeError, ValueError):
+                # Treat as a plain query string
+                correct_params = {"query": param_str}
 
-    def to_crown_context(self) -> str:
-        """Format for CROWN to present naturally."""
-        if self.error:
-            return f"browser > error: {self.error}"
-        if self.is_search:
-            lines = [
-                f"WEB SEARCH: {self.query!r}",
-                f"Results from: {self.url}",
-                f"",
-                f"CONTENT ({self.word_count} words):",
-                self.excerpt,
-            ]
-        else:
-            lines = [
-                f"WEB PAGE: {self.title or self.url}",
-                f"URL: {self.url}",
-                f"Size: {self.word_count} words",
-            ]
-            if self.key_topics:
-                lines.append(f"Topics: {', '.join(self.key_topics[:5])}")
-            lines.extend(["", "CONTENT:", self.excerpt])
-        return "\n".join(l for l in lines if l is not None)
+        original = getattr(self, '_last_nammu_input', '') or ""
+        misrouted = getattr(self, '_last_nammu_route', 'unknown')
 
+        self.nammu_profile.record_correction(
+            original_text=original,
+            misrouted_to=misrouted,
+            correct_intent=correct_intent,
+            correct_params=correct_params,
+        )
+        save_operator_profile(self.nammu_dir, self.nammu_profile)
 
-def build_browser_comprehension(
-    record: PageRecord,
-    query: str = "",
-    is_search: bool = False,
-) -> BrowserComprehension:
-    """
-    Build structured comprehension from a PageRecord.
-    Extracts a meaningful excerpt and topic keywords.
-    No LLM. Deterministic. No hallucination.
-    """
-    if not record.success:
-        return BrowserComprehension(error=record.error or "Unknown error")
-
-    content = record.content or ""
-
-    # Extract excerpt: first 400 chars of non-empty lines
-    lines = [l.strip() for l in content.splitlines() if l.strip()]
-    excerpt_lines = []
-    total_chars = 0
-    for line in lines:
-        if total_chars >= 400:
-            break
-        excerpt_lines.append(line)
-        total_chars += len(line)
-    excerpt = "\n".join(excerpt_lines)
-
-    # Extract topic keywords: capitalised words and short phrases
-    import re
-    topic_candidates = re.findall(r'\b[A-Z][a-z]{2,}\b', content[:2000])
-    # Count and deduplicate
-    from collections import Counter
-    counts = Counter(topic_candidates)
-    key_topics = [w for w, _ in counts.most_common(8)
-                  if w.lower() not in {
-                      'The', 'This', 'That', 'With', 'From',
-                      'Your', 'Have', 'Will', 'Are', 'For',
-                  }]
-
-    return BrowserComprehension(
-        url=record.url,
-        title=record.title,
-        word_count=record.word_count,
-        is_search=is_search,
-        query=query,
-        excerpt=excerpt[:400],
-        key_topics=key_topics[:6],
-        status_code=record.status_code,
-    )
+        # Confirmation message
+        example = RoutingCorrection(
+            original_text=original,
+            correct_intent=correct_intent,
+            correct_params=correct_params,
+        ).to_example_line()
+        await self.broadcast({
+            "type": "system",
+            "text": (
+                f"nammu > correction recorded\n"
+                f"  learned: {example}\n"
+                f"  total corrections: {len(self.nammu_profile.routing_corrections)}"
+            )
+        })
 ```
 
-Also update BrowserWorkflows to use comprehension:
-```python
-def read_page(self, url: str, js: bool = False) -> tuple[PageRecord, BrowserComprehension]:
-    """Returns page + comprehension."""
-    record = ...existing...
-    comp = build_browser_comprehension(record)
-    return record, comp
+### Task 2 — Track last routing input/result in server.py
 
-def search_web(self, query: str) -> tuple[PageRecord, BrowserComprehension]:
-    """Returns results + comprehension."""
-    record = ...existing...
-    comp = build_browser_comprehension(record, query=query, is_search=True)
-    return record, comp
-```
-
-Note: Return type changes for these two methods. Update
-run_browser_tool() in main.py / server.py accordingly.
-
-### Task 2 — Wire all comprehensions into server.py
-
-Replace the current single `is_email_comprehension` flag
-with a unified comprehension dispatch in the tool result handler.
-
-Current pattern (lines 3567-3643):
-```python
-is_email_comprehension = False
-if result.tool in {"email_read_inbox", "email_search"} ...:
-    ... email comprehension ...
-```
-
-Replace with a unified dispatch:
-```python
-# ── COMPREHENSION DISPATCH ────────────────────────────────────
-# Each faculty has a comprehension class that structures raw data
-# for CROWN. CROWN always receives meaning, not raw output.
-# No hallucination: CROWN can only present what comprehension provides.
-
-comprehension_ctx = None
-comprehension_domain = ""
-
-if result.tool in {"email_read_inbox", "email_search"} and result.success:
-    emails = result.data.get("emails", [])
-    if emails:
-        comprehension = build_comprehension(emails, ...)
-        comprehension_ctx = comprehension.to_crown_context()
-        comprehension_domain = "email"
-
-elif result.tool == "doc_read" and result.success:
-    from core.document_workflows import build_document_comprehension, DocumentRecord
-    doc_record = result.data.get("record")
-    if doc_record:
-        comp = build_document_comprehension(doc_record)
-        comprehension_ctx = comp.to_crown_context()
-        comprehension_domain = "document"
-
-elif result.tool in {"calendar_today", "calendar_upcoming"} and result.success:
-    from core.calendar_workflows import build_calendar_comprehension
-    cal_result = result.data.get("calendar_result")
-    period = result.data.get("period", "")
-    if cal_result:
-        comp = build_calendar_comprehension(cal_result, period_label=period)
-        comprehension_ctx = comp.to_crown_context()
-        comprehension_domain = "calendar"
-
-elif result.tool in {"browser_read", "browser_search"} and result.success:
-    from core.browser_workflows import BrowserComprehension
-    comp = result.data.get("comprehension")
-    if comp and isinstance(comp, BrowserComprehension):
-        comprehension_ctx = comp.to_crown_context()
-        comprehension_domain = "browser"
-
-# Use comprehension if available, else raw summary
-if comprehension_ctx:
-    tool_result_summary = comprehension_ctx
-    tool_result_lines = [tool_result_summary]
-```
-
-### Task 3 — Domain-specific CROWN instructions
-
-Replace `is_email_comprehension` check with domain-specific
-CROWN instructions for each faculty:
+Add two instance variables that store the last NAMMU input
+and route so nammu-correct can reference them:
 
 ```python
-CROWN_INSTRUCTIONS = {
-    "email": (
-        "INBOX DATA (real, no hallucination):\n{summary}\n---\n"
-        "Present naturally. Urgent first. Suggest next action.\n"
-        "DO NOT invent email content not shown above."
-    ),
-    "document": (
-        "DOCUMENT DATA (read directly from file, no hallucination):\n{summary}\n---\n"
-        "Summarise the document briefly.\n"
-        "Mention title, format, size, and key points.\n"
-        "DO NOT invent content not shown above.\n"
-        "If the operator wants more detail, they can ask."
-    ),
-    "calendar": (
-        "CALENDAR DATA (from Thunderbird, no hallucination):\n{summary}\n---\n"
-        "Present events naturally.\n"
-        "If 0 events: explain the Google Calendar sync situation clearly.\n"
-        "DO NOT invent events not shown above."
-    ),
-    "browser": (
-        "WEB CONTENT (fetched live, no hallucination):\n{summary}\n---\n"
-        "Summarise what the page contains.\n"
-        "For searches: summarise the results, not just list them.\n"
-        "DO NOT invent content not shown above.\n"
-        "DO NOT reproduce large chunks of text verbatim."
-    ),
-}
+# In InterfaceServer.__init__:
+self._last_nammu_input: str = ""
+self._last_nammu_route: str = ""
 
-if comprehension_domain in CROWN_INSTRUCTIONS:
-    tool_instruction = CROWN_INSTRUCTIONS[comprehension_domain].format(
-        summary=tool_result_summary
-    )
-elif result_is_empty:
-    tool_instruction = ... (existing hallucination guard)
+# In _run_routed_turn() after nammu_first_routing:
+self._last_nammu_input = text
+if tool_request:
+    self._last_nammu_route = str(tool_request.get("tool", ""))
 else:
-    tool_instruction = ... (existing generic handler)
+    self._last_nammu_route = "conversation"
 ```
 
-### Task 4 — Ensure tool result data carries comprehension objects
+### Task 3 — Implicit misroute detection
 
-The run_browser_tool() and run_document_tool() functions
-must store their comprehension objects in result.data so
-server.py can retrieve them.
+Add misroute signal detection in _run_routed_turn().
+When CROWN responds to a message, check if the NEXT message
+contains misroute signals:
 
-For browser:
 ```python
-# In run_browser_tool():
-record, comp = browser_workflows.read_page(url)
-result.data["record"] = record
-result.data["comprehension"] = comp
+MISROUTE_SIGNALS = [
+    "no that", "not what i", "i meant", "wrong",
+    "that's not", "thats not", "not right",
+    "no no", "wait no", "actually i",
+    "no eso no", "no era eso",  # Spanish
+    "no no", "equivocado",
+]
+
+def _detect_misroute(self, text: str) -> bool:
+    """Returns True if this message suggests the previous route was wrong."""
+    lower = text.lower().strip()
+    return any(sig in lower for sig in MISROUTE_SIGNALS)
 ```
 
-For document:
+When misroute is detected:
 ```python
-# In run_document_tool():
-record, comp = document_workflows.read_document(path)
-result.data["record"] = record
-result.data["comprehension"] = comp
+if self._detect_misroute(text) and self._last_nammu_input:
+    # Surface a gentle correction prompt
+    await self.broadcast({
+        "type": "system",
+        "text": (
+            f"nammu > did I misroute '{self._last_nammu_input[:40]}'?\n"
+            f"  type: nammu-correct <intent> [query] to teach me\n"
+            f"  or continue — I'll try to understand your new message"
+        )
+    })
 ```
 
-For calendar:
+This is INFORMATIONAL only — does not block the new message.
+
+### Task 4 — Pattern surfacing (session-level)
+
+Add a correction counter and surface a summary
+after every 5th correction in a session:
+
 ```python
-# In run_calendar_tool():
-cal_result, comp = calendar_workflows.read_today()
-result.data["calendar_result"] = cal_result
-result.data["comprehension"] = comp
-result.data["period"] = "today"
+# In InterfaceServer.__init__:
+self._session_correction_count: int = 0
+
+# After recording any correction:
+self._session_correction_count += 1
+if self._session_correction_count % 5 == 0:
+    # Surface pattern summary
+    recent = self.nammu_profile.routing_corrections[-5:]
+    if recent:
+        patterns = [
+            f"  '{c['original_text'][:30]}' → {c['correct_intent']}"
+            for c in recent
+        ]
+        await self.broadcast({
+            "type": "system",
+            "text": (
+                f"nammu > {self._session_correction_count} corrections this session\n"
+                + "\n".join(patterns) + "\n"
+                f"  These are saved and will improve future routing."
+            )
+        })
 ```
 
-### Task 5 — Update identity.py
+### Task 5 — Routing log analysis utility
 
-CURRENT_PHASE = "Cycle 9 - Phase 9.4 - The Comprehension Layer"
+Add a function to nammu_profile.py that analyses the
+routing log and surfaces patterns:
 
-### Task 6 — Tests (all offline)
+```python
+def analyse_routing_log(
+    routing_log: list[dict],
+    profile: OperatorProfile,
+) -> dict:
+    """
+    Analyse routing history to surface patterns.
+    Returns a summary of routing statistics.
+    No LLM. Deterministic.
+    """
+    from collections import Counter
+    routes = [e.get("route", "") for e in routing_log if e.get("route")]
+    domain_counts = Counter(
+        r.split("_")[0] for r in routes if "_" in r
+    )
+    total = len(routes)
+    return {
+        "total_routings": total,
+        "top_domains": dict(domain_counts.most_common(5)),
+        "correction_count": len(profile.routing_corrections),
+        "known_shorthands": len(profile.known_shorthands),
+    }
+```
 
-Create inanna/tests/test_comprehension_layer.py (25 tests):
+### Task 6 — Add nammu-stats command
 
-  - BrowserComprehension instantiates with defaults
-  - BrowserComprehension.to_crown_context includes title
-  - BrowserComprehension.to_crown_context includes URL
-  - BrowserComprehension.to_crown_context handles error
-  - BrowserComprehension.to_crown_context marks search result
-  - build_browser_comprehension returns error comp on failed record
-  - build_browser_comprehension extracts excerpt from content
-  - build_browser_comprehension sets is_search=True when query provided
-  - build_browser_comprehension word_count matches record
-  - DocumentComprehension.to_crown_context includes title and format
-  - DocumentComprehension.to_crown_context includes word_count
-  - build_document_comprehension extracts headings as key_points
-  - CalendarComprehension.to_crown_context includes period_label
-  - CalendarComprehension.to_crown_context notes sync when 0 events
-  - EmailComprehension.to_crown_context includes total count
-  - All four comprehension to_crown_context methods return non-empty str
-  - All four comprehension to_crown_context methods never raise exceptions
-    even on empty/malformed input (pass empty dataclass)
-  - CROWN_INSTRUCTIONS dict has keys: email, document, calendar, browser
-  - CROWN_INSTRUCTIONS["email"] contains "hallucination"
-  - CROWN_INSTRUCTIONS["document"] contains "hallucination"
-  - build_browser_comprehension with real PageRecord (mock data)
-  - build_calendar_comprehension with 0 events mentions sync
-  - build_comprehension with empty list returns 0 total
-  - DocumentComprehension with no key_points still formats correctly
-  - BrowserComprehension search mode formats differently than page mode
+```python
+elif command_name == "nammu-stats":
+    from core.nammu_memory import load_routing_history
+    from core.nammu_profile import analyse_routing_log
+    routing_log = load_routing_history(self.nammu_dir, limit=100)
+    stats = analyse_routing_log(routing_log, self.nammu_profile)
+    lines = [
+        "nammu > routing statistics",
+        f"  total routings (last 100): {stats['total_routings']}",
+        f"  top domains: {stats['top_domains']}",
+        f"  corrections recorded: {stats['correction_count']}",
+        f"  known shorthands: {stats['known_shorthands']}",
+        f"  session corrections: {self._session_correction_count}",
+    ]
+    await self.broadcast({"type": "system", "text": "\n".join(lines)})
+```
+
+### Task 7 — Update help_system.py
+
+Add NAMMU FEEDBACK section:
+
+```
+  NAMMU FEEDBACK (teach INANNA from mistakes)
+    "nammu-correct email_search Matxalen"
+                              Correct last routing with query
+    "nammu-correct email_search {\"query\": \"Matxalen\"}"
+                              Correct with JSON params
+    "nammu-stats"             Show routing statistics
+    "nammu-profile"           Show your full NAMMU profile
+
+  After corrections: the profile updates immediately.
+  Next time you ask the same thing, NAMMU uses your correction.
+  After 5 corrections: NAMMU shows a pattern summary.
+```
+
+### Task 8 — Update identity.py
+
+CURRENT_PHASE = "Cycle 9 - Phase 9.5 - The Feedback Loop"
+
+### Task 9 — Tests (all offline)
+
+Create inanna/tests/test_feedback_loop.py (20 tests):
+
+  - _detect_misroute("no that's not right") returns True
+  - _detect_misroute("no era eso") returns True (Spanish)
+  - _detect_misroute("hello world") returns False
+  - _detect_misroute("anything from Matxalen?") returns False
+  - MISROUTE_SIGNALS contains "i meant"
+  - MISROUTE_SIGNALS contains "no era eso"
+  - nammu-correct parses intent correctly
+  - nammu-correct with JSON params parses correctly
+  - nammu-correct with plain query stores as {"query": X}
+  - analyse_routing_log returns total_routings count
+  - analyse_routing_log returns top_domains dict
+  - analyse_routing_log returns correction_count from profile
+  - analyse_routing_log handles empty routing log
+  - OperatorProfile.record_correction stores with timestamp
+  - OperatorProfile.routing_corrections max 20 entries
+  - RoutingCorrection.to_example_line includes original_text
+  - RoutingCorrection.to_example_line includes correct_intent
+  - _last_nammu_input initialises as empty string
+  - _session_correction_count initialises as 0
+  - OperatorProfile with 3 corrections produces 3-line context
 
 Update test_identity.py: CURRENT_PHASE assertion.
 
@@ -366,91 +313,90 @@ Update test_identity.py: CURRENT_PHASE assertion.
 
 ## Permitted file changes
 
-inanna/core/browser_workflows.py       <- MODIFY: add BrowserComprehension,
-                                           build_browser_comprehension,
-                                           update read_page/search_web
-inanna/ui/server.py                    <- MODIFY: unified comprehension dispatch,
-                                           CROWN_INSTRUCTIONS dict,
-                                           store comprehension in result.data
-inanna/main.py                         <- MODIFY: store comprehension in tool
-                                           execution result data
-inanna/identity.py                     <- MODIFY: CURRENT_PHASE
-inanna/tests/test_comprehension_layer.py <- NEW
-inanna/tests/test_identity.py          <- MODIFY
+inanna/core/nammu_profile.py            <- MODIFY: analyse_routing_log
+inanna/ui/server.py                     <- MODIFY: enhanced nammu-correct,
+                                           _last_nammu_input tracking,
+                                           misroute detection,
+                                           pattern surfacing,
+                                           nammu-stats command
+inanna/core/help_system.py              <- MODIFY: feedback section
+inanna/identity.py                      <- MODIFY: CURRENT_PHASE
+inanna/tests/test_feedback_loop.py      <- NEW
+inanna/tests/test_identity.py           <- MODIFY
 
 ---
 
 ## What You Are NOT Building
 
-- No new comprehension classes for process/filesystem/network
-  (these return simple data that doesn't need structuring)
-- No LLM-based summarisation (all deterministic)
-- No changes to email comprehension (already working)
-- No changes to constitutional_filter.py or nammu_profile.py
-- No changes to tools.json or NixOS configs
+- No ML-based correction inference (all heuristic)
+- No automatic correction without operator confirmation
+- No cross-session pattern merging (Cycle 11)
+- No changes to tools.json, NixOS configs, or workflows
+- No changes to constitutional_filter.py
+- Do NOT make LLM calls in tests
 
 ---
 
 ## Critical Constraints
 
-1. ALL comprehension is deterministic — no LLM calls
-   The comprehension layer runs synchronously in the server path.
-   Any LLM-based summarisation is Cycle 10+ territory.
+1. Misroute detection is INFORMATIONAL only
+   It never blocks or interrupts the operator's new message.
+   It surfaces a gentle hint. Nothing more.
 
-2. CROWN_INSTRUCTIONS must reference {summary} placeholder
-   The tool_result_summary is always injected via .format(summary=...)
+2. Corrections only record with operator intent
+   nammu-correct is explicit. The implicit detection only
+   SUGGESTS a correction — the operator types nammu-correct
+   to confirm. NAMMU never records a correction silently.
 
-3. The existing email comprehension must NOT be broken
-   The existing code at lines 3568-3581 works correctly.
-   The refactor must produce identical behaviour for email.
+3. _last_nammu_input and _last_nammu_route are session-only
+   They reset when the server restarts.
+   They are NOT persisted. They are working memory.
 
-4. result.data must carry comprehension objects
-   server.py retrieves comprehension from result.data.
-   If result.data doesn't have it, fallback to raw summary.
-   Never crash — the fallback is always the generic handler.
-
-5. to_crown_context() never raises
-   Wrap all comprehension methods in try/except at the server.py
-   call site. If comprehension fails, fall through to raw summary.
+4. analyse_routing_log is pure statistics
+   No LLM. No inference. Just counts.
 
 ---
 
 ## Definition of Done
 
-- [ ] BrowserComprehension and build_browser_comprehension in browser_workflows.py
-- [ ] browser read_page() and search_web() return (record, comprehension) tuples
-- [ ] server.py has unified comprehension dispatch for all 4 domains
-- [ ] CROWN_INSTRUCTIONS dict with domain-specific prompts
-- [ ] Document tool stores record + comprehension in result.data
-- [ ] Calendar tools store cal_result + comprehension in result.data
-- [ ] Browser tools store record + comprehension in result.data
-- [ ] CURRENT_PHASE = "Cycle 9 - Phase 9.4 - The Comprehension Layer"
-- [ ] All tests pass: py -3 -m unittest discover -s tests (>=698)
-- [ ] Pushed as cycle9-phase4-complete
+- [ ] nammu-correct accepts intent + optional query/JSON params
+- [ ] _last_nammu_input and _last_nammu_route tracked in server
+- [ ] _detect_misroute() detects correction signals en/es
+- [ ] Misroute detection surfaces informational hint only
+- [ ] Pattern surfacing after every 5th correction
+- [ ] analyse_routing_log() in nammu_profile.py
+- [ ] nammu-stats command shows routing statistics
+- [ ] help_system.py updated with feedback section
+- [ ] CURRENT_PHASE = "Cycle 9 - Phase 9.5 - The Feedback Loop"
+- [ ] All tests pass: py -3 -m unittest discover -s tests (>=724)
+- [ ] Pushed as cycle9-phase5-complete
 
 ---
 
 ## Handoff
 
-Commit: cycle9-phase4-complete
+Commit: cycle9-phase5-complete
 Push immediately to origin/main.
-Report: docs/implementation/CYCLE9_PHASE4_REPORT.md
+Report: docs/implementation/CYCLE9_PHASE5_REPORT.md
 
 The report MUST include:
-  - Confirmation all 4 domains have comprehension wired
-  - Sample to_crown_context() output for each domain
-  - Confirmation email comprehension unchanged
-  - Note on which tools now pass comprehension objects through result.data
+  - Test of nammu-correct with query parameter
+  - Sample analyse_routing_log() output
+  - Confirmation misroute detection triggers on Spanish signals
+  - Confirmation misroute detection does NOT trigger on normal messages
 
-Stop. Do not begin Phase 9.5 without new CURRENT_PHASE.md.
+Stop. Do not begin Phase 9.6 without new CURRENT_PHASE.md.
 
 ---
 
 *Written by: Claude (Command Center)*
 *Guardian approval: ZAERA*
 *Date: 2026-04-22*
-*Tools return raw data.*
-*Comprehension turns raw data into meaning.*
-*CROWN receives meaning, not raw data.*
-*This is how INANNA stops inventing.*
-*This is how INANNA starts understanding.*
+*NAMMU does not wait to be taught.*
+*NAMMU notices.*
+*NAMMU asks.*
+*NAMMU remembers.*
+*Every correction makes the next interaction smoother.*
+*The gap between operator and machine narrows*
+*with every session.*
+*This is how NAMMU becomes fluent in ZAERA.*
