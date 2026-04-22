@@ -39,6 +39,18 @@ HELP_COMMON = """𒀭 INANNA NYX — Available Commands
     "mtx replied?"
     Profile grows automatically from every interaction.
 
+  NAMMU FEEDBACK (teach INANNA from mistakes)
+    "nammu-correct email_search Matxalen"
+                              Correct last routing with query
+    "nammu-correct email_search {"query": "Matxalen"}"
+                              Correct with JSON params
+    "nammu-stats"             Show routing statistics
+    "nammu-profile"           Show your full NAMMU profile
+
+    After corrections: the profile updates immediately.
+    Next time you ask the same thing, NAMMU uses your correction.
+    After 5 corrections: NAMMU shows a pattern summary.
+
   YOUR PROFILE
     my-profile                    Show your profile
     my-profile edit [field] [val] Update a field
@@ -318,7 +330,11 @@ HELP_TOPICS = {
 
   nammu-profile                  Show your current NAMMU profile
   nammu-learn mtx Matxalen       Teach a shorthand
-  nammu-correct email_search     Correct the last routing
+  nammu-correct email_search Matxalen
+                                 Correct last routing with query
+  nammu-correct email_search {"query": "Matxalen"}
+                                 Correct with JSON params
+  nammu-stats                    Show routing statistics
 
   NAMMU stores:
     - known shorthands

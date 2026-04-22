@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import re
+from collections import Counter
 from dataclasses import asdict, dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
@@ -294,3 +295,23 @@ def extract_potential_shorthands(
             continue
         candidates.append(word)
     return candidates
+
+
+def analyse_routing_log(
+    routing_log: list[dict[str, Any]],
+    profile: OperatorProfile,
+) -> dict[str, Any]:
+    """Return deterministic routing statistics for the last routing records."""
+
+    routes = [str(entry.get("route", "")).strip() for entry in routing_log if str(entry.get("route", "")).strip()]
+    domain_counts = Counter(
+        route.split("_", 1)[0]
+        for route in routes
+        if "_" in route
+    )
+    return {
+        "total_routings": len(routes),
+        "top_domains": dict(domain_counts.most_common(5)),
+        "correction_count": len(profile.routing_corrections),
+        "known_shorthands": len(profile.known_shorthands),
+    }

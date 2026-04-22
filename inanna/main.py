@@ -57,6 +57,8 @@ from core.nammu_intent import (
 )
 from core.nammu_profile import (
     OperatorProfile,
+    RoutingCorrection,
+    analyse_routing_log,
     build_profile_from_user_profile,
     load_operator_profile,
     save_operator_profile,
@@ -2081,6 +2083,52 @@ def ensure_nammu_profile_for_user(
     nammu_profile = build_profile_from_user_profile(user_profile, nammu_dir)
     save_operator_profile(nammu_dir, nammu_profile)
     return nammu_profile
+
+
+def parse_nammu_correction_params(param_str: str) -> dict[str, Any]:
+    cleaned = str(param_str or "").strip()
+    if not cleaned:
+        return {}
+    try:
+        parsed = json.loads(cleaned)
+    except (json.JSONDecodeError, ValueError):
+        return {"query": cleaned}
+    return parsed if isinstance(parsed, dict) else {"query": cleaned}
+
+
+def build_nammu_correction_record_text(
+    original_text: str,
+    correct_intent: str,
+    correct_params: dict[str, Any],
+) -> str:
+    example = RoutingCorrection(
+        original_text=str(original_text or ""),
+        correct_intent=str(correct_intent or ""),
+        correct_params=dict(correct_params or {}),
+    ).to_example_line()
+    return example
+
+
+def build_nammu_pattern_summary(
+    routing_corrections: list[dict[str, Any]],
+    session_correction_count: int,
+) -> str | None:
+    if session_correction_count <= 0 or session_correction_count % 5 != 0:
+        return None
+    recent = routing_corrections[-5:]
+    if not recent:
+        return None
+    patterns = [
+        f"  '{str(item.get('original_text', ''))[:30]}' -> {str(item.get('correct_intent', ''))}"
+        for item in recent
+    ]
+    return "\n".join(
+        [
+            f"nammu > {session_correction_count} corrections this session",
+            *patterns,
+            "  These are saved and will improve future routing.",
+        ]
+    )
 
 
 def resolve_tool_domain(tool_name: str) -> str:
@@ -7174,6 +7222,7 @@ def handle_command(
         )
         session_state["last_nammu_input"] = ""
         session_state["last_nammu_route"] = "unknown"
+        session_state["session_correction_count"] = 0
         if guardian_user is not None and target.user_id == guardian_user.user_id:
             session_state["guardian_token"] = token
             session_state["original_token"] = None
@@ -7232,6 +7281,7 @@ def handle_command(
         session_state["nammu_profile"] = None
         session_state["last_nammu_input"] = ""
         session_state["last_nammu_route"] = "unknown"
+        session_state["session_correction_count"] = 0
         refresh_startup_context(startup_context, memory, None, user_manager)
         sync_profile_grounding(engine, profile_manager, None, None)
         reset_onboarding_state(session_state)
@@ -7310,21 +7360,14 @@ def handle_command(
         if len(parts) < 2:
             return "nammu-correct > usage: nammu-correct [intent] [optional params]"
         correct_intent = parts[1].strip()
-        correct_params: dict[str, Any] = {}
-        if len(parts) == 3 and parts[2].strip():
-            trailing = parts[2].strip()
-            if correct_intent == "email_search":
-                correct_params["query"] = trailing
-            elif correct_intent in {"desktop_open_app", "launch_app"}:
-                correct_params["app"] = trailing
-            elif correct_intent in {"read_file", "doc_read", "calendar_read_ics"}:
-                correct_params["path"] = trailing
+        correct_params = parse_nammu_correction_params(parts[2] if len(parts) == 3 else "")
+        original_text = (
+            str(session_state.get("last_nammu_input", ""))
+            if isinstance(session_state, dict)
+            else ""
+        )
         nammu_profile.record_correction(
-            original_text=(
-                str(session_state.get("last_nammu_input", ""))
-                if isinstance(session_state, dict)
-                else ""
-            ),
+            original_text=original_text,
             misrouted_to=(
                 str(session_state.get("last_nammu_route", "unknown"))
                 if isinstance(session_state, dict)
@@ -7334,7 +7377,51 @@ def handle_command(
             correct_params=correct_params,
         )
         save_operator_profile(nammu_dir, nammu_profile)
-        return f"nammu > correction recorded: '{correct_intent}'"
+        session_correction_count = (
+            int(session_state.get("session_correction_count", 0))
+            if isinstance(session_state, dict)
+            else 0
+        ) + 1
+        if isinstance(session_state, dict):
+            session_state["session_correction_count"] = session_correction_count
+        lines = [
+            "nammu > correction recorded",
+            f"  learned: {build_nammu_correction_record_text(original_text, correct_intent, correct_params)}",
+            f"  total corrections: {len(nammu_profile.routing_corrections)}",
+        ]
+        pattern_summary = build_nammu_pattern_summary(
+            nammu_profile.routing_corrections,
+            session_correction_count,
+        )
+        if pattern_summary:
+            lines.append(pattern_summary)
+        return "\n".join(lines)
+
+    if lowered == "nammu-stats":
+        nammu_profile = (
+            session_state.get("nammu_profile")
+            if isinstance(session_state, dict)
+            else None
+        )
+        if nammu_profile is None or nammu_dir is None:
+            return "nammu-stats > profile management is unavailable."
+        routing_history = load_routing_history(nammu_dir, limit=100)
+        stats = analyse_routing_log(routing_history, nammu_profile)
+        session_correction_count = (
+            int(session_state.get("session_correction_count", 0))
+            if isinstance(session_state, dict)
+            else 0
+        )
+        return "\n".join(
+            [
+                "nammu > routing statistics",
+                f"  total routings (last 100): {stats['total_routings']}",
+                f"  top domains: {stats['top_domains']}",
+                f"  corrections recorded: {stats['correction_count']}",
+                f"  known shorthands: {stats['known_shorthands']}",
+                f"  session corrections: {session_correction_count}",
+            ]
+        )
 
     if lowered == "inanna-reflect":
         if user_manager is None:
@@ -7797,6 +7884,7 @@ def handle_command(
         )
         session_state["last_nammu_input"] = ""
         session_state["last_nammu_route"] = "unknown"
+        session_state["session_correction_count"] = 0
         append_audit_event(
             session_audit,
             "join",
@@ -8008,6 +8096,7 @@ def handle_command(
             )
             session_state["last_nammu_input"] = ""
             session_state["last_nammu_route"] = "unknown"
+            session_state["session_correction_count"] = 0
             refresh_startup_context(startup_context, memory, guardian_record, user_manager)
             sync_profile_grounding(
                 engine,
@@ -8046,6 +8135,7 @@ def handle_command(
         )
         session_state["last_nammu_input"] = ""
         session_state["last_nammu_route"] = "unknown"
+        session_state["session_correction_count"] = 0
         refresh_startup_context(startup_context, memory, target, user_manager)
         sync_profile_grounding(engine, profile_manager, target, active_token)
         lines = [f"switch-user > Now operating as: {target.display_name} ({target.role})"]
@@ -9456,6 +9546,7 @@ def main() -> None:
         "nammu_profile": nammu_profile,
         "last_nammu_input": "",
         "last_nammu_route": "unknown",
+        "session_correction_count": 0,
     }
     engine = Engine(
         model_url=config.model_url,

@@ -36,8 +36,9 @@ from core.nammu_memory import (
     append_governance_event,
     append_routing_event,
     load_governance_history,
+    load_routing_history,
 )
-from core.nammu_profile import save_operator_profile
+from core.nammu_profile import analyse_routing_log, save_operator_profile
 from core.orchestration import OrchestrationEngine
 from core.operator import OperatorFaculty, ToolResult
 from core.package_faculty import PackageFaculty
@@ -98,6 +99,8 @@ from main import (
     build_realm_access_warning_lines,
     build_realm_context_report,
     build_nammu_log_report,
+    build_nammu_correction_record_text,
+    build_nammu_pattern_summary,
     build_process_status_payload,
     build_realms_report,
     build_routing_log_report,
@@ -109,6 +112,7 @@ from main import (
     build_whoami_report,
     build_tool_context_lines,
     ensure_nammu_profile_for_user,
+    parse_nammu_correction_params,
     create_invite_proposal,
     create_orchestration_proposal,
     create_realm_proposal,
@@ -215,6 +219,23 @@ CROWN_INSTRUCTIONS = {
         "DO NOT reproduce large chunks of text verbatim."
     ),
 }
+
+
+MISROUTE_SIGNALS = [
+    "no that",
+    "not what i",
+    "i meant",
+    "wrong",
+    "that's not",
+    "thats not",
+    "not right",
+    "no no",
+    "wait no",
+    "actually i",
+    "no eso no",
+    "no era eso",
+    "equivocado",
+]
 
 
 def extract_tool_comprehension(result: ToolResult) -> tuple[str | None, str]:
@@ -483,6 +504,7 @@ class InterfaceServer:
         )
         self._last_nammu_input = ""
         self._last_nammu_route = "unknown"
+        self._session_correction_count = 0
         self.active_token = self.guardian_token
         self.original_token = None
         self.user_log = UserLog(self.data_root / "user_logs")
@@ -643,6 +665,17 @@ class InterfaceServer:
                 label = "[live analysis]" if mode == "live" else "[analysis fallback]"
                 await self.broadcast({"type": "analyst", "text": f"{label} {analysis_text}"})
             else:
+                if self._detect_misroute(text) and self._last_nammu_input:
+                    await self.broadcast(
+                        {
+                            "type": "system",
+                            "text": (
+                                f"nammu > did I misroute '{self._last_nammu_input[:40]}'?\n"
+                                "  type: nammu-correct <intent> [query] to teach me\n"
+                                "  or continue - I'll try to understand your new message"
+                            ),
+                        }
+                    )
                 outcome = await asyncio.to_thread(
                     self._run_routed_turn, text
                 )
@@ -698,6 +731,10 @@ class InterfaceServer:
                 self.user_manager.get_user(self.guardian_user.user_id) or self.guardian_user
             )
 
+    def _detect_misroute(self, text: str) -> bool:
+        lowered = str(text or "").strip().lower()
+        return any(signal in lowered for signal in MISROUTE_SIGNALS)
+
     def _memory_scope_user_id(self) -> str | None:
         if self.active_user is None:
             return None
@@ -739,6 +776,7 @@ class InterfaceServer:
         )
         self._last_nammu_input = ""
         self._last_nammu_route = "unknown"
+        self._session_correction_count = 0
         append_audit_event(
             self.session_audit,
             "login",
@@ -791,6 +829,7 @@ class InterfaceServer:
         )
         self._last_nammu_input = ""
         self._last_nammu_route = "unknown"
+        self._session_correction_count = 0
         self._refresh_startup_context()
         return True
 
@@ -1841,6 +1880,7 @@ class InterfaceServer:
                 self.nammu_profile = None
                 self._last_nammu_input = ""
                 self._last_nammu_route = "unknown"
+                self._session_correction_count = 0
                 self._refresh_startup_context()
                 onboarding_state = self._onboarding_state()
                 reset_onboarding_state(onboarding_state)
@@ -2154,25 +2194,49 @@ class InterfaceServer:
                 await self.broadcast_state()
                 return
             correct_intent = parts[1].strip()
-            correct_params: dict[str, Any] = {}
-            if len(parts) == 3 and parts[2].strip():
-                trailing = parts[2].strip()
-                if correct_intent == "email_search":
-                    correct_params["query"] = trailing
-                elif correct_intent in {"desktop_open_app", "launch_app"}:
-                    correct_params["app"] = trailing
-                elif correct_intent in {"read_file", "doc_read", "calendar_read_ics"}:
-                    correct_params["path"] = trailing
+            correct_params = parse_nammu_correction_params(parts[2] if len(parts) == 3 else "")
+            original_text = self._last_nammu_input or ""
             self.nammu_profile.record_correction(
-                original_text=self._last_nammu_input or "",
+                original_text=original_text,
                 misrouted_to=self._last_nammu_route or "unknown",
                 correct_intent=correct_intent,
                 correct_params=correct_params,
             )
             await asyncio.to_thread(save_operator_profile, self.nammu_dir, self.nammu_profile)
-            await self.broadcast(
-                {"type": "system", "text": f"nammu > correction recorded: '{correct_intent}'"}
+            self._session_correction_count += 1
+            lines = [
+                "nammu > correction recorded",
+                f"  learned: {build_nammu_correction_record_text(original_text, correct_intent, correct_params)}",
+                f"  total corrections: {len(self.nammu_profile.routing_corrections)}",
+            ]
+            pattern_summary = build_nammu_pattern_summary(
+                self.nammu_profile.routing_corrections,
+                self._session_correction_count,
             )
+            if pattern_summary:
+                lines.append(pattern_summary)
+            await self.broadcast(
+                {"type": "system", "text": "\n".join(lines)}
+            )
+            await self.broadcast_state()
+        elif command_name == "nammu-stats":
+            if self.active_token is None or self.active_user is None or self.nammu_profile is None:
+                await self.broadcast(
+                    {"type": "system", "text": "nammu-stats > profile management is unavailable."}
+                )
+                await self.broadcast_state()
+                return
+            routing_history = await asyncio.to_thread(load_routing_history, self.nammu_dir, 100)
+            stats = analyse_routing_log(routing_history, self.nammu_profile)
+            lines = [
+                "nammu > routing statistics",
+                f"  total routings (last 100): {stats['total_routings']}",
+                f"  top domains: {stats['top_domains']}",
+                f"  corrections recorded: {stats['correction_count']}",
+                f"  known shorthands: {stats['known_shorthands']}",
+                f"  session corrections: {self._session_correction_count}",
+            ]
+            await self.broadcast({"type": "system", "text": "\n".join(lines)})
             await self.broadcast_state()
         elif command_name == "inanna-reflect":
             allowed, reason = check_privilege(self.active_user, self.user_manager, "all")
