@@ -18,6 +18,7 @@ from websockets.exceptions import ConnectionClosed
 
 from config import Config
 from core.auth import AuthStore
+from core.browser_workflows import BrowserWorkflows
 from core.communication_workflows import CommunicationWorkflows
 from core.desktop_faculty import DesktopFaculty
 from core.document_workflows import DocumentWorkflows
@@ -69,6 +70,7 @@ from main import (
     build_body_report,
     build_body_summary,
     build_communication_audit_entry,
+    build_browser_audit_entry,
     build_desktop_audit_entry,
     build_document_audit_entry,
     build_email_audit_entry,
@@ -117,6 +119,7 @@ from main import (
     complete_orchestration_resolution as complete_orchestration_backend_resolution,
     default_profile_field_value,
     detect_communication_tool_action,
+    detect_browser_tool_action,
     detect_desktop_tool_action,
     detect_document_tool_action,
     detect_email_tool_action,
@@ -413,6 +416,7 @@ class InterfaceServer:
         self.guardian = GuardianFaculty()
         self.operator = OperatorFaculty()
         self.desktop_faculty = DesktopFaculty()
+        self.browser_workflows = BrowserWorkflows(self.desktop_faculty)
         self.document_workflows = DocumentWorkflows(self.desktop_faculty)
         self.communication_workflows = CommunicationWorkflows(self.desktop_faculty)
         self.email_workflows = EmailWorkflows(self.desktop_faculty)
@@ -1010,6 +1014,52 @@ class InterfaceServer:
                         "query": str(desktop_action["query"]),
                         "tool": str(desktop_action["tool"]),
                         "params": dict(desktop_action.get("params", {})),
+                    }
+                },
+                "approve",
+            )
+            responses = list(outcome["operator_payloads"])
+            if outcome["assistant_text"]:
+                responses.append({"type": "assistant", "text": outcome["assistant_text"]})
+            return {"responses": responses}
+
+        browser_action = detect_browser_tool_action(
+            text,
+            self.browser_workflows,
+        )
+        if browser_action is not None:
+            self._record_routing_decision("operator", text)
+            self._record_governance_decision(
+                "tool",
+                str(browser_action.get("reason", "Governed browser workflow use.")),
+                text,
+            )
+            if bool(browser_action.get("requires_proposal", False)):
+                created = create_tool_use_proposal(
+                    proposal=self.proposal,
+                    session=self.session,
+                    user_input=text,
+                    tool=str(browser_action["tool"]),
+                    query=str(browser_action["query"]),
+                    params=dict(browser_action.get("params", {})),
+                )
+                return {
+                    "response": {
+                        "type": "operator",
+                        "text": (
+                            f'tool proposed: {browser_action["tool"]} - '
+                            f'"{browser_action["query"]}"'
+                        ),
+                    },
+                    "proposal": {**created, "line": created["tool_line"]},
+                }
+            outcome = self.complete_tool_resolution(
+                {
+                    "payload": {
+                        "original_input": text,
+                        "query": str(browser_action["query"]),
+                        "tool": str(browser_action["tool"]),
+                        "params": dict(browser_action.get("params", {})),
                     }
                 },
                 "approve",
@@ -3177,6 +3227,7 @@ class InterfaceServer:
                 tool,
                 params,
                 self.operator,
+                browser_workflows=self.browser_workflows,
                 document_workflows=self.document_workflows,
                 filesystem_faculty=self.filesystem_faculty,
                 process_faculty=self.process_faculty,
@@ -3193,6 +3244,7 @@ class InterfaceServer:
             )
             audit_entry = (
                 build_network_audit_entry(result)
+                or build_browser_audit_entry(result)
                 or build_document_audit_entry(result)
                 or build_filesystem_audit_entry(result)
                 or build_process_audit_entry(result)

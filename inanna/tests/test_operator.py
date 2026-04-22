@@ -31,6 +31,9 @@ class OperatorFacultyTests(unittest.TestCase):
                 "list_packages",
                 "install_package",
                 "remove_package",
+                "browser_read",
+                "browser_search",
+                "browser_open",
                 "doc_read",
                 "doc_write",
                 "doc_open",
@@ -108,6 +111,18 @@ class OperatorFacultyTests(unittest.TestCase):
                 "requires_approval": False,
                 "requires_privilege": "converse",
                 "parameters": ["query"],
+                "enabled": True,
+            },
+        )
+        self.assertEqual(
+            operator.get_tool_definition("browser_read"),
+            {
+                "display_name": "Read Web Page",
+                "description": "Fetch and read any web page URL.",
+                "category": "browser",
+                "requires_approval": False,
+                "requires_privilege": "converse",
+                "parameters": ["url", "js"],
                 "enabled": True,
             },
         )

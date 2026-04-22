@@ -78,6 +78,17 @@ HELP_COMMON = """𒀭 INANNA NYX — Available Commands
   Supported: .txt .md .docx .odt .pdf .xlsx .ods .csv
   (reading never requires approval - writing always does)
 
+  BROWSER (Firefox, Chrome, Edge)
+    "read the page at https://example.com"
+                                       Fetch and read URL (no approval)
+    "search the web for NixOS install" Web search (no approval)
+    "go to https://example.com"        Open in Firefox (approval)
+    "open https://example.com in chrome"
+                                       Open in Chrome (approval)
+
+  Note: passwords and financial forms are never accessible
+  Internal/local addresses (localhost, 192.168.x.x) are blocked
+
   DESKTOP (speak naturally)
     "open firefox"                Open any application
     "read the whatsapp window"    Read window content
@@ -253,7 +264,7 @@ HELP_TOPICS = {
   help [topic]       Show details on a specific topic
 
   Topics: my-profile, governance-trust, inanna-reflect,
-          faculties, tools, files, processes, packages, communication, email, documents, desktop, memory, realms, departments""",
+          faculties, tools, files, processes, packages, communication, email, documents, browser, desktop, memory, realms, departments""",
 
     "tools": """tools — Available tools (all require proposal approval)
 
@@ -407,6 +418,27 @@ HELP_TOPICS = {
 
   Direct reading is the primary path.
   LibreOffice is only used when opening or exporting documents.""",
+
+    "browser": """browser - Browser Faculty
+
+  INANNA can read public web pages directly, search DuckDuckGo HTML
+  results, and with approval open URLs in Firefox, Chrome, or Edge.
+
+  Read a page:      "read the page at https://example.com"
+  Fetch a page:     "fetch example.com/docs"
+  Search the web:   "search the web for NixOS install"
+  Open visibly:     "go to https://example.com"
+  Open in Chrome:   "open https://example.com in chrome"
+
+  Governance:
+    - browser_read: no approval required
+    - browser_search: no approval required
+    - browser_open: approval required
+
+  Blocked by design:
+    - localhost and private-network URLs
+    - file:// URLs
+    - passwords and financial forms""",
 
     "desktop": """desktop - Desktop Faculty operations
 

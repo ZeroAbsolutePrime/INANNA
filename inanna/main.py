@@ -15,6 +15,11 @@ from dotenv import load_dotenv
 
 from config import Config
 from core.body import BodyInspector, BodyReport
+from core.browser_workflows import (
+    BrowserActionResult,
+    BrowserWorkflows,
+    PageRecord,
+)
 from core.communication_workflows import CommunicationWorkflows, WorkflowResult, normalize_app_name
 from core.desktop_faculty import DesktopFaculty, DesktopResult, is_consequential_label
 from core.document_workflows import (
@@ -300,6 +305,11 @@ EMAIL_TOOL_NAMES = {
     "email_compose",
     "email_reply",
 }
+BROWSER_TOOL_NAMES = {
+    "browser_read",
+    "browser_search",
+    "browser_open",
+}
 DOCUMENT_TOOL_NAMES = {
     "doc_read",
     "doc_write",
@@ -435,6 +445,28 @@ DOCUMENT_HINT_FALLBACKS = (
     "open in libreoffice",
     "export to pdf",
     "save as pdf",
+)
+BROWSER_HINT_FALLBACKS = (
+    "open url",
+    "go to",
+    "navigate to",
+    "visit",
+    "read the page",
+    "what does the page say",
+    "fetch",
+    "browse to",
+    "open website",
+    "open site",
+    "search the web",
+    "look up online",
+    "find online",
+    "what is on",
+    "read the website",
+    "open firefox",
+    "open chrome",
+    "open edge",
+    "open in browser",
+    "show me the website",
 )
 PACKAGE_SEARCH_TERMS = (
     "app",
@@ -592,6 +624,25 @@ def load_document_domain_hints(
     return cleaned or list(DOCUMENT_HINT_FALLBACKS)
 
 
+def load_browser_domain_hints(
+    signals_path: Path = FILESYSTEM_SIGNAL_PATH,
+) -> list[str]:
+    try:
+        payload = json.loads(signals_path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return list(BROWSER_HINT_FALLBACKS)
+
+    domain_hints = payload.get("domain_hints", {})
+    if not isinstance(domain_hints, dict):
+        return list(BROWSER_HINT_FALLBACKS)
+    hints = domain_hints.get("browser", [])
+    if not isinstance(hints, list):
+        return list(BROWSER_HINT_FALLBACKS)
+
+    cleaned = [str(item).strip().lower() for item in hints if str(item).strip()]
+    return cleaned or list(BROWSER_HINT_FALLBACKS)
+
+
 def normalize_request_fragment(value: str) -> str:
     cleaned = str(value or "").strip()
     if len(cleaned) >= 2 and cleaned[0] == cleaned[-1] and cleaned[0] in {'"', "'"}:
@@ -638,6 +689,12 @@ def normalize_document_path(value: str) -> str:
             cleaned = cleaned[: -len(suffix)].strip()
             lowered = cleaned.lower()
     return cleaned.strip().strip('"')
+
+
+def normalize_url_fragment(value: str) -> str:
+    cleaned = normalize_request_fragment(value).strip()
+    cleaned = cleaned.strip("<>[]()")
+    return cleaned
 
 
 def normalize_search_pattern(value: str) -> str:
@@ -972,6 +1029,92 @@ def detect_document_tool_action(
     return {
         **request,
         "requires_proposal": document_request_requires_proposal(request),
+    }
+
+
+def extract_browser_tool_request(
+    text: str,
+    hints: list[str] | None = None,
+) -> dict[str, Any] | None:
+    normalized = str(text or "").strip()
+    lowered = normalized.lower()
+    active_hints = hints or load_browser_domain_hints()
+    hint_match = any(hint in lowered for hint in active_hints)
+
+    open_match = re.match(
+        r"^(?:open|go to|navigate to|visit|browse to)\s+(?P<url>\S+)(?:\s+in\s+(?P<browser>firefox|chrome|edge))?$",
+        normalized,
+        flags=re.IGNORECASE,
+    )
+    if open_match:
+        params = {
+            "url": normalize_url_fragment(open_match.group("url")),
+            "browser": normalize_request_fragment(open_match.group("browser") or "firefox").lower(),
+        }
+        return {
+            "tool": "browser_open",
+            "params": params,
+            "query": params["url"],
+            "reason": "Visible browser navigation requires governed tool use.",
+        }
+
+    read_match = re.match(
+        r"^(?:read|fetch)(?:\s+the)?(?:\s+page|\s+website|\s+site)?(?:\s+at)?\s+(?P<url>\S+)(?:\s+with\s+js)?$",
+        normalized,
+        flags=re.IGNORECASE,
+    )
+    if read_match:
+        url = normalize_url_fragment(read_match.group("url"))
+        params = {"url": url, "js": bool(re.search(r"\bwith\s+js\b", lowered))}
+        return {
+            "tool": "browser_read",
+            "params": params,
+            "query": url,
+            "reason": "Browser page reading routed to Browser Faculty.",
+        }
+
+    search_match = re.match(
+        r"^(?:search the web for|look up|look up online|find online)\s+(?P<query>.+)$",
+        normalized,
+        flags=re.IGNORECASE,
+    )
+    if search_match:
+        query = normalize_request_fragment(search_match.group("query"))
+        return {
+            "tool": "browser_search",
+            "params": {"query": query},
+            "query": query,
+            "reason": "Browser web search routed to Browser Faculty.",
+        }
+
+    if hint_match and re.match(r"^(?:what is|who is|where is|when is|why is|how is)\s+.+\?$", normalized, flags=re.IGNORECASE):
+        query = normalize_request_fragment(normalized)
+        return {
+            "tool": "browser_search",
+            "params": {"query": query},
+            "query": query,
+            "reason": "Browser web search routed to Browser Faculty.",
+        }
+
+    return None
+
+
+def browser_request_requires_proposal(browser_request: dict[str, Any]) -> bool:
+    tool_name = str(browser_request.get("tool", "")).strip().lower()
+    return tool_name == "browser_open"
+
+
+def detect_browser_tool_action(
+    text: str,
+    browser_workflows: BrowserWorkflows | None = None,
+) -> dict[str, Any] | None:
+    del browser_workflows
+    request = extract_browser_tool_request(text)
+    if request is None:
+        return None
+    return {
+        **request,
+        "requires_proposal": browser_request_requires_proposal(request),
     }
 
 
@@ -4938,6 +5081,75 @@ def build_document_tool_result(
     )
 
 
+def build_browser_tool_result(
+    tool_name: str,
+    record: PageRecord | BrowserActionResult,
+    browser_workflows: BrowserWorkflows,
+    query: str,
+) -> ToolResult:
+    if isinstance(record, PageRecord):
+        formatted = (
+            browser_workflows.format_search_result(record, query)
+            if tool_name == "browser_search"
+            else browser_workflows.format_page_result(record)
+        )
+        return ToolResult(
+            tool=tool_name,
+            query=query,
+            success=record.success,
+            data={
+                "url": record.url,
+                "title": record.title,
+                "content": record.content,
+                "links": list(record.links),
+                "word_count": record.word_count,
+                "status_code": record.status_code,
+                "formatted": formatted,
+            },
+            error=record.error,
+        )
+
+    return ToolResult(
+        tool=tool_name,
+        query=query,
+        success=record.success,
+        data={
+            "url": record.url,
+            "action": record.action,
+            "consequential": record.consequential,
+            "output": record.output,
+            "formatted": record.output or f"browser > error: {record.error or 'Unknown browser error.'}",
+        },
+        error=record.error,
+    )
+
+
+def run_browser_tool(
+    browser_workflows: BrowserWorkflows,
+    tool_name: str,
+    params: dict[str, Any],
+) -> ToolResult:
+    if tool_name == "browser_read":
+        url = str(params.get("url", "")).strip()
+        result = browser_workflows.read_page(url, js=bool(params.get("js", False)))
+        return build_browser_tool_result(tool_name, result, browser_workflows, url)
+    if tool_name == "browser_search":
+        query = str(params.get("query", "")).strip()
+        result = browser_workflows.search_web(query)
+        return build_browser_tool_result(tool_name, result, browser_workflows, query)
+    if tool_name == "browser_open":
+        url = str(params.get("url", "")).strip()
+        browser_name = str(params.get("browser", "firefox") or "firefox").strip().lower()
+        result = browser_workflows.open_in_browser(url, browser=browser_name)
+        return build_browser_tool_result(tool_name, result, browser_workflows, url)
+    return ToolResult(
+        tool=tool_name,
+        query=str(params.get("url", "") or params.get("query", "")),
+        success=False,
+        error=f"Unknown browser tool: {tool_name}",
+    )
+
+
 def run_document_tool(
     document_workflows: DocumentWorkflows,
     tool_name: str,
@@ -4982,6 +5194,7 @@ def execute_tool_request(
     tool_name: str,
     params: dict[str, Any],
     operator: OperatorFaculty,
+    browser_workflows: BrowserWorkflows | None = None,
     document_workflows: DocumentWorkflows | None = None,
     filesystem_faculty: FileSystemFaculty | None = None,
     process_faculty: ProcessFaculty | None = None,
@@ -4991,6 +5204,9 @@ def execute_tool_request(
     email_workflows: EmailWorkflows | None = None,
     software_registry: SoftwareRegistry | None = None,
 ) -> ToolResult:
+    if tool_name in BROWSER_TOOL_NAMES:
+        workflows = browser_workflows or BrowserWorkflows(desktop_faculty or DesktopFaculty())
+        return run_browser_tool(workflows, tool_name, params)
     if tool_name in DOCUMENT_TOOL_NAMES:
         workflows = document_workflows or DocumentWorkflows(desktop_faculty or DesktopFaculty())
         return run_document_tool(workflows, tool_name, params)
@@ -5399,6 +5615,33 @@ def build_document_context_lines(result: ToolResult) -> list[str]:
     ]
 
 
+def build_browser_context_lines(result: ToolResult) -> list[str]:
+    url = str(result.data.get("url") or result.query)
+    if not result.success:
+        return [
+            f"tool result ({result.tool}) url: {url}",
+            f"error: {result.error or 'unknown browser error'}",
+        ]
+
+    if result.tool in {"browser_read", "browser_search"}:
+        lines = [
+            f"tool result ({result.tool}) url: {url}",
+            f"title: {result.data.get('title', '')}",
+            f"word_count: {result.data.get('word_count', 0)}",
+            f"status_code: {result.data.get('status_code', 0)}",
+        ]
+        content = str(result.data.get("content", "")).strip()
+        if content:
+            lines.append(f"content_excerpt: {content[:4000]}")
+        return lines
+
+    return [
+        f"tool result ({result.tool}) url: {url}",
+        f"action: {result.data.get('action', 'navigate')}",
+        f"message: {str(result.data.get('formatted', '')).strip()[:1000]}",
+    ]
+
+
 def communication_result_requires_send_confirmation(result: ToolResult) -> bool:
     return bool(
         result.tool == "comm_send_message"
@@ -5418,6 +5661,12 @@ def email_result_requires_send_confirmation(result: ToolResult) -> bool:
 
 
 def build_tool_result_text(result: ToolResult) -> str:
+    if result.tool in BROWSER_TOOL_NAMES:
+        return str(
+            result.data.get("formatted")
+            or f"browser > error: {result.error or 'Unknown browser error.'}"
+        )
+
     if result.tool in DOCUMENT_TOOL_NAMES:
         return str(
             result.data.get("formatted")
@@ -5518,6 +5767,9 @@ def build_tool_result_text(result: ToolResult) -> str:
 
 
 def build_tool_context_lines(result: ToolResult) -> list[str]:
+    if result.tool in BROWSER_TOOL_NAMES:
+        return build_browser_context_lines(result)
+
     if result.tool in DOCUMENT_TOOL_NAMES:
         return build_document_context_lines(result)
 
@@ -5735,6 +5987,31 @@ def build_document_audit_entry(result: ToolResult) -> dict[str, object] | None:
 
     details["result"] = result_text
     details["summary"] = f"{result.tool} {path} -> {result_text}"
+    return details
+
+
+def build_browser_audit_entry(result: ToolResult) -> dict[str, object] | None:
+    if result.tool not in BROWSER_TOOL_NAMES:
+        return None
+
+    url = str(result.data.get("url") or result.query).strip()
+    details: dict[str, object] = {
+        "tool": result.tool,
+        "url": url,
+    }
+    if not result.success:
+        result_text = result.error or "failed"
+    elif result.tool == "browser_open":
+        result_text = "opened in browser"
+        details["action"] = str(result.data.get("action", "navigate"))
+    else:
+        result_text = f"{int(result.data.get('word_count', 0))} words"
+        details["title"] = str(result.data.get("title", ""))
+        details["status_code"] = int(result.data.get("status_code", 0))
+        details["word_count"] = int(result.data.get("word_count", 0))
+
+    details["result"] = result_text
+    details["summary"] = f"{result.tool} {url} -> {result_text}"
     return details
 
 
@@ -6033,6 +6310,7 @@ def complete_tool_resolution(
     active_token: SessionToken | None = None,
     user_log: UserLog | None = None,
     faculty_monitor: FacultyMonitor | None = None,
+    browser_workflows: BrowserWorkflows | None = None,
     document_workflows: DocumentWorkflows | None = None,
     filesystem_faculty: FileSystemFaculty | None = None,
     process_faculty: ProcessFaculty | None = None,
@@ -6064,6 +6342,7 @@ def complete_tool_resolution(
             tool,
             params,
             operator,
+            browser_workflows=browser_workflows,
             document_workflows=document_workflows,
             filesystem_faculty=filesystem_faculty,
             process_faculty=process_faculty,
@@ -6076,6 +6355,7 @@ def complete_tool_resolution(
             faculty_monitor.record_call("operator", (time.monotonic() - t0) * 1000, result.success)
         audit_entry = (
             build_network_audit_entry(result)
+            or build_browser_audit_entry(result)
             or build_document_audit_entry(result)
             or build_filesystem_audit_entry(result)
             or build_process_audit_entry(result)
@@ -6308,6 +6588,7 @@ def handle_command(
     startup_context: dict,
     config: Config,
     operator: OperatorFaculty | None = None,
+    browser_workflows: BrowserWorkflows | None = None,
     document_workflows: DocumentWorkflows | None = None,
     filesystem_faculty: FileSystemFaculty | None = None,
     process_faculty: ProcessFaculty | None = None,
@@ -6335,6 +6616,7 @@ def handle_command(
     normalized = command.strip()
     guardian_metrics = ensure_guardian_metrics(guardian_metrics)
     desktop_faculty = desktop_faculty or DesktopFaculty()
+    browser_workflows = browser_workflows or BrowserWorkflows(desktop_faculty)
     document_workflows = document_workflows or DocumentWorkflows(desktop_faculty)
     filesystem_faculty = filesystem_faculty or FileSystemFaculty()
     process_faculty = process_faculty or ProcessFaculty()
@@ -7789,6 +8071,73 @@ def handle_command(
             reflective_memory=reflective_memory,
         )
 
+    browser_action = detect_browser_tool_action(
+        normalized,
+        browser_workflows,
+    )
+    if browser_action is not None:
+        append_routing_decision(
+            routing_log,
+            session,
+            "operator",
+            normalized,
+            nammu_dir=nammu_dir,
+        )
+        append_governance_event(
+            resolve_nammu_dir(session, nammu_dir),
+            session.session_id,
+            "tool",
+            str(browser_action.get("reason", "Governed browser workflow use.")),
+            normalized[:60],
+        )
+        if bool(browser_action.get("requires_proposal", False)):
+            created = create_tool_use_proposal(
+                proposal=proposal,
+                session=session,
+                user_input=normalized,
+                tool=str(browser_action["tool"]),
+                query=str(browser_action["query"]),
+                params=dict(browser_action.get("params", {})),
+            )
+            return (
+                f'operator > tool proposed: {browser_action["tool"]} - "{browser_action["query"]}"\n'
+                'Type "approve" to execute or "reject" to cancel.\n'
+                f"{created['tool_line']}"
+            )
+        return complete_tool_resolution(
+            {
+                "payload": {
+                    "original_input": normalized,
+                    "query": str(browser_action["query"]),
+                    "tool": str(browser_action["tool"]),
+                    "params": dict(browser_action.get("params", {})),
+                }
+            },
+            "approve",
+            session,
+            proposal,
+            memory,
+            engine,
+            startup_context,
+            operator or OperatorFaculty(),
+            guardian_metrics,
+            active_token=active_token,
+            user_log=user_log,
+            faculty_monitor=faculty_monitor,
+            browser_workflows=browser_workflows,
+            document_workflows=document_workflows,
+            filesystem_faculty=filesystem_faculty,
+            process_faculty=process_faculty,
+            package_faculty=package_faculty,
+            desktop_faculty=desktop_faculty,
+            communication_workflows=communication_workflows,
+            email_workflows=email_workflows,
+            session_audit=session_audit,
+            active_realm_name=active_realm_name,
+            conversation_state=conversation_state,
+            reflective_memory=reflective_memory,
+        )
+
     document_action = detect_document_tool_action(
         normalized,
         document_workflows,
@@ -8326,6 +8675,7 @@ def main() -> None:
     process_faculty = ProcessFaculty()
     package_faculty = PackageFaculty()
     desktop_faculty = DesktopFaculty()
+    browser_workflows = BrowserWorkflows(desktop_faculty)
     document_workflows = DocumentWorkflows(desktop_faculty)
     communication_workflows = CommunicationWorkflows(desktop_faculty)
     email_workflows = EmailWorkflows(desktop_faculty)
@@ -8437,6 +8787,7 @@ def main() -> None:
             startup_context=startup_context,
             config=config,
             operator=operator,
+            browser_workflows=browser_workflows,
             document_workflows=document_workflows,
             filesystem_faculty=filesystem_faculty,
             process_faculty=process_faculty,

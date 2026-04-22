@@ -352,6 +352,41 @@
       ],
       "enabled": true
     },
+    "browser_read": {
+      "display_name": "Read Web Page",
+      "description": "Fetch and read any web page URL.",
+      "category": "browser",
+      "requires_approval": false,
+      "requires_privilege": "converse",
+      "parameters": [
+        "url",
+        "js"
+      ],
+      "enabled": true
+    },
+    "browser_search": {
+      "display_name": "Web Search",
+      "description": "Search the web via DuckDuckGo HTML results.",
+      "category": "browser",
+      "requires_approval": false,
+      "requires_privilege": "converse",
+      "parameters": [
+        "query"
+      ],
+      "enabled": true
+    },
+    "browser_open": {
+      "display_name": "Open in Browser",
+      "description": "Open a URL in Firefox, Chrome, or Edge.",
+      "category": "browser",
+      "requires_approval": true,
+      "requires_privilege": "converse",
+      "parameters": [
+        "url",
+        "browser"
+      ],
+      "enabled": true
+    },
     "desktop_open_app": {
       "display_name": "Open Application",
       "description": "Open any installed application by name.",

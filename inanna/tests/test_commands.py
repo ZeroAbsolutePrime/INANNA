@@ -600,6 +600,14 @@ class CommandTests(unittest.TestCase):
         self.assertIn("proposal.pdf", result.lower())
         self.assertIn("letter.docx to pdf", result.lower())
 
+    def test_help_browser_topic_lists_browser_faculty(self) -> None:
+        result = build_help_response("guardian", "browser")
+
+        self.assertTrue(result.startswith("INANNA NYX"))
+        self.assertIn("BROWSER", result)
+        self.assertIn("read the page at https://example.com", result.lower())
+        self.assertIn("go to https://example.com", result.lower())
+
     def test_my_profile_returns_formatted_profile(self) -> None:
         (
             session,
@@ -1655,7 +1663,7 @@ class CommandTests(unittest.TestCase):
             config,
         )
 
-        self.assertIn("tool-registry > Registered tools (35 total):", result)
+        self.assertIn("tool-registry > Registered tools (38 total):", result)
         self.assertIn("COMMUNICATION", result)
         self.assertIn("Read Messages [enabled]", result)
         self.assertIn("Send Message [enabled]", result)
@@ -1671,6 +1679,10 @@ class CommandTests(unittest.TestCase):
         self.assertIn("Write Document [enabled]", result)
         self.assertIn("Open in LibreOffice [enabled]", result)
         self.assertIn("Export to PDF [enabled]", result)
+        self.assertIn("BROWSER", result)
+        self.assertIn("Read Web Page [enabled]", result)
+        self.assertIn("Web Search [enabled]", result)
+        self.assertIn("Open in Browser [enabled]", result)
         self.assertIn("DESKTOP", result)
         self.assertIn("Open Application [enabled]", result)
         self.assertIn("Read Window Content [enabled]", result)

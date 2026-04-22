@@ -260,6 +260,28 @@
       "what is in the file",
       "show me the document"
     ],
+    "browser": [
+      "open url",
+      "go to",
+      "navigate to",
+      "visit",
+      "read the page",
+      "what does the page say",
+      "fetch",
+      "browse to",
+      "open website",
+      "open site",
+      "search the web",
+      "look up online",
+      "find online",
+      "what is on",
+      "read the website",
+      "open firefox",
+      "open chrome",
+      "open edge",
+      "open in browser",
+      "show me the website"
+    ],
     "web": [
       "search the web",
       "search online",

@@ -14,6 +14,10 @@ openpyxl>=3.1.0
 pymupdf>=1.24.0
 odfpy>=1.4.1
 
+# Browser Faculty
+beautifulsoup4>=4.14.0
+lxml>=6.0.0
+
 # Voice Pipeline (Phase 7.5+ - install separately)
 # pip install faster-whisper sounddevice torch
 # faster-whisper>=1.0.0
