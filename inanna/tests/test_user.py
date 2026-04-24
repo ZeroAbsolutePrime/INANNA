@@ -56,12 +56,12 @@ class UserTests(unittest.TestCase):
     def test_user_record_can_be_instantiated(self) -> None:
         record = UserRecord(
             user_id="user_12345678",
-            display_name="ZAERA",
+            display_name="INANNA NAMMU",
             role="guardian",
             assigned_realms=["all"],
         )
 
-        self.assertEqual(record.display_name, "ZAERA")
+        self.assertEqual(record.display_name, "INANNA NAMMU")
         self.assertEqual(record.assigned_realms, ["all"])
 
     def test_create_user_writes_json_file(self) -> None:
@@ -92,7 +92,7 @@ class UserTests(unittest.TestCase):
     def test_can_access_realm_covers_all_assigned_and_unassigned(self) -> None:
         guardian = UserRecord(
             user_id="user_guard",
-            display_name="ZAERA",
+            display_name="INANNA NAMMU",
             role="guardian",
             assigned_realms=["all"],
         )

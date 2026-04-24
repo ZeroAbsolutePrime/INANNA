@@ -20,7 +20,7 @@ class StateReport:
         realm_memory_count: int | None = None,
         realm_session_count: int | None = None,
         realm_governance_context: str = "",
-        active_user: str = "ZAERA (guardian)",
+        active_user: str = "INANNA NAMMU (guardian)",
         realm_access: bool = True,
     ) -> str:
         lines = [

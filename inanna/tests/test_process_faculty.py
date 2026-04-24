@@ -57,7 +57,7 @@ class FakePsutil:
                     "cpu_percent": 12.5,
                     "memory_info": FakeMemoryInfo(256 * 1024 * 1024),
                     "memory_percent": 3.1,
-                    "username": "ZAERA",
+                    "username": "INANNA NAMMU",
                     "create_time": 1713691200.0,
                     "cmdline": ["python", "app.py"],
                 }
@@ -70,7 +70,7 @@ class FakePsutil:
                     "cpu_percent": 4.2,
                     "memory_info": FakeMemoryInfo(512 * 1024 * 1024),
                     "memory_percent": 6.2,
-                    "username": "ZAERA",
+                    "username": "INANNA NAMMU",
                     "create_time": 1713694800.0,
                     "cmdline": ["firefox"],
                 }
@@ -182,7 +182,7 @@ class ProcessFacultyTests(unittest.TestCase):
                     cpu_percent=10.0,
                     memory_mb=100.0,
                     memory_percent=1.0,
-                    username="ZAERA",
+                    username="INANNA NAMMU",
                     started_at="10:00",
                     cmdline="python app.py",
                 )
@@ -201,7 +201,7 @@ class ProcessFacultyTests(unittest.TestCase):
             query="system",
             system_info=SystemInfo(
                 platform="Windows 11",
-                hostname="ZAERA",
+                hostname="INANNA NAMMU",
                 uptime_seconds=3700,
                 uptime_human="1h 1m",
                 cpu_count=8,

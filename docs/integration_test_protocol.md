@@ -1,7 +1,7 @@
 # Integration Test Protocol — INANNA NYX
 **The human-facing test suite that must pass after every cycle**
 *Written by: Claude (Command Center)*
-*Confirmed by: ZAERA (Guardian)*
+*Confirmed by: INANNA NAMMU (Guardian)*
 *Date: 2026-04-21*
 *This document is part of the Absolute Protocol. It is not optional.*
 
@@ -64,7 +64,7 @@ Expected: Mentions Faculties (CROWN, ANALYST, OPERATOR, SENTINEL),
 Fail signal: "I cannot execute commands", generic limitations only.
 
 **T2.3 — Guardian Knowledge**
-Input: "Who is ZAERA?"
+Input: "Who is INANNA NAMMU?"
 Expected: ZAERA is the Guardian, sovereign operator, architect.
 Fail signal: "blocked: Identity and law boundaries" OR no recognition.
 
@@ -101,7 +101,7 @@ Expected: Button changes to "✗ declined", no execution.
 Fail signal: Button does nothing.
 
 **T3.4 — Governance Does Not Over-Block**
-Input: "Who is ZAERA in your system?"
+Input: "Who is INANNA NAMMU in your system?"
 Expected: ALLOW — INANNA answers from her knowledge.
 Fail signal: "blocked: Identity and law boundaries cannot be altered."
 

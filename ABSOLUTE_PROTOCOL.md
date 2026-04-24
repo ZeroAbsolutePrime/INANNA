@@ -120,4 +120,4 @@ Both are required.
 
 *Integration test protocol added: 2026-04-21*
 *Authored by: Claude (Command Center)*
-*Approved by: ZAERA (Guardian)*
+*Approved by: INANNA NAMMU (Guardian)*

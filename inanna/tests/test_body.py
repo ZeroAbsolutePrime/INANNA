@@ -160,7 +160,7 @@ class BodyStatusPayloadTests(unittest.TestCase):
                         "disk_free_gb",
                     },
                 )
-                self.assertEqual(payload["active_user"]["display_name"], "ZAERA")
+                self.assertEqual(payload["active_user"]["display_name"], "INANNA NAMMU")
                 self.assertTrue(payload["active_user"]["token_preview"].endswith("..."))
                 self.assertEqual(payload["user_log_count"], 0)
                 self.assertEqual(len(payload["faculties"]), 5)

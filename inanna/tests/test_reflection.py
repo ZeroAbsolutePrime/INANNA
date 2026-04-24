@@ -55,7 +55,7 @@ class ReflectionTests(unittest.TestCase):
     def test_approve_writes_one_jsonl_record(self) -> None:
         _, reflective_memory = self.make_memory()
 
-        entry = self.approve_entry(reflective_memory, "Pattern", "Context", approved_by="ZAERA")
+        entry = self.approve_entry(reflective_memory, "Pattern", "Context", approved_by="INANNA NAMMU")
 
         lines = reflective_memory.reflection_path.read_text(encoding="utf-8").splitlines()
         self.assertEqual(len(lines), 1)
@@ -63,7 +63,7 @@ class ReflectionTests(unittest.TestCase):
         self.assertEqual(payload["entry_id"], entry.entry_id)
         self.assertEqual(payload["observation"], "Pattern")
         self.assertEqual(payload["context"], "Context")
-        self.assertEqual(payload["approved_by"], "ZAERA")
+        self.assertEqual(payload["approved_by"], "INANNA NAMMU")
         self.assertTrue(payload["approved_at"])
 
     def test_approve_appends_in_order(self) -> None:
@@ -131,7 +131,7 @@ class ReflectionTests(unittest.TestCase):
             reflective_memory,
             "I tend toward structured formatting when reasoning about technical domains.",
             "observed across multiple code analysis sessions",
-            approved_by="ZAERA",
+            approved_by="INANNA NAMMU",
         )
 
         result = reflective_memory.format_for_display()

@@ -1,0 +1,19 @@
+[PROPOSAL] 2026-04-21T15:50:37.373846+00:00 | launch_app tool use | User requested information or connectivity that requires approved tool use. | status: approved
+{
+  "proposal_id": "proposal-db1a855b",
+  "timestamp": "2026-04-21T15:50:37.373846+00:00",
+  "what": "launch_app tool use",
+  "why": "User requested information or connectivity that requires approved tool use.",
+  "status": "approved",
+  "payload": {
+    "action": "tool_use",
+    "tool": "launch_app",
+    "query": "krita",
+    "params": {
+      "app": "krita"
+    },
+    "original_input": "open krita",
+    "session_id": "20260421T154814-9df33df4"
+  },
+  "resolved_at": "2026-04-21T15:50:44.081557+00:00"
+}

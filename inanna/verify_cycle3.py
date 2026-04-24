@@ -220,7 +220,7 @@ def main() -> int:
             realm_memory_count=1,
             realm_session_count=1,
             realm_governance_context="Review before storing.",
-            active_user="ZAERA (guardian)",
+            active_user="INANNA NAMMU (guardian)",
             realm_access=True,
         )
         runner.check("State: report includes the shared CURRENT_PHASE", f"Phase: {CURRENT_PHASE}" in state_text)

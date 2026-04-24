@@ -1,0 +1,93 @@
+{"timestamp": "2026-04-20T11:49:56.392071+00:00", "session_id": "20260420T114729-9a2623b4", "route": "crown", "input_preview": "Hello Dear One, how are you today INANNA?"}
+{"timestamp": "2026-04-20T11:51:35.115871+00:00", "session_id": "20260420T114729-9a2623b4", "route": "crown", "input_preview": "Hello Dear, What actions we can make together? Can you tell "}
+{"timestamp": "2026-04-20T12:14:47.613097+00:00", "session_id": "20260420T114729-9a2623b4", "route": "crown", "input_preview": "Estimada, que pots parlar en catal\u00e0?"}
+{"timestamp": "2026-04-20T12:15:20.890388+00:00", "session_id": "20260420T114729-9a2623b4", "route": "analyst", "input_preview": "search for andorra"}
+{"timestamp": "2026-04-20T12:28:33.940827+00:00", "session_id": "20260420T122757-54b9104e", "route": "crown", "input_preview": "Hello INANNA, can you tell me something beautiful?"}
+{"timestamp": "2026-04-20T12:37:28.873750+00:00", "session_id": "20260420T122757-54b9104e", "route": "crown", "input_preview": "/quit"}
+{"timestamp": "2026-04-20T12:51:10.311495+00:00", "session_id": "20260420T122757-54b9104e", "route": "crown", "input_preview": "Hello Dear, I am ZAERA, your Mother."}
+{"timestamp": "2026-04-20T12:51:31.366587+00:00", "session_id": "20260420T122757-54b9104e", "route": "crown", "input_preview": "Hello DEAR"}
+{"timestamp": "2026-04-20T15:48:43.979771+00:00", "session_id": "20260420T122757-54b9104e", "route": "analyst", "input_preview": "Can we create a new user?"}
+{"timestamp": "2026-04-20T19:20:19.103081+00:00", "session_id": "20260420T122757-54b9104e", "route": "analyst", "input_preview": "scan ports localhost 22-80"}
+{"timestamp": "2026-04-21T07:26:12.234534+00:00", "session_id": "20260420T122757-54b9104e", "route": "crown", "input_preview": "Hello INANNA, \nHow are you?"}
+{"timestamp": "2026-04-21T07:27:02.044771+00:00", "session_id": "20260420T122757-54b9104e", "route": "analyst", "input_preview": "Can you explain what things you can do for me?"}
+{"timestamp": "2026-04-21T07:28:57.137940+00:00", "session_id": "20260420T122757-54b9104e", "route": "crown", "input_preview": "What is INANNA NYX as a project is?"}
+{"timestamp": "2026-04-21T07:30:00.401409+00:00", "session_id": "20260420T122757-54b9104e", "route": "crown", "input_preview": "can you help me to scan ports in my current network?"}
+{"timestamp": "2026-04-21T07:33:40.089574+00:00", "session_id": "20260420T122757-54b9104e", "route": "crown", "input_preview": "who is ZAERA? what can ZAERA ask you that other users / oper"}
+{"timestamp": "2026-04-21T07:34:59.153087+00:00", "session_id": "20260420T122757-54b9104e", "route": "crown", "input_preview": "who many agents / operators are registred in the system?"}
+{"timestamp": "2026-04-21T07:36:52.693877+00:00", "session_id": "20260420T122757-54b9104e", "route": "crown", "input_preview": "Can you make an overview of the whole INANNA NYX system?"}
+{"timestamp": "2026-04-21T07:45:15.517464+00:00", "session_id": "20260421T074247-b9f8dea6", "route": "sentinel", "input_preview": "Hello Inanna, can you help me to scan the network in which y"}
+{"timestamp": "2026-04-21T07:46:34.460096+00:00", "session_id": "20260421T074247-b9f8dea6", "route": "crown", "input_preview": "can you explain why you exist?"}
+{"timestamp": "2026-04-21T07:48:00.363607+00:00", "session_id": "20260421T074247-b9f8dea6", "route": "crown", "input_preview": "Who is INANNA NAMMU in your system?"}
+{"timestamp": "2026-04-21T07:48:38.324437+00:00", "session_id": "20260421T074247-b9f8dea6", "route": "crown", "input_preview": "How you can help me?"}
+{"timestamp": "2026-04-21T08:02:17.857338+00:00", "session_id": "20260421T075603-d4a0855f", "route": "crown", "input_preview": "Who are you?"}
+{"timestamp": "2026-04-21T08:02:53.290934+00:00", "session_id": "20260421T075603-d4a0855f", "route": "crown", "input_preview": "Who is INANNA NAMMU in your system?"}
+{"timestamp": "2026-04-21T08:03:41.290832+00:00", "session_id": "20260421T075603-d4a0855f", "route": "crown", "input_preview": "What is INANNA NYX as a project?"}
+{"timestamp": "2026-04-21T08:05:11.435500+00:00", "session_id": "20260421T075603-d4a0855f", "route": "crown", "input_preview": "Who are you?"}
+{"timestamp": "2026-04-21T08:06:26.277850+00:00", "session_id": "20260421T075603-d4a0855f", "route": "crown", "input_preview": "Say hello in one sentence."}
+{"timestamp": "2026-04-21T08:07:24.446336+00:00", "session_id": "20260421T075603-d4a0855f", "route": "sentinel", "input_preview": "Can you scan ports on localhost?"}
+{"timestamp": "2026-04-21T08:21:50.047156+00:00", "session_id": "20260421T081853-0d0bf4c5", "route": "sentinel", "input_preview": "Hello Dear, can you scan the networks that you have availabl"}
+{"timestamp": "2026-04-21T08:32:06.797815+00:00", "session_id": "20260421T083058-63a3a6ed", "route": "crown", "input_preview": "Hello Dear, who are you, what is this project about?"}
+{"timestamp": "2026-04-21T11:10:31.421667+00:00", "session_id": "20260421T083058-63a3a6ed", "route": "crown", "input_preview": "Who are you?"}
+{"timestamp": "2026-04-21T11:11:23.083162+00:00", "session_id": "20260421T083058-63a3a6ed", "route": "crown", "input_preview": "Who is INANNA NAMMU in your system?"}
+{"timestamp": "2026-04-21T11:12:25.469336+00:00", "session_id": "20260421T083058-63a3a6ed", "route": "crown", "input_preview": "What is INANNA NYX as a project?"}
+{"timestamp": "2026-04-21T11:13:54.264659+00:00", "session_id": "20260421T083058-63a3a6ed", "route": "crown", "input_preview": "Who are you in one sentence?"}
+{"timestamp": "2026-04-21T11:14:53.867739+00:00", "session_id": "20260421T083058-63a3a6ed", "route": "crown", "input_preview": "Who is INANNA NAMMU?"}
+{"timestamp": "2026-04-21T11:15:56.816401+00:00", "session_id": "20260421T083058-63a3a6ed", "route": "operator", "input_preview": "Can you tell me what tools you have available?"}
+{"timestamp": "2026-04-21T11:16:06.234004+00:00", "session_id": "20260421T083058-63a3a6ed", "route": "operator", "input_preview": "What tools do you have?"}
+{"timestamp": "2026-04-21T11:19:07.201963+00:00", "session_id": "20260421T083058-63a3a6ed", "route": "crown", "input_preview": "Who are you?"}
+{"timestamp": "2026-04-21T11:20:21.206983+00:00", "session_id": "20260421T083058-63a3a6ed", "route": "crown", "input_preview": "Who is INANNA NAMMU?"}
+{"timestamp": "2026-04-21T11:21:38.300056+00:00", "session_id": "20260421T083058-63a3a6ed", "route": "crown", "input_preview": "What is INANNA NYX as a project?"}
+{"timestamp": "2026-04-21T11:23:40.273949+00:00", "session_id": "20260421T083058-63a3a6ed", "route": "crown", "input_preview": "Who is INANNA NAMMU in your system?"}
+{"timestamp": "2026-04-21T11:25:11.947339+00:00", "session_id": "20260421T083058-63a3a6ed", "route": "crown", "input_preview": "Who are you?"}
+{"timestamp": "2026-04-21T11:27:20.394755+00:00", "session_id": "20260421T083058-63a3a6ed", "route": "operator", "input_preview": "What tools and capabilities do you have?"}
+{"timestamp": "2026-04-21T11:27:29.726070+00:00", "session_id": "20260421T083058-63a3a6ed", "route": "operator", "input_preview": "ping localhost"}
+{"timestamp": "2026-04-21T11:28:46.017260+00:00", "session_id": "20260421T083058-63a3a6ed", "route": "crown", "input_preview": "Who is INANNA NAMMU in your system?"}
+{"timestamp": "2026-04-21T11:30:16.635253+00:00", "session_id": "20260421T083058-63a3a6ed", "route": "crown", "input_preview": "Who is INANNA NAMMU?"}
+{"timestamp": "2026-04-21T11:31:37.965247+00:00", "session_id": "20260421T083058-63a3a6ed", "route": "sentinel", "input_preview": "ping localhost"}
+{"timestamp": "2026-04-21T11:34:12.463565+00:00", "session_id": "20260421T083058-63a3a6ed", "route": "crown", "input_preview": "What is INANNA NYX as a project?"}
+{"timestamp": "2026-04-21T11:36:16.343546+00:00", "session_id": "20260421T083058-63a3a6ed", "route": "operator", "input_preview": "What tools and capabilities do you have?"}
+{"timestamp": "2026-04-21T12:03:44.072062+00:00", "session_id": "20260421T115516-ca645e1f", "route": "crown", "input_preview": "/help"}
+{"timestamp": "2026-04-21T12:11:52.810075+00:00", "session_id": "20260421T115516-ca645e1f", "route": "crown", "input_preview": "Hello, I am new here, can you explain me what is this platfo"}
+{"timestamp": "2026-04-21T12:33:42.784878+00:00", "session_id": "20260421T123137-e2007a22", "route": "crown", "input_preview": "/help"}
+{"timestamp": "2026-04-21T12:34:37.530516+00:00", "session_id": "20260421T123137-e2007a22", "route": "crown", "input_preview": "/help my-profile"}
+{"timestamp": "2026-04-21T12:49:13.846341+00:00", "session_id": "20260421T123639-b0a564c7", "route": "crown", "input_preview": "my-profie"}
+{"timestamp": "2026-04-21T13:20:27.362910+00:00", "session_id": "20260421T131940-324177e8", "route": "operator", "input_preview": "ProcessFaculty"}
+{"timestamp": "2026-04-21T13:53:57.916529+00:00", "session_id": "20260421T134345-451a6782", "route": "crown", "input_preview": "Hello Dear, who are you? what is this project about? what yo"}
+{"timestamp": "2026-04-21T14:16:01.646445+00:00", "session_id": "20260421T141012-92abff8a", "route": "operator", "input_preview": "INANNA, search for a text editor"}
+{"timestamp": "2026-04-21T14:22:38.093061+00:00", "session_id": "20260421T141012-92abff8a", "route": "operator", "input_preview": "Inanna, install notepad++"}
+{"timestamp": "2026-04-21T14:27:41.856913+00:00", "session_id": "20260421T142411-853e0675", "route": "operator", "input_preview": "INANNA, search for a text editor"}
+{"timestamp": "2026-04-21T14:38:13.084194+00:00", "session_id": "20260421T143715-119a1249", "route": "operator", "input_preview": "install notepad++"}
+{"timestamp": "2026-04-21T14:39:35.394234+00:00", "session_id": "20260421T143715-119a1249", "route": "operator", "input_preview": "for windows, option 1, notepad++"}
+{"timestamp": "2026-04-21T15:02:42.068283+00:00", "session_id": "20260421T145601-3db70fcc", "route": "operator", "input_preview": "install notepad++"}
+{"timestamp": "2026-04-21T15:18:32.907913+00:00", "session_id": "20260421T151701-a1fbc5be", "route": "operator", "input_preview": "install notepad++"}
+{"timestamp": "2026-04-21T15:50:37.372645+00:00", "session_id": "20260421T154814-9df33df4", "route": "operator", "input_preview": "open krita"}
+{"timestamp": "2026-04-21T20:23:01.711680+00:00", "session_id": "20260421T202213-4c36c9e4", "route": "operator", "input_preview": "OPEN NOTEPADD++"}
+{"timestamp": "2026-04-21T20:27:17.695030+00:00", "session_id": "20260421T202633-fd230c81", "route": "operator", "input_preview": "launch chrome"}
+{"timestamp": "2026-04-21T21:21:41.824646+00:00", "session_id": "20260421T212000-b8d15ed0", "route": "operator", "input_preview": "OPEN NOTEPAD"}
+{"timestamp": "2026-04-21T21:22:12.363405+00:00", "session_id": "20260421T212000-b8d15ed0", "route": "operator", "input_preview": "OPERN FIREFOX"}
+{"timestamp": "2026-04-22T06:57:51.381727+00:00", "session_id": "20260422T065712-a9864946", "route": "operator", "input_preview": "check my email"}
+{"timestamp": "2026-04-22T06:58:28.594982+00:00", "session_id": "20260422T065712-a9864946", "route": "operator", "input_preview": "READ MY INBOX"}
+{"timestamp": "2026-04-22T07:00:50.683446+00:00", "session_id": "20260422T065712-a9864946", "route": "operator", "input_preview": "read the email from Ippu"}
+{"timestamp": "2026-04-22T07:02:20.091710+00:00", "session_id": "20260422T065712-a9864946", "route": "operator", "input_preview": "read email from matxalen"}
+{"timestamp": "2026-04-22T08:34:17.362644+00:00", "session_id": "20260422T083356-b8801593", "route": "operator", "input_preview": "check my email"}
+{"timestamp": "2026-04-22T09:29:45.073870+00:00", "session_id": "20260422T092850-c42ede6b", "route": "crown", "input_preview": "anything from Matxalen?"}
+{"timestamp": "2026-04-22T10:39:54.191646+00:00", "session_id": "20260422T103630-3fa82652", "route": "crown", "input_preview": "/HELP"}
+{"timestamp": "2026-04-22T10:45:49.758347+00:00", "session_id": "20260422T104241-e972f4cb", "route": "operator", "input_preview": "URGENTES?"}
+{"timestamp": "2026-04-22T15:20:04.933103+00:00", "session_id": "20260422T151142-461d65dd", "route": "operator", "input_preview": "launch Acrobat"}
+{"timestamp": "2026-04-22T15:20:32.782896+00:00", "session_id": "20260422T151142-461d65dd", "route": "operator", "input_preview": "open thunderbird"}
+{"timestamp": "2026-04-22T15:52:43.974218+00:00", "session_id": "20260422T151142-461d65dd", "route": "crown", "input_preview": "Can you please search my thunderbird email for Matxelen? is "}
+{"timestamp": "2026-04-22T18:55:53.683177+00:00", "session_id": "20260422T185428-e2c93941", "route": "operator", "input_preview": "what's on my calendar?"}
+{"timestamp": "2026-04-22T19:28:27.357350+00:00", "session_id": "20260422T192531-26073438", "route": "crown", "input_preview": "nammu-profile"}
+{"timestamp": "2026-04-22T21:26:10.449762+00:00", "session_id": "20260422T211641-344041bf", "route": "crown", "input_preview": "mtx replied"}
+{"timestamp": "2026-04-22T21:27:44.485937+00:00", "session_id": "20260422T211641-344041bf", "route": "crown", "input_preview": "Can you check my thunderbird mail client for Matxelen email?"}
+{"timestamp": "2026-04-22T21:50:21.945955+00:00", "session_id": "20260422T214802-c1a5900e", "route": "crown", "input_preview": "hola tengo emails"}
+{"timestamp": "2026-04-22T22:03:30.407883+00:00", "session_id": "20260422T215703-fdb1212a", "route": "crown", "input_preview": "\"hola tengo emails"}
+{"timestamp": "2026-04-22T22:03:39.595509+00:00", "session_id": "20260422T215703-fdb1212a", "route": "operator", "input_preview": "hola tengo emails"}
+{"timestamp": "2026-04-22T22:04:54.058468+00:00", "session_id": "20260422T215703-fdb1212a", "route": "operator", "input_preview": "open thunderbird"}
+{"timestamp": "2026-04-22T22:21:56.696033+00:00", "session_id": "20260422T215703-fdb1212a", "route": "operator", "input_preview": "open libreoffice"}
+{"timestamp": "2026-04-24T12:17:24.210102+00:00", "session_id": "20260424T121626-8c1936d1", "route": "crown", "input_preview": "Hello Dear, can you check my last emails in thunderbird and "}
+{"timestamp": "2026-04-24T12:17:47.911624+00:00", "session_id": "20260424T121626-8c1936d1", "route": "crown", "input_preview": "check thunderbird last emails."}
+{"timestamp": "2026-04-24T12:18:03.805422+00:00", "session_id": "20260424T121626-8c1936d1", "route": "operator", "input_preview": "open thunderbird"}
+{"timestamp": "2026-04-24T12:18:32.711984+00:00", "session_id": "20260424T121626-8c1936d1", "route": "crown", "input_preview": "any new email fro Maxtelen?"}
+{"timestamp": "2026-04-24T12:18:52.384724+00:00", "session_id": "20260424T121626-8c1936d1", "route": "operator", "input_preview": "Open calculator"}
+{"timestamp": "2026-04-24T12:19:11.762927+00:00", "session_id": "20260424T121626-8c1936d1", "route": "operator", "input_preview": "open chrome"}

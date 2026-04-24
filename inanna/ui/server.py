@@ -479,7 +479,7 @@ class InterfaceServer:
         self.auth_store = AuthStore(self.data_root / "realms" / self.active_realm.name)
         self.auth_store.seed_user(
             user_id=self.guardian_user.user_id,
-            username="ZAERA",
+            username="INANNA NAMMU",
             password="ETERNALOVE",
             role="guardian",
         )

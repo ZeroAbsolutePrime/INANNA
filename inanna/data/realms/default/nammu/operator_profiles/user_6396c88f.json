@@ -1,0 +1,31 @@
+{
+  "user_id": "user_6396c88f",
+  "display_name": "INANNA NAMMU",
+  "last_updated": "2026-04-24T12:19:16.734373+00:00",
+  "language_patterns": {
+    "en": [
+      "desktop"
+    ],
+    "es": [
+      "information",
+      "email"
+    ]
+  },
+  "primary_language": "es",
+  "known_shorthands": {
+    "mtx": "Matxalen"
+  },
+  "domain_weights": {
+    "operator": 0.3,
+    "information": 0.1,
+    "email": 0.05,
+    "desktop": 0.25
+  },
+  "urgency_markers": [],
+  "routing_corrections": [],
+  "recurring_topics": [
+    "operator"
+  ],
+  "communication_style": "Queer",
+  "preferred_length": "short"
+}

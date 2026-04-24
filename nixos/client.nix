@@ -8,11 +8,11 @@
   boot.loader.systemd-boot.enable = true;
   boot.loader.efi.canTouchEfiVariables = true;
 
-  users.users.zaera = {
+  users.users.inanna_nammu = {
     isNormalUser = true;
-    description = "ZAERA - Guardian";
+    description = "INANNA NAMMU - Guardian";
     extraGroups = [ "networkmanager" "wheel" "audio" "video" "input" ];
-    home = "/home/zaera";
+    home = "/home/inanna_nammu";
     shell = pkgs.bash;
   };
 

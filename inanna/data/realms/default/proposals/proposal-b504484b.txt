@@ -1,0 +1,19 @@
+[PROPOSAL] 2026-04-21T20:23:01.712971+00:00 | launch_app tool use | User requested information or connectivity that requires approved tool use. | status: approved
+{
+  "proposal_id": "proposal-b504484b",
+  "timestamp": "2026-04-21T20:23:01.712971+00:00",
+  "what": "launch_app tool use",
+  "why": "User requested information or connectivity that requires approved tool use.",
+  "status": "approved",
+  "payload": {
+    "action": "tool_use",
+    "tool": "launch_app",
+    "query": "notepadd++",
+    "params": {
+      "app": "notepadd++"
+    },
+    "original_input": "OPEN NOTEPADD++",
+    "session_id": "20260421T202213-4c36c9e4"
+  },
+  "resolved_at": "2026-04-21T20:23:06.721583+00:00"
+}

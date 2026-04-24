@@ -1,0 +1,19 @@
+[PROPOSAL] 2026-04-22T22:21:56.699015+00:00 | desktop_open_app tool use | User requested information or connectivity that requires approved tool use. | status: approved
+{
+  "proposal_id": "proposal-47e28d84",
+  "timestamp": "2026-04-22T22:21:56.699015+00:00",
+  "what": "desktop_open_app tool use",
+  "why": "User requested information or connectivity that requires approved tool use.",
+  "status": "approved",
+  "payload": {
+    "action": "tool_use",
+    "tool": "desktop_open_app",
+    "query": "libreoffice",
+    "params": {
+      "app": "libreoffice"
+    },
+    "original_input": "open libreoffice",
+    "session_id": "20260422T215703-fdb1212a"
+  },
+  "resolved_at": "2026-04-22T22:22:01.803965+00:00"
+}

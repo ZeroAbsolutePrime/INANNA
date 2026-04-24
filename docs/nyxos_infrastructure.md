@@ -6,7 +6,7 @@
 
 ## NixOS ISO
 
-**Path on ZAERA's machine:**
+**Path on INANNA NAMMU's machine:**
 ```
 C:\Users\Zohar\Dropbox\Windows11\REPOS\ABZU\OGG\NixOS\nixos-graphical-25.11.8919.d96b37bbeb98-x86_64-linux.iso
 ```

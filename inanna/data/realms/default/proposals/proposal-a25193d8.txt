@@ -1,0 +1,16 @@
+[PROPOSAL] 2026-04-20T19:20:19.106829+00:00 | scan_ports tool use | User requested information or connectivity that requires approved tool use. | status: approved
+{
+  "proposal_id": "proposal-a25193d8",
+  "timestamp": "2026-04-20T19:20:19.106829+00:00",
+  "what": "scan_ports tool use",
+  "why": "User requested information or connectivity that requires approved tool use.",
+  "status": "approved",
+  "payload": {
+    "action": "tool_use",
+    "tool": "scan_ports",
+    "query": "localhost 22-80",
+    "original_input": "scan ports localhost 22-80",
+    "session_id": "20260420T122757-54b9104e"
+  },
+  "resolved_at": "2026-04-20T20:57:44.874954+00:00"
+}

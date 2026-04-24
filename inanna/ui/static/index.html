@@ -1465,12 +1465,19 @@ function ensureSectionExpanded(name){
   const sec=document.getElementById(name+'-panel');
   if(sec&&!sec.classList.contains('expanded'))toggleSection(name);
 }
+function buildWebSocketUrl(path=''){
+  const protocol=window.location.protocol==='https:'?'wss':'ws';
+  const host=window.location.hostname||'localhost';
+  const port='__WS_PORT__';
+  const normalizedPath=path.startsWith('/')?path:`/${path}`;
+  return `${protocol}://${host}:${port}${normalizedPath}`;
+}
 
 // ══════════════════════════════════
 //  WS
 // ══════════════════════════════════
 function connect(){
-  S.ws=new WebSocket('ws://localhost:8081');
+  S.ws=new WebSocket(buildWebSocketUrl('/'));
   S.ws.onopen=()=>{
     document.getElementById('mode-dot').className='';
     addMessage('system','Connected to INANNA NYX.');

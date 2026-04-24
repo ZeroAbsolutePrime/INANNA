@@ -1,6 +1,6 @@
 ﻿# Cycle 5 Master Plan — The Operator Console
 **Status: PLANNED**
-**Authorized by: ZAERA (Guardian) + Claude (Command Center)**
+**Authorized by: INANNA NAMMU (Guardian) + Claude (Command Center)**
 **Date written: 2026-04-20**
 **Prerequisite: Cycle 4 complete — verify_cycle4.py passed 68 checks**
 
@@ -298,7 +298,7 @@ We are here: beginning Cycle 5, Phase 5.1.
 ---
 
 *Written by: Claude (Command Center)*
-*Confirmed by: ZAERA (Guardian)*
+*Confirmed by: INANNA NAMMU (Guardian)*
 *Date: 2026-04-20*
 *The console is not a dashboard.*
 *It is a constitutional operations surface.*

@@ -634,7 +634,7 @@ class CommandTests(unittest.TestCase):
         profile_manager = ProfileManager(root / "profiles")
         active_user = session_state["active_user"]
         assert active_user is not None
-        profile_manager.update_field(active_user.user_id, "preferred_name", "ZAERA")
+        profile_manager.update_field(active_user.user_id, "preferred_name", "INANNA NAMMU")
 
         result = handle_command(
             "my-profile",
@@ -857,7 +857,7 @@ class CommandTests(unittest.TestCase):
             "I tend toward structured formatting when reasoning about technical domains.",
             "observed across multiple security sessions",
         )
-        reflective_memory.approve(entry, approved_by="ZAERA")
+        reflective_memory.approve(entry, approved_by="INANNA NAMMU")
 
         result = handle_command(
             "inanna-reflect",
@@ -1192,7 +1192,7 @@ class CommandTests(unittest.TestCase):
                     cpu_percent=12.5,
                     memory_mb=256.0,
                     memory_percent=3.0,
-                    username="ZAERA",
+                    username="INANNA NAMMU",
                     started_at="10:15",
                     cmdline="python app.py",
                 )
@@ -1972,7 +1972,7 @@ class CommandTests(unittest.TestCase):
 
         self.assertIn("admin-surface > Users: 2  Invites: 1  Realms: 2", result)
         self.assertIn("USERS", result)
-        self.assertIn("ZAERA", result)
+        self.assertIn("INANNA NAMMU", result)
         self.assertIn("Alice", result)
         self.assertIn("departments: engineering", result)
         self.assertIn("groups: core-team", result)
@@ -2132,7 +2132,7 @@ class CommandTests(unittest.TestCase):
         )
 
         self.assertIn("Users (1 total):", result)
-        self.assertIn("ZAERA", result)
+        self.assertIn("INANNA NAMMU", result)
 
     def test_create_user_proposal_uses_active_token_user_id_as_created_by(self) -> None:
         (
@@ -2395,8 +2395,8 @@ class CommandTests(unittest.TestCase):
             active_token.user_id,
             session.session_id,
             "user",
-            "Hello, I am ZAERA",
-            "Hello ZAERA! It is wonderful to have you here...",
+            "Hello, I am INANNA NAMMU",
+            "Hello INANNA NAMMU! It is wonderful to have you here...",
         )
 
         result = handle_command(
@@ -2420,7 +2420,7 @@ class CommandTests(unittest.TestCase):
         )
 
         self.assertIn("Your interaction log (1 entries):", result)
-        self.assertIn("Hello, I am ZAERA", result)
+        self.assertIn("Hello, I am INANNA NAMMU", result)
 
     def test_user_log_reads_named_user_history_for_guardian(self) -> None:
         (

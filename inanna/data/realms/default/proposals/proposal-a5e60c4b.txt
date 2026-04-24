@@ -1,0 +1,19 @@
+[PROPOSAL] 2026-04-21T20:27:17.696184+00:00 | launch_app tool use | User requested information or connectivity that requires approved tool use. | status: approved
+{
+  "proposal_id": "proposal-a5e60c4b",
+  "timestamp": "2026-04-21T20:27:17.696184+00:00",
+  "what": "launch_app tool use",
+  "why": "User requested information or connectivity that requires approved tool use.",
+  "status": "approved",
+  "payload": {
+    "action": "tool_use",
+    "tool": "launch_app",
+    "query": "chrome",
+    "params": {
+      "app": "chrome"
+    },
+    "original_input": "launch chrome",
+    "session_id": "20260421T202633-fd230c81"
+  },
+  "resolved_at": "2026-04-21T20:27:22.480566+00:00"
+}

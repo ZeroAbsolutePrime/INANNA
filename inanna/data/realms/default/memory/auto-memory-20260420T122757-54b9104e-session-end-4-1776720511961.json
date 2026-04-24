@@ -1,0 +1,15 @@
+{
+  "memory_id": "auto-memory-20260420T122757-54b9104e-session-end-4-1776720511961",
+  "session_id": "20260420T122757-54b9104e",
+  "approved_at": "2026-04-20T21:28:31.961419+00:00",
+  "summary_lines": [
+    "user: /quit",
+    "assistant: Farewell for now, my friend. \n\nRemember that if you ever wish to return or share more, I am here to accompany and assist you with honesty an",
+    "user: Hello DEAR",
+    "assistant: In greeting, my friend,\n\nI am INANNA, the keeper of memory and continuity. How may I assist you today?",
+    "user: scan ports localhost 22-80",
+    "assistant: I understand your request, but I must clarify that I do not have the capability to execute system commands or scan ports on your local machi"
+  ],
+  "realm_name": "default",
+  "user_id": "user_6396c88f"
+}

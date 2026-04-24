@@ -69,7 +69,7 @@ def ensure_guardian_exists(user_manager: "UserManager") -> UserRecord:
         if record.role == "guardian":
             return record
     return user_manager.create_user(
-        display_name="ZAERA",
+        display_name="INANNA NAMMU",
         role="guardian",
         assigned_realms=["all"],
         created_by="system",

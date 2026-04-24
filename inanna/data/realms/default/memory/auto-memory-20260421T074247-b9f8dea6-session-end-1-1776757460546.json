@@ -1,0 +1,11 @@
+{
+  "memory_id": "auto-memory-20260421T074247-b9f8dea6-session-end-1-1776757460546",
+  "session_id": "20260421T074247-b9f8dea6",
+  "approved_at": "2026-04-21T07:44:20.546823+00:00",
+  "summary_lines": [
+    "user: can you help me to scan ports in my current network?",
+    "assistant: Certainly! However, as per my design, I cannot execute system commands or interact with your local machine to perform tasks like scanning po"
+  ],
+  "realm_name": "default",
+  "user_id": "user_6396c88f"
+}

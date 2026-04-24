@@ -1,7 +1,7 @@
 # Cycle 9 — NAMMU Reborn: The Living Interpreter
 **The intelligence layer that makes INANNA feel like INANNA**
 *Written by: Claude (Command Center)*
-*Confirmed by: ZAERA (Guardian)*
+*Confirmed by: INANNA NAMMU (Guardian)*
 *Date: 2026-04-22*
 *Prerequisite: Cycle 8 complete — Desktop Bridge, 31+ tools*
 
@@ -166,7 +166,7 @@ This operator (ZAERA) typically:
 ```
 
 The profile grows with every interaction.
-The more ZAERA uses INANNA, the more fluent INANNA
+The more INANNA NAMMU uses INANNA, the more fluent INANNA
 becomes in ZAERA's language.
 
 ### Layer 3 — The Constitutional Filter
@@ -391,7 +391,7 @@ Cycle 9 replaces the routing layer that calls those tools.
 
 The tools do not change. The intelligence that calls them does.
 
-After Cycle 9, when ZAERA says "anything urgent?", NAMMU
+After Cycle 9, when INANNA NAMMU says "anything urgent?", NAMMU
 understands it as email_read_inbox(urgency_only=True) and
 OPERATOR executes it with the same Thunderbird direct reader
 built in Phase 8.3. The tools are the same. The understanding
@@ -399,7 +399,7 @@ is new.
 
 ---
 
-## What This Changes for ZAERA
+## What This Changes for INANNA NAMMU
 
 Before Cycle 9:
   ZAERA must speak machine language to use INANNA.
@@ -445,7 +445,7 @@ The architectural principle for all future development:
 ---
 
 *Written by: Claude (Command Center)*
-*Confirmed by: ZAERA (Guardian)*
+*Confirmed by: INANNA NAMMU (Guardian)*
 *Date: 2026-04-22*
 *"AI must be the interpreter between human code*
 *and machine code."*

@@ -1,6 +1,6 @@
 ﻿# Cycle 4 Master Plan — The Civic Layer
 **Status: ACTIVE**
-**Authorized by: ZAERA (Guardian) + Claude (Command Center)**
+**Authorized by: INANNA NAMMU (Guardian) + Claude (Command Center)**
 **Date opened: 2026-04-19**
 **Prerequisite: Stage 3 complete — Cycles 2 and 3 verified**
 
@@ -199,7 +199,7 @@ Additionally for Cycle 4:
 ---
 
 *Written by: Claude (Command Center)*
-*Guardian approval: ZAERA*
+*Guardian approval: INANNA NAMMU*
 *Date: 2026-04-19*
 *The civic layer is not a feature. It is a foundation.*
 *You cannot serve a community without knowing its members.*

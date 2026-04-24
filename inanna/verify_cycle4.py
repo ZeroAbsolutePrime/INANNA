@@ -218,7 +218,7 @@ def main() -> int:
         listed_users = user_manager.list_users()
         runner.check(
             "User identity: list_users returns all users",
-            {record.display_name for record in listed_users} == {"ZAERA", "Alice"},
+            {record.display_name for record in listed_users} == {"INANNA NAMMU", "Alice"},
         )
 
         operator = user_manager.create_user(
@@ -495,7 +495,7 @@ def main() -> int:
             realm_memory_count=2,
             realm_session_count=1,
             realm_governance_context="Visible rules",
-            active_user="ZAERA (guardian)",
+            active_user="INANNA NAMMU (guardian)",
             realm_access=True,
         )
         runner.check(

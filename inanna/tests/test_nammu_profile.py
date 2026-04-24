@@ -24,7 +24,7 @@ class NammuProfileTests(unittest.TestCase):
         self.assertEqual("short", profile.preferred_length)
 
     def test_to_nammu_context_includes_display_name(self) -> None:
-        profile = OperatorProfile(display_name="ZAERA")
+        profile = OperatorProfile(display_name="INANNA NAMMU")
         self.assertIn("Operator: ZAERA", profile.to_nammu_context())
 
     def test_to_nammu_context_includes_shorthands(self) -> None:
@@ -120,23 +120,23 @@ class NammuProfileTests(unittest.TestCase):
                 json.dumps(
                     {
                         "user_id": "user_1",
-                        "display_name": "ZAERA",
+                        "display_name": "INANNA NAMMU",
                         "known_shorthands": {"mtx": "Matxalen"},
                     }
                 ),
                 encoding="utf-8",
             )
             profile = load_operator_profile(root, "user_1")
-        self.assertEqual("ZAERA", profile.display_name)
+        self.assertEqual("INANNA NAMMU", profile.display_name)
         self.assertEqual("Matxalen", profile.known_shorthands["mtx"])
 
     def test_save_operator_profile_creates_file_correctly(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
-            profile = OperatorProfile(user_id="user_1", display_name="ZAERA")
+            profile = OperatorProfile(user_id="user_1", display_name="INANNA NAMMU")
             save_operator_profile(root, profile)
             saved = json.loads((root / "operator_profiles" / "user_1.json").read_text(encoding="utf-8"))
-        self.assertEqual("ZAERA", saved["display_name"])
+        self.assertEqual("INANNA NAMMU", saved["display_name"])
 
     def test_save_operator_profile_creates_parent_directories(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -146,9 +146,9 @@ class NammuProfileTests(unittest.TestCase):
 
     def test_build_profile_from_user_profile_seeds_display_name(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
-            user_profile = UserProfile(user_id="user_1", preferred_name="ZAERA")
+            user_profile = UserProfile(user_id="user_1", preferred_name="INANNA NAMMU")
             profile = build_profile_from_user_profile(user_profile, Path(tmp))
-        self.assertEqual("ZAERA", profile.display_name)
+        self.assertEqual("INANNA NAMMU", profile.display_name)
 
     def test_build_profile_from_user_profile_seeds_preferred_length(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

@@ -1,0 +1,19 @@
+[PROPOSAL] 2026-04-22T15:20:04.934405+00:00 | desktop_open_app tool use | User requested information or connectivity that requires approved tool use. | status: approved
+{
+  "proposal_id": "proposal-aa0444ab",
+  "timestamp": "2026-04-22T15:20:04.934405+00:00",
+  "what": "desktop_open_app tool use",
+  "why": "User requested information or connectivity that requires approved tool use.",
+  "status": "approved",
+  "payload": {
+    "action": "tool_use",
+    "tool": "desktop_open_app",
+    "query": "Acrobat",
+    "params": {
+      "app": "Acrobat"
+    },
+    "original_input": "launch Acrobat",
+    "session_id": "20260422T151142-461d65dd"
+  },
+  "resolved_at": "2026-04-22T15:20:09.794119+00:00"
+}

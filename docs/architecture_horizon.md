@@ -256,7 +256,7 @@ not a new project beginning on top of an old one.
 ---
 
 *Written by: Claude (Command Center)*
-*Approved by: ZAERA (Guardian)*
+*Approved by: INANNA NAMMU (Guardian)*
 *Date: 2026-04-18*
 *This document reflects the constitutional horizon of INANNA NYX.*
 *It may be updated as the architecture deepens, never as it narrows.*

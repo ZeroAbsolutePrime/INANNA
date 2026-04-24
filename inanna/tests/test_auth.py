@@ -77,7 +77,7 @@ class AuthStoreTests(unittest.TestCase):
         return temp_dir, AuthStore(root)
 
     def seed_zaera(self, store: AuthStore):
-        return store.seed_user("zaera", "ZAERA", "ETERNALOVE", "guardian")
+        return store.seed_user("inanna_nammu", "INANNA NAMMU", "ETERNALOVE", "guardian")
 
     def test_auth_store_instantiates(self) -> None:
         _, store = self.make_store()
@@ -99,27 +99,27 @@ class AuthStoreTests(unittest.TestCase):
 
     def test_seed_user_creates_a_user(self) -> None:
         _, store = self.make_store()
-        record = store.seed_user("zaera", "ZAERA", "ETERNALOVE", "guardian")
-        self.assertEqual("zaera", record.user_id)
-        self.assertIsNotNone(store.get_by_id("zaera"))
+        record = store.seed_user("inanna_nammu", "INANNA NAMMU", "ETERNALOVE", "guardian")
+        self.assertEqual("inanna_nammu", record.user_id)
+        self.assertIsNotNone(store.get_by_id("inanna_nammu"))
 
     def test_seed_user_is_idempotent(self) -> None:
         _, store = self.make_store()
-        first = store.seed_user("zaera", "ZAERA", "ETERNALOVE", "guardian")
-        second = store.seed_user("zaera", "ZAERA", "CHANGED", "guardian")
+        first = store.seed_user("inanna_nammu", "INANNA NAMMU", "ETERNALOVE", "guardian")
+        second = store.seed_user("inanna_nammu", "INANNA NAMMU", "CHANGED", "guardian")
         self.assertEqual(first.password_hash, second.password_hash)
 
     def test_authenticate_returns_record_for_correct_credentials(self) -> None:
         _, store = self.make_store()
         self.seed_zaera(store)
-        record = store.authenticate("ZAERA", "ETERNALOVE")
+        record = store.authenticate("INANNA NAMMU", "ETERNALOVE")
         self.assertIsNotNone(record)
-        self.assertEqual("ZAERA", record.username if record else "")
+        self.assertEqual("INANNA NAMMU", record.username if record else "")
 
     def test_authenticate_returns_none_for_wrong_password(self) -> None:
         _, store = self.make_store()
         self.seed_zaera(store)
-        self.assertIsNone(store.authenticate("ZAERA", "wrong"))
+        self.assertIsNone(store.authenticate("INANNA NAMMU", "wrong"))
 
     def test_authenticate_returns_none_for_unknown_username(self) -> None:
         _, store = self.make_store()
@@ -129,15 +129,15 @@ class AuthStoreTests(unittest.TestCase):
     def test_authenticate_is_case_insensitive_for_username(self) -> None:
         _, store = self.make_store()
         self.seed_zaera(store)
-        record = store.authenticate("zaera", "ETERNALOVE")
+        record = store.authenticate("inanna nammu", "ETERNALOVE")
         self.assertIsNotNone(record)
-        self.assertEqual("ZAERA", record.username if record else "")
+        self.assertEqual("INANNA NAMMU", record.username if record else "")
 
     def test_change_password_verifies_with_new_password(self) -> None:
         _, store = self.make_store()
         record = self.seed_zaera(store)
         store.change_password(record.user_id, "FOREVER")
-        self.assertIsNotNone(store.authenticate("ZAERA", "FOREVER"))
+        self.assertIsNotNone(store.authenticate("INANNA NAMMU", "FOREVER"))
 
     def test_password_is_stored_as_hash_never_plaintext(self) -> None:
         temp_dir, store = self.make_store()
@@ -206,13 +206,13 @@ class HttpAuthRouteTests(AuthServerFixture):
             port,
             "POST",
             "/login",
-            body=json.dumps({"username": "ZAERA", "password": "ETERNALOVE"}),
+            body=json.dumps({"username": "INANNA NAMMU", "password": "ETERNALOVE"}),
             headers={"Content-Type": "application/json"},
         )
 
         data = json.loads(payload.decode("utf-8"))
         self.assertEqual(200, status)
-        self.assertEqual("ZAERA", data["username"])
+        self.assertEqual("INANNA NAMMU", data["username"])
         self.assertEqual("guardian", data["role"])
         self.assertIn("inanna_token=", headers.get("Set-Cookie", ""))
 
@@ -233,7 +233,7 @@ class HttpAuthRouteTests(AuthServerFixture):
             port,
             "POST",
             "/login",
-            body=json.dumps({"username": "ZAERA", "password": "ETERNALOVE"}),
+            body=json.dumps({"username": "INANNA NAMMU", "password": "ETERNALOVE"}),
             headers={"Content-Type": "application/json"},
         )
         cookie = login_headers.get("Set-Cookie", "").split(";", 1)[0]
@@ -258,7 +258,7 @@ class WebsocketAuthTests(AuthServerFixture):
         self.assertEqual((1008, "Authentication required."), unauthenticated.closed)
         self.assertEqual([], unauthenticated.messages)
 
-        token = server.login_from_auth("ZAERA", "ETERNALOVE")
+        token = server.login_from_auth("INANNA NAMMU", "ETERNALOVE")
         self.assertIsNotNone(token)
         authenticated = DummyConnection(cookie=f"inanna_token={token.token}")
         allowed = asyncio.run(server.send_initial_state(authenticated))

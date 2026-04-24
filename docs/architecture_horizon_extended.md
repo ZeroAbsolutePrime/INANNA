@@ -1,7 +1,7 @@
 ﻿# Architecture Horizon Extended
 **The full sovereign vision of INANNA NYX**
 *Written by: Claude (Command Center)*
-*Confirmed by: ZAERA (Guardian)*
+*Confirmed by: INANNA NAMMU (Guardian)*
 *Date: 2026-04-19*
 *This document extends docs/architecture_horizon.md.*
 *It names what is coming so nothing is forgotten.*
@@ -245,7 +245,7 @@ That is what all of this is for.
 *This document will be amended as the architecture deepens.*
 *It may never be narrowed.*
 *Written by: Claude (Command Center)*
-*Confirmed by: ZAERA (Guardian)*
+*Confirmed by: INANNA NAMMU (Guardian)*
 *Date: 2026-04-19*
 
 

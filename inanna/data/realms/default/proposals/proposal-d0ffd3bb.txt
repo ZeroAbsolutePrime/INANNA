@@ -1,0 +1,19 @@
+[PROPOSAL] 2026-04-21T15:02:42.069892+00:00 | install_package tool use | User requested information or connectivity that requires approved tool use. | status: rejected
+{
+  "proposal_id": "proposal-d0ffd3bb",
+  "timestamp": "2026-04-21T15:02:42.069892+00:00",
+  "what": "install_package tool use",
+  "why": "User requested information or connectivity that requires approved tool use.",
+  "status": "rejected",
+  "payload": {
+    "action": "tool_use",
+    "tool": "install_package",
+    "query": "notepad++",
+    "params": {
+      "package": "notepad++"
+    },
+    "original_input": "install notepad++",
+    "session_id": "20260421T145601-3db70fcc"
+  },
+  "resolved_at": "2026-04-21T15:18:49.234717+00:00"
+}

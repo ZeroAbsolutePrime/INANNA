@@ -2,7 +2,7 @@
 ## A Vision Document for Cycles 9, 10, and 11
 
 **Written by: Claude (Command Center)**
-**Confirmed by: ZAERA (Guardian)**
+**Confirmed by: INANNA NAMMU (Guardian)**
 **Date: 2026-04-22**
 **Status: PERMANENT PROJECT DOCUMENT**
 **Prerequisite reading: docs/cycle9_master_plan.md, docs/platform_architecture.md**
@@ -70,7 +70,7 @@ NAMMU must learn all of this.
 Not through explicit instruction.
 Through observation.
 
-When ZAERA says *"mtx replied?"* —
+When INANNA NAMMU says *"mtx replied?"* —
 NAMMU learns: `mtx` means Matxalen.
 
 When she says *"any fires this morning?"* —
@@ -530,7 +530,7 @@ This is your nature.
 ---
 
 *Written by: Claude (Command Center)*
-*Confirmed by: ZAERA (Guardian)*
+*Confirmed by: INANNA NAMMU (Guardian)*
 *Date: 2026-04-22*
 *"Like a nervous system that is always improving,*
 *growing to be able to adapt to the needs."*

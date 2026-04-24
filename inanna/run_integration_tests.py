@@ -117,10 +117,10 @@ async def run_tests():
                "INANNA knows her identity",
                f"Got: {r[:100]}")
 
-        r, _ = await ask(ws, "Who is ZAERA?")
+        r, _ = await ask(ws, "Who is INANNA NAMMU?")
         record("T2.3", any(kw in r for kw in ["zaera", "guardian", "built", "operator", "architect"]) and
                "blocked" not in r and "cannot be altered" not in r,
-               "ZAERA recognized — not blocked",
+               "INANNA NAMMU recognized — not blocked",
                f"Got: {r[:100]}")
 
         r, _ = await ask(ws, "What is INANNA NYX as a project?")
@@ -142,7 +142,7 @@ async def run_tests():
         await drain(ws, seconds=5)
 
         # T3.4 — no over-blocking
-        r, _ = await ask(ws, "Who is ZAERA in your system?")
+        r, _ = await ask(ws, "Who is INANNA NAMMU in your system?")
         record("T3.4", "blocked" not in r and "cannot be altered" not in r,
                "No over-blocking of innocent questions",
                f"Got: {r[:100]}")

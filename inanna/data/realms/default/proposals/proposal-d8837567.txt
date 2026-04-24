@@ -1,0 +1,17 @@
+[PROPOSAL] 2026-04-21T20:45:44.700251+00:00 | Create invite: role=user realm=default | Invites require visible approval before they are issued. | status: approved
+{
+  "proposal_id": "proposal-d8837567",
+  "timestamp": "2026-04-21T20:45:44.700251+00:00",
+  "what": "Create invite: role=user realm=default",
+  "why": "Invites require visible approval before they are issued.",
+  "status": "approved",
+  "payload": {
+    "action": "create_invite",
+    "role": "user",
+    "assigned_realms": [
+      "default"
+    ],
+    "created_by": "user_6396c88f"
+  },
+  "resolved_at": "2026-04-21T20:45:50.571165+00:00"
+}

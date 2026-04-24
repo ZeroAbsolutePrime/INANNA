@@ -1,7 +1,7 @@
 # LLM Configuration — INANNA NYX
 **The intelligence substrate of the platform**
 *Written by: Claude (Command Center)*
-*Confirmed by: ZAERA (Guardian)*
+*Confirmed by: INANNA NAMMU (Guardian)*
 *Date: 2026-04-20*
 *This document must be updated whenever a model is added, changed, or removed.*
 

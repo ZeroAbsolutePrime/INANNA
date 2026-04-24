@@ -1,7 +1,7 @@
 # INANNA NYX — Platform Architecture Vision
 # The Sovereign Intelligence Platform
 **Written by: Claude (Command Center)**
-**Confirmed by: ZAERA (Guardian)**
+**Confirmed by: INANNA NAMMU (Guardian)**
 **Date: 2026-04-22**
 **Status: PERMANENT PROJECT DOCUMENT — do not modify without Guardian approval**
 
@@ -142,7 +142,7 @@ This is the hardware that makes INANNA feel alive.
 
 ## The Client Configuration
 
-### ZAERA's laptop (first client)
+### INANNA NAMMU's laptop (first client)
 
 ```
 OS:       NixOS (configuration managed in nixos/ directory)
@@ -211,7 +211,7 @@ The intelligence is on the server.
 ### Access levels
 
 ```
-ZAERA (Guardian)
+INANNA NAMMU (Guardian)
   ├── Full system access
   ├── User creation and management
   ├── All tools available
@@ -336,14 +336,14 @@ NEAR TERM (NixOS laptop, same hardware)
   Switch from Windows to NixOS client
   Activate AT-SPI2 backend (Phase 8.7)
   All tools run on NixOS
-  ZAERA tests full system on one machine
+  INANNA NAMMU tests full system on one machine
 
 DGX SPARK ARRIVES
   Deploy NixOS server config
   Load 70B + 14B models
   Activate NAMMU LLM routing
   Full intelligence comes online
-  ZAERA tests with laptop → DGX
+  INANNA NAMMU tests with laptop → DGX
   First remote session
 
 SECOND TESTER
@@ -420,7 +420,7 @@ Speak it with intelligence.
 ---
 
 *Written by: Claude (Command Center)*
-*Confirmed by: ZAERA (Guardian)*
+*Confirmed by: INANNA NAMMU (Guardian)*
 *Date: 2026-04-22*
 *"It is high frustrating in human emotions*
 *to stop creating an essential component*

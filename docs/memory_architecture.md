@@ -1,7 +1,7 @@
 # Memory Architecture — INANNA NYX
 **The Living Memory of a Sovereign Intelligence**
 *Written by: Claude (Command Center)*
-*Confirmed by: ZAERA (Guardian)*
+*Confirmed by: INANNA NAMMU (Guardian)*
 *Date: 2026-04-20*
 *This document grows. Every new platform dimension must extend all layers.*
 
@@ -56,12 +56,12 @@ Structure (v1.0 — expandable):
 ```json
 {
   "user_id": "user_6e250a89",
-  "display_name": "ZAERA",
+  "display_name": "INANNA NAMMU",
   "version": "1.0",
   "last_updated": "ISO timestamp",
 
   "identity": {
-    "preferred_name": "ZAERA",
+    "preferred_name": "INANNA NAMMU",
     "pronouns": "",
     "gender": "",
     "sex": "",
@@ -279,5 +279,5 @@ Implementation change in server.py and main.py:
 *This document must be updated whenever a new platform dimension is introduced.*
 *It may never be narrowed.*
 *Written by: Claude (Command Center)*
-*Confirmed by: ZAERA (Guardian)*
+*Confirmed by: INANNA NAMMU (Guardian)*
 *Date: 2026-04-20*

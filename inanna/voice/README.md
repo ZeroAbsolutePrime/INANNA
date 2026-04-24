@@ -45,7 +45,7 @@ python -m voice.listener --ws ws://192.168.1.100:8081
 
 ## Languages Supported
 
-ZAERA's languages:
+INANNA NAMMU's languages:
 - `--lang es` — Spanish
 - `--lang en` — English  
 - `--lang pt` — Portuguese

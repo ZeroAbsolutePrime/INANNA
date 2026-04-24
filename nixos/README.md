@@ -11,7 +11,7 @@ This directory now documents the Cycle 8 two-machine architecture for INANNA NYX
 ## Which File To Use
 
 - `client.nix`
-  Use for ZAERA's laptop or workstation. This machine runs the browser session and Desktop Faculty apps such as Thunderbird, Signal Desktop, LibreOffice, and Firefox.
+  Use for INANNA NAMMU's laptop or workstation. This machine runs the browser session and Desktop Faculty apps such as Thunderbird, Signal Desktop, LibreOffice, and Firefox.
 
 - `server.nix`
   Use for the DGX Spark or any dedicated INANNA NYX server. This machine runs the Python service, model endpoint connection, and systemd service.
@@ -28,7 +28,7 @@ When deploying the real split architecture:
 
 1. Apply `server.nix` on the DGX Spark.
 2. Update the DGX IP in `client.nix`.
-3. Apply `client.nix` on ZAERA's laptop.
+3. Apply `client.nix` on INANNA NAMMU's laptop.
 
 ## Applying Configuration
 

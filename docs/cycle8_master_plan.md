@@ -1,7 +1,7 @@
 # Cycle 8 — The Desktop Bridge
 **INANNA NYX connects to the world**
 *Written by: Claude (Command Center)*
-*Confirmed by: ZAERA (Guardian)*
+*Confirmed by: INANNA NAMMU (Guardian)*
 *Date: 2026-04-21*
 *Prerequisite: Cycle 7 complete — 432 tests, 18 tools, authentication active*
 
@@ -405,7 +405,7 @@ When the Desktop Faculty is complete and NixOS migration done:
 ---
 
 *Written by: Claude (Command Center)*
-*Confirmed by: ZAERA (Guardian)*
+*Confirmed by: INANNA NAMMU (Guardian)*
 *Date: 2026-04-21*
 *The keyboard becomes the bridge.*
 *The bridge reaches every application.*

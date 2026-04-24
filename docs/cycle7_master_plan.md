@@ -1,7 +1,7 @@
 # Cycle 7 — NYXOS: The Sovereign Intelligence Operating System
 **The vision, capability library, use case catalogue, and phased roadmap**
 *Written by: Claude (Command Center)*
-*Confirmed by: ZAERA (Guardian)*
+*Confirmed by: INANNA NAMMU (Guardian)*
 *Date: 2026-04-21*
 *Prerequisite: Cycles 1-6 complete and integration-tested*
 
@@ -200,7 +200,7 @@ Voice Activity Detection (VAD)
 Speech to Text
   → Whisper (openai/whisper, local)
   → Model: whisper-small (244MB) or whisper-medium (1.5GB)
-  → Supports: Spanish, English, Portuguese (ZAERA's languages)
+  → Supports: Spanish, English, Portuguese (INANNA NAMMU's languages)
     ↓
 Text → INANNA NYX (existing WebSocket interface)
     ↓
@@ -410,7 +410,7 @@ INANNA grows by adding capability AND the governance for it.
 ---
 
 *Written by: Claude (Command Center)*
-*Confirmed by: ZAERA (Guardian)*
+*Confirmed by: INANNA NAMMU (Guardian)*
 *Date: 2026-04-21*
 *INANNA knows what she can do. She knows who she serves.*
 *Now she becomes the OS. Now she becomes the presence.*

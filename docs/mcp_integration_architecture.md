@@ -1,7 +1,7 @@
 ﻿# MCP Integration Architecture
 **How INANNA NYX uses the Model Context Protocol**
 *Written by: Claude (Command Center)*
-*Confirmed by: ZAERA (Guardian)*
+*Confirmed by: INANNA NAMMU (Guardian)*
 *Date: 2026-04-19*
 *Informed by: "The Future of MCP" — David Soria Parra, Anthropic*
 
@@ -201,5 +201,5 @@ With it, connectivity is power under law.
 *Watch: MCP Skills (June 2026), Stateless Transport (June 2026),*
 *Agent-to-Agent Tasks (in development).*
 *Written by: Claude (Command Center)*
-*Confirmed by: ZAERA (Guardian)*
+*Confirmed by: INANNA NAMMU (Guardian)*
 *Date: 2026-04-19*

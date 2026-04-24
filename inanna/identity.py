@@ -68,7 +68,7 @@ CYCLE7_COMPLETE = (
     "Cycle 7 built NYXOS: NixOS service configuration, the File System "
     "Faculty, the Process Faculty, the Package Faculty, the software "
     "registry with launch_app, the deferred Voice Listener scaffold, "
-    "PBKDF2 authentication for ZAERA / ETERNALOVE, the standalone login "
+    "PBKDF2 authentication for INANNA NAMMU / ETERNALOVE, the standalone login "
     "page, and the UX polish pass. 18 tools registered. Full suite green "
     "at 432 unit tests."
 )

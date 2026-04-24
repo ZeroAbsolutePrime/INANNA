@@ -1,0 +1,19 @@
+[PROPOSAL] 2026-04-21T21:21:41.826748+00:00 | desktop_open_app tool use | User requested information or connectivity that requires approved tool use. | status: approved
+{
+  "proposal_id": "proposal-34fdde74",
+  "timestamp": "2026-04-21T21:21:41.826748+00:00",
+  "what": "desktop_open_app tool use",
+  "why": "User requested information or connectivity that requires approved tool use.",
+  "status": "approved",
+  "payload": {
+    "action": "tool_use",
+    "tool": "desktop_open_app",
+    "query": "NOTEPAD",
+    "params": {
+      "app": "NOTEPAD"
+    },
+    "original_input": "OPEN NOTEPAD",
+    "session_id": "20260421T212000-b8d15ed0"
+  },
+  "resolved_at": "2026-04-21T21:21:46.030247+00:00"
+}

@@ -4,7 +4,7 @@
 # Updated:   Cycle 8 Phase 8.7
 #
 # For new deployments, use:
-#   nixos/client.nix  - ZAERA's laptop (NixOS client)
+#   nixos/client.nix  - INANNA NAMMU's laptop (NixOS client)
 #   nixos/server.nix  - DGX Spark (INANNA NYX server)
 #
 # This file is kept for single-machine testing (server + client

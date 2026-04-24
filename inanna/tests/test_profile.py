@@ -79,12 +79,12 @@ class ProfileTests(unittest.TestCase):
 
     def test_load_returns_profile_for_existing_profile(self) -> None:
         _, _, manager = self.make_manager()
-        manager.save(UserProfile(user_id="user_123", preferred_name="ZAERA"))
+        manager.save(UserProfile(user_id="user_123", preferred_name="INANNA NAMMU"))
 
         loaded = manager.load("user_123")
 
         self.assertIsNotNone(loaded)
-        self.assertEqual(loaded.preferred_name, "ZAERA")
+        self.assertEqual(loaded.preferred_name, "INANNA NAMMU")
 
     def test_load_returns_none_for_missing_profile(self) -> None:
         _, _, manager = self.make_manager()
@@ -93,26 +93,26 @@ class ProfileTests(unittest.TestCase):
 
     def test_save_writes_json_to_disk(self) -> None:
         _, root, manager = self.make_manager()
-        profile = UserProfile(user_id="user_123", preferred_name="ZAERA")
+        profile = UserProfile(user_id="user_123", preferred_name="INANNA NAMMU")
 
         manager.save(profile)
 
         profile_path = root / "profiles" / "user_123.json"
         self.assertTrue(profile_path.exists())
         payload = json.loads(profile_path.read_text(encoding="utf-8"))
-        self.assertEqual(payload["preferred_name"], "ZAERA")
+        self.assertEqual(payload["preferred_name"], "INANNA NAMMU")
         self.assertEqual(payload["user_id"], "user_123")
 
     def test_update_field_updates_string_field(self) -> None:
         _, _, manager = self.make_manager()
         manager.ensure_profile_exists("user_123")
 
-        updated = manager.update_field("user_123", "preferred_name", "ZAERA")
+        updated = manager.update_field("user_123", "preferred_name", "INANNA NAMMU")
         loaded = manager.load("user_123")
 
         self.assertTrue(updated)
         self.assertIsNotNone(loaded)
-        self.assertEqual(loaded.preferred_name, "ZAERA")
+        self.assertEqual(loaded.preferred_name, "INANNA NAMMU")
 
     def test_update_field_updates_list_field(self) -> None:
         _, _, manager = self.make_manager()
@@ -151,9 +151,9 @@ class ProfileTests(unittest.TestCase):
 
     def test_display_name_for_returns_preferred_name_if_set(self) -> None:
         _, _, manager = self.make_manager()
-        manager.save(UserProfile(user_id="user_123", preferred_name="ZAERA"))
+        manager.save(UserProfile(user_id="user_123", preferred_name="INANNA NAMMU"))
 
-        self.assertEqual(manager.display_name_for("user_123", fallback="Guardian"), "ZAERA")
+        self.assertEqual(manager.display_name_for("user_123", fallback="Guardian"), "INANNA NAMMU")
 
     def test_display_name_for_returns_fallback_if_not_set(self) -> None:
         _, _, manager = self.make_manager()
@@ -177,7 +177,7 @@ class ProfileTests(unittest.TestCase):
         _, root, manager = self.make_manager()
         original = UserProfile(
             user_id="user_123",
-            preferred_name="ZAERA",
+            preferred_name="INANNA NAMMU",
             pronouns="she/her",
             departments=["Operations"],
             survey_responses={"timezone": "Europe/Madrid"},
@@ -188,10 +188,10 @@ class ProfileTests(unittest.TestCase):
         payload = json.loads((root / "profiles" / "user_123.json").read_text(encoding="utf-8"))
         loaded = manager.load("user_123")
 
-        self.assertEqual(payload["preferred_name"], "ZAERA")
+        self.assertEqual(payload["preferred_name"], "INANNA NAMMU")
         self.assertEqual(payload["survey_responses"], {"timezone": "Europe/Madrid"})
         self.assertIsNotNone(loaded)
-        self.assertEqual(loaded.preferred_name, "ZAERA")
+        self.assertEqual(loaded.preferred_name, "INANNA NAMMU")
         self.assertEqual(loaded.pronouns, "she/her")
         self.assertEqual(loaded.departments, ["Operations"])
         self.assertEqual(loaded.inanna_notes, ["Prefers direct answers."])
@@ -212,7 +212,7 @@ class ProfileTests(unittest.TestCase):
     def test_format_profile_output_formats_complete_profile(self) -> None:
         profile = UserProfile(
             user_id="user_123",
-            preferred_name="ZAERA",
+            preferred_name="INANNA NAMMU",
             pronouns="she/her",
             languages=["es", "en", "pt"],
             location_city="Barcelona",

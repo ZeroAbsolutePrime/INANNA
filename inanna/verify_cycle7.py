@@ -118,7 +118,7 @@ def emit(line: str) -> None:
 def make_auth_store() -> tuple[TemporaryDirectory[str], AuthStore]:
     temp_dir = TemporaryDirectory()
     store = AuthStore(Path(temp_dir.name))
-    store.seed_user("zaera", "ZAERA", "ETERNALOVE", "guardian")
+    store.seed_user("inanna_nammu", "INANNA NAMMU", "ETERNALOVE", "guardian")
     return temp_dir, store
 
 
@@ -180,10 +180,10 @@ def check_zaera_seed_idempotent() -> CheckResult:
     temp_dir = None
     try:
         temp_dir, store = make_auth_store()
-        first = store.get_by_username("ZAERA")
-        second = store.seed_user("zaera", "ZAERA", "CHANGED", "guardian")
+        first = store.get_by_username("INANNA NAMMU")
+        second = store.seed_user("inanna_nammu", "ZAERA", "CHANGED", "guardian")
         return ensure(
-            "Authentication: seed_user is idempotent for ZAERA",
+            "Authentication: seed_user is idempotent for INANNA NAMMU",
             first is not None and first.password_hash == second.password_hash,
         )
     finally:
@@ -195,10 +195,10 @@ def check_authenticate_correct() -> CheckResult:
     temp_dir = None
     try:
         temp_dir, store = make_auth_store()
-        record = store.authenticate("ZAERA", "ETERNALOVE")
+        record = store.authenticate("INANNA NAMMU", "ETERNALOVE")
         return ensure(
             "Authentication: ZAERA / ETERNALOVE authenticates",
-            record is not None and record.username == "ZAERA",
+            record is not None and record.username == "INANNA NAMMU",
         )
     finally:
         if temp_dir is not None:
@@ -211,7 +211,7 @@ def check_authenticate_wrong_pw() -> CheckResult:
         temp_dir, store = make_auth_store()
         return ensure(
             "Authentication: wrong password returns None",
-            store.authenticate("ZAERA", "WRONG") is None,
+            store.authenticate("INANNA NAMMU", "WRONG") is None,
         )
     finally:
         if temp_dir is not None:
@@ -238,7 +238,7 @@ def check_authenticate_case_insensitive() -> CheckResult:
         record = store.authenticate("zaera", "ETERNALOVE")
         return ensure(
             "Authentication: username matching is case-insensitive",
-            record is not None and record.username == "ZAERA",
+            record is not None and record.username == "INANNA NAMMU",
         )
     finally:
         if temp_dir is not None:

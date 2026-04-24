@@ -24,7 +24,7 @@ class StateTests(unittest.TestCase):
             realm_memory_count=3,
             realm_session_count=2,
             realm_governance_context="Focus on work memory boundaries.",
-            active_user="ZAERA (guardian)",
+            active_user="INANNA NAMMU (guardian)",
             realm_access=True,
         )
 
@@ -37,7 +37,7 @@ class StateTests(unittest.TestCase):
                     # constant, so this expectation must move with the active phase.
                     f"Phase: {CURRENT_PHASE}",
                     "Mode: connected",
-                    "Active user: ZAERA (guardian)",
+                    "Active user: INANNA NAMMU (guardian)",
                     "Realm: work",
                     "Realm access: allowed",
                     "Memory records: 3",

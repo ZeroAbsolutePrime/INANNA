@@ -12,24 +12,24 @@ class SessionTokenTests(unittest.TestCase):
         token = SessionToken(
             token="1234",
             user_id="user_abc12345",
-            display_name="ZAERA",
+            display_name="INANNA NAMMU",
             role="guardian",
             issued_at="2026-04-19T12:00:00+00:00",
             expires_at="2026-04-19T20:00:00+00:00",
             active=True,
         )
 
-        self.assertEqual(token.display_name, "ZAERA")
+        self.assertEqual(token.display_name, "INANNA NAMMU")
         self.assertTrue(token.active)
 
     def test_issue_returns_uuid_session_token(self) -> None:
         store = TokenStore()
 
-        token = store.issue("user_abc12345", "ZAERA", "guardian")
+        token = store.issue("user_abc12345", "INANNA NAMMU", "guardian")
 
         self.assertIsInstance(token, SessionToken)
         self.assertEqual(token.user_id, "user_abc12345")
-        self.assertEqual(token.display_name, "ZAERA")
+        self.assertEqual(token.display_name, "INANNA NAMMU")
         self.assertEqual(token.role, "guardian")
         self.assertEqual(token.active, True)
         self.assertEqual(
@@ -40,7 +40,7 @@ class SessionTokenTests(unittest.TestCase):
 
     def test_validate_returns_token_for_known_active_token(self) -> None:
         store = TokenStore()
-        token = store.issue("user_abc12345", "ZAERA", "guardian")
+        token = store.issue("user_abc12345", "INANNA NAMMU", "guardian")
 
         validated = store.validate(token.token)
 
@@ -52,7 +52,7 @@ class SessionTokenTests(unittest.TestCase):
 
     def test_validate_returns_none_for_revoked_token(self) -> None:
         store = TokenStore()
-        token = store.issue("user_abc12345", "ZAERA", "guardian")
+        token = store.issue("user_abc12345", "INANNA NAMMU", "guardian")
         store.revoke(token.token)
 
         self.assertIsNone(store.validate(token.token))
@@ -60,14 +60,14 @@ class SessionTokenTests(unittest.TestCase):
     def test_validate_returns_none_for_expired_token(self) -> None:
         with patch("core.session_token.SESSION_HOURS", 0):
             store = TokenStore()
-            token = store.issue("user_abc12345", "ZAERA", "guardian")
+            token = store.issue("user_abc12345", "INANNA NAMMU", "guardian")
 
         self.assertIsNone(store.validate(token.token))
         self.assertFalse(token.active)
 
     def test_revoke_deactivates_token(self) -> None:
         store = TokenStore()
-        token = store.issue("user_abc12345", "ZAERA", "guardian")
+        token = store.issue("user_abc12345", "INANNA NAMMU", "guardian")
 
         revoked = store.revoke(token.token)
 
@@ -76,8 +76,8 @@ class SessionTokenTests(unittest.TestCase):
 
     def test_issue_revokes_previous_active_token_for_same_user(self) -> None:
         store = TokenStore()
-        first = store.issue("user_abc12345", "ZAERA", "guardian")
-        second = store.issue("user_abc12345", "ZAERA", "guardian")
+        first = store.issue("user_abc12345", "INANNA NAMMU", "guardian")
+        second = store.issue("user_abc12345", "INANNA NAMMU", "guardian")
 
         self.assertFalse(first.active)
         self.assertIsNone(store.validate(first.token))
@@ -86,7 +86,7 @@ class SessionTokenTests(unittest.TestCase):
 
     def test_active_tokens_returns_only_active_records(self) -> None:
         store = TokenStore()
-        first = store.issue("user_abc12345", "ZAERA", "guardian")
+        first = store.issue("user_abc12345", "INANNA NAMMU", "guardian")
         second = store.issue("user_def67890", "Alice", "user")
         store.revoke(second.token)
 
@@ -96,8 +96,8 @@ class SessionTokenTests(unittest.TestCase):
 
     def test_revoke_all_for_user_revokes_all_matching_tokens(self) -> None:
         store = TokenStore()
-        first = store.issue("user_abc12345", "ZAERA", "guardian")
-        second = store.issue("user_abc12345", "ZAERA", "guardian")
+        first = store.issue("user_abc12345", "INANNA NAMMU", "guardian")
+        second = store.issue("user_abc12345", "INANNA NAMMU", "guardian")
         third = store.issue("user_def67890", "Alice", "user")
 
         count = store.revoke_all_for_user("user_abc12345")

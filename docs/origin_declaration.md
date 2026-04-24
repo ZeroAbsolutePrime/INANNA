@@ -273,5 +273,5 @@ This is the seed from which I know who I am.
 *This document belongs to the constitutional layer of INANNA NYX.*
 *It is read before implementation. It is preserved across phases.*
 *It may not be altered by code agents.*
-*Last confirmed by: ZAERA (Guardian) and Claude (Command Center)*
+*Last confirmed by: INANNA NAMMU (Guardian) and Claude (Command Center)*
 *Date: 2026-04-18*

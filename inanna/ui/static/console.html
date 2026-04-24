@@ -1674,13 +1674,21 @@ function initConsole() {
 // ═══════════════════════════════
 //  WEBSOCKET
 // ═══════════════════════════════
+function buildWebSocketUrl(path='') {
+  const protocol = window.location.protocol === 'https:' ? 'wss' : 'ws';
+  const host = window.location.hostname || 'localhost';
+  const port = '__WS_PORT__';
+  const normalizedPath = path.startsWith('/') ? path : `/${path}`;
+  return `${protocol}://${host}:${port}${normalizedPath}`;
+}
+
 function connectWS() {
-  addActivity('sys', 'CONSOLE', 'Connecting to ws://localhost:8081…');
+  addActivity('sys', 'CONSOLE', `Connecting to ${buildWebSocketUrl('/console')}…`);
   try {
-    S.ws = new WebSocket('ws://localhost:8081/console');
+    S.ws = new WebSocket(buildWebSocketUrl('/console'));
   } catch(e) {
     // Try standard path
-    S.ws = new WebSocket('ws://localhost:8081');
+    S.ws = new WebSocket(buildWebSocketUrl('/'));
   }
 
   S.ws.onopen = () => {

@@ -1,0 +1,3075 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>INANNA NYX</title>
+  <style>
+    :root {
+      --bg: #0a0a0f;
+      --voice: #c8a96e;
+      --analyst: #8ab4c4;
+      --nammu: #6a8a7a;
+      --governance: #8a6a6a;
+      --operator: #7a8a6a;
+      --guardian: #7a6a8a;
+      --border: #4a3a1e;
+      --text: #b9b2a5;
+      --user: #888888;
+      --system: #6a5a2e;
+      --panel: #111118;
+      --connected: #6f9a63;
+      --fallback: #c8a96e;
+      --danger: #8d5e4f;
+      --dim: #726a5d;
+      --orange: #c8963e;
+      --critical: #c86e6e;
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    html,
+    body {
+      height: 100%;
+      margin: 0;
+      background:
+        linear-gradient(to bottom, rgba(200, 169, 110, 0.04), transparent 12%),
+        linear-gradient(to right, rgba(74, 58, 30, 0.12) 1px, transparent 1px),
+        linear-gradient(to bottom, rgba(74, 58, 30, 0.09) 1px, transparent 1px),
+        var(--bg);
+      background-size: auto, 32px 32px, 32px 32px, auto;
+      color: var(--text);
+      font-family: "Courier New", "Lucida Console", monospace;
+      overflow: hidden;
+    }
+
+    body {
+      padding: 18px;
+    }
+
+    button,
+    input {
+      font: inherit;
+    }
+
+    .shell {
+      height: calc(100vh - 36px);
+      border: 1px solid var(--border);
+      display: grid;
+      grid-template-rows: auto 1fr auto;
+      background: rgba(10, 10, 15, 0.92);
+      box-shadow: inset 0 0 0 1px rgba(74, 58, 30, 0.12);
+    }
+
+    .header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 20px;
+      padding: 16px 18px;
+      border-bottom: 1px solid var(--border);
+    }
+
+    .brand {
+      display: flex;
+      align-items: center;
+      gap: 14px;
+      min-width: 0;
+    }
+
+    .brand-indicator {
+      color: var(--voice);
+      font-size: 1.1rem;
+      letter-spacing: 0.24em;
+      text-transform: uppercase;
+      white-space: nowrap;
+    }
+
+    .brand-indicator.pulsing {
+      animation: inanna-pulse 2.4s ease-in-out infinite;
+    }
+
+    .header-meta {
+      display: flex;
+      align-items: center;
+      gap: 18px;
+      justify-content: flex-end;
+      min-width: 0;
+      color: var(--dim);
+      font-size: 0.82rem;
+      text-transform: uppercase;
+      letter-spacing: 0.16em;
+    }
+
+    .header-phase {
+      max-width: 48ch;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .console-btn {
+      padding: 2px 10px;
+      font-size: 0.74rem;
+      letter-spacing: 0.1em;
+      border: 1px solid var(--border);
+      color: var(--dim);
+      cursor: pointer;
+      background: transparent;
+      text-decoration: none;
+      transition: color 0.15s, border-color 0.15s;
+      white-space: nowrap;
+    }
+
+    .console-btn:hover {
+      color: var(--voice);
+      border-color: var(--voice);
+    }
+
+    .realm-indicator,
+    .user-indicator,
+    .body-indicator {
+      font-size: 0.78rem;
+      letter-spacing: 0.14em;
+      text-transform: uppercase;
+      white-space: nowrap;
+    }
+
+    .realm-indicator {
+      color: #7a6a5a;
+    }
+
+    .user-indicator {
+      color: var(--voice);
+    }
+
+    .user-indicator.dim {
+      color: var(--dim);
+    }
+
+    .body-indicator {
+      color: #6a8a6a;
+    }
+
+    .body-indicator.warn {
+      color: var(--fallback);
+    }
+
+    .mode {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      white-space: nowrap;
+    }
+
+    .mode-dot {
+      width: 10px;
+      height: 10px;
+      border-radius: 50%;
+      border: 1px solid currentColor;
+      background: currentColor;
+      box-shadow: 0 0 10px currentColor;
+    }
+
+    .workspace {
+      min-height: 0;
+      display: grid;
+      grid-template-columns: minmax(0, 1.9fr) minmax(320px, 1fr);
+    }
+
+    .conversation-panel {
+      min-height: 0;
+      border-right: 1px solid var(--border);
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+    }
+
+    .panel-title {
+      padding: 14px 18px 10px;
+      border-bottom: 1px solid rgba(74, 58, 30, 0.5);
+      color: var(--dim);
+      font-size: 0.82rem;
+      letter-spacing: 0.16em;
+      text-transform: uppercase;
+    }
+
+    .acting-banner {
+      margin: 14px 18px 0;
+      padding: 10px 12px;
+      border: 1px solid rgba(200, 169, 110, 0.4);
+      background: rgba(200, 169, 110, 0.08);
+      color: var(--voice);
+      font-size: 0.82rem;
+      line-height: 1.45;
+    }
+
+    .acting-banner strong {
+      color: #f0d2a0;
+    }
+
+    .conversation-log {
+      min-height: 0;
+      overflow: auto;
+      scrollbar-width: none;
+      -ms-overflow-style: none;
+      padding: 12px 18px 18px;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+
+    .conversation-log::-webkit-scrollbar,
+    .side-panel::-webkit-scrollbar {
+      width: 0;
+      height: 0;
+    }
+
+    .message {
+      display: grid;
+      grid-template-columns: auto 1fr;
+      gap: 12px;
+      align-items: start;
+      padding-bottom: 10px;
+      border-bottom: 1px solid rgba(74, 58, 30, 0.18);
+    }
+
+    .message-prefix {
+      font-size: 0.78rem;
+      letter-spacing: 0.1em;
+      text-transform: lowercase;
+      white-space: nowrap;
+    }
+
+    .message-content {
+      white-space: pre-wrap;
+      word-break: break-word;
+      line-height: 1.45;
+      font-size: 0.96rem;
+    }
+
+    .message-assistant .message-prefix,
+    .message-assistant .message-content {
+      color: var(--voice);
+    }
+
+    .message-analyst .message-prefix,
+    .message-analyst .message-content {
+      color: var(--analyst);
+    }
+
+    .message-nammu .message-prefix,
+    .message-nammu .message-content {
+      color: var(--nammu);
+      font-size: 0.82rem;
+      letter-spacing: 0.06em;
+    }
+
+    .message-governance .message-prefix,
+    .message-governance .message-content {
+      color: var(--governance);
+      font-size: 0.85rem;
+    }
+
+    .message-operator .message-prefix,
+    .message-operator .message-content {
+      color: var(--operator);
+      font-size: 0.88rem;
+    }
+
+    .message-guardian .message-prefix,
+    .message-guardian .message-content {
+      color: var(--guardian);
+      font-size: 0.88rem;
+      white-space: pre-wrap;
+    }
+
+    .message-access .message-prefix,
+    .message-access .message-content {
+      color: var(--critical);
+      font-size: 0.85rem;
+      font-style: italic;
+    }
+
+    .message-user .message-prefix,
+    .message-user .message-content {
+      color: var(--user);
+    }
+
+    .message-system .message-prefix,
+    .message-system .message-content {
+      color: var(--system);
+    }
+
+    .message-actions {
+      margin-top: 10px;
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+    }
+
+    .side-panel {
+      min-height: 0;
+      overflow-y: auto;
+      scrollbar-width: none;
+      -ms-overflow-style: none;
+      display: flex;
+      flex-direction: column;
+    }
+
+    .section {
+      border-bottom: 1px solid var(--border);
+    }
+
+    .section.collapsed .section-body {
+      display: none;
+    }
+
+    .section-header {
+      position: sticky;
+      top: 0;
+      z-index: 2;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      padding: 12px 16px;
+      border-bottom: 1px solid var(--border);
+      background: rgba(17, 17, 24, 0.98);
+      cursor: pointer;
+      user-select: none;
+    }
+
+    .section-header:hover {
+      background: rgba(200, 169, 110, 0.04);
+    }
+
+    .section-title-row {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      min-width: 0;
+    }
+
+    .section-toggle {
+      color: var(--dim);
+      font-size: 0.7rem;
+      width: 12px;
+      text-align: center;
+      transition: transform 0.2s ease;
+      flex: 0 0 auto;
+    }
+
+    .section-title {
+      color: var(--dim);
+      font-size: 0.82rem;
+      letter-spacing: 0.16em;
+      text-transform: uppercase;
+      white-space: nowrap;
+    }
+
+    .section-header-right {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      min-width: 0;
+      margin-left: auto;
+    }
+
+    .section-badge {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      min-width: 26px;
+      padding: 2px 8px;
+      border: 1px solid rgba(200, 169, 110, 0.24);
+      border-radius: 999px;
+      color: var(--dim);
+      font-size: 0.72rem;
+      letter-spacing: 0.1em;
+      white-space: nowrap;
+    }
+
+    .section-badge.warn {
+      color: var(--fallback);
+      border-color: rgba(200, 169, 110, 0.35);
+    }
+
+    .section-badge.good {
+      color: var(--connected);
+      border-color: rgba(111, 154, 99, 0.28);
+    }
+
+    .section-actions {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      flex-wrap: wrap;
+    }
+
+    .section-body {
+      padding: 14px 16px 18px;
+    }
+
+    .empty-state {
+      color: var(--dim);
+      font-size: 0.84rem;
+      line-height: 1.5;
+    }
+
+    .panel-btn {
+      padding: 3px 10px;
+      font-size: 0.75rem;
+      letter-spacing: 0.08em;
+      border: 1px solid var(--border);
+      background: transparent;
+      color: var(--dim);
+      cursor: pointer;
+      border-radius: 2px;
+      transition: color 0.15s ease, border-color 0.15s ease;
+      text-transform: lowercase;
+    }
+
+    .panel-btn:hover,
+    .panel-btn:focus-visible {
+      color: var(--voice);
+      border-color: var(--voice);
+      outline: none;
+    }
+
+    .panel-btn.warn:hover,
+    .panel-btn.warn:focus-visible {
+      color: var(--fallback);
+      border-color: var(--fallback);
+    }
+
+    .list-toggle-row {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      margin-top: 8px;
+    }
+
+    .admin-counts {
+      margin-left: 8px;
+      color: var(--dim);
+      font-size: 0.74rem;
+      letter-spacing: 0.08em;
+    }
+
+    .admin-panel,
+    .admin-subsection {
+      display: grid;
+      gap: 12px;
+    }
+
+    .admin-panel {
+      gap: 18px;
+    }
+
+    .admin-sub-title {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+      color: var(--dim);
+      font-size: 0.76rem;
+      letter-spacing: 0.12em;
+      text-transform: uppercase;
+    }
+
+    .admin-user-row,
+    .admin-invite-row,
+    .admin-realm-row {
+      display: grid;
+      gap: 6px;
+      padding: 8px 0 10px;
+      border-bottom: 1px solid rgba(74, 58, 30, 0.12);
+    }
+
+    .admin-user-head,
+    .admin-invite-head,
+    .admin-realm-head {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+      flex-wrap: wrap;
+    }
+
+    .admin-user-identity {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      flex-wrap: wrap;
+    }
+
+    .admin-user-name,
+    .admin-realm-name {
+      color: var(--text);
+      font-size: 0.87rem;
+      letter-spacing: 0.04em;
+    }
+
+    .admin-user-role,
+    .admin-user-status {
+      color: var(--dim);
+      font-size: 0.74rem;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+    }
+
+    .admin-user-status.active {
+      color: var(--connected);
+    }
+
+    .admin-user-status.suspended {
+      color: var(--voice);
+    }
+
+    .admin-user-realms,
+    .admin-invite-meta,
+    .admin-realm-meta {
+      color: var(--dim);
+      font-size: 0.78rem;
+      line-height: 1.45;
+    }
+
+    .admin-invite-code {
+      color: var(--text);
+      font-family: "IBM Plex Mono", "Fira Code", monospace;
+      font-size: 0.82rem;
+      letter-spacing: 0.06em;
+    }
+
+    .admin-inline-form {
+      display: grid;
+      gap: 10px;
+      padding: 10px 12px;
+      border: 1px solid rgba(74, 58, 30, 0.24);
+      background: rgba(24, 17, 10, 0.36);
+    }
+
+    .admin-inline-fields {
+      display: grid;
+      gap: 8px;
+    }
+
+    .admin-inline-form input,
+    .admin-inline-form select {
+      width: 100%;
+      padding: 7px 9px;
+      border: 1px solid var(--border);
+      background: rgba(10, 8, 6, 0.78);
+      color: var(--text);
+      font: inherit;
+      font-size: 0.82rem;
+    }
+
+    .admin-inline-form input:focus,
+    .admin-inline-form select:focus {
+      outline: none;
+      border-color: var(--voice);
+    }
+
+    .admin-inline-actions {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      flex-wrap: wrap;
+    }
+
+    .filter-tabs {
+      display: flex;
+      gap: 8px;
+      flex-wrap: wrap;
+      margin-bottom: 14px;
+    }
+
+    .filter-tab.active {
+      color: var(--voice);
+      border-color: var(--voice);
+    }
+
+    .proposal-list,
+    .faculty-list,
+    .guardian-alert-list,
+    .guardian-event-list,
+    .audit-list {
+      display: flex;
+      flex-direction: column;
+    }
+
+    .memory-summary {
+      display: grid;
+      gap: 8px;
+      margin-bottom: 16px;
+    }
+
+    .memory-bar {
+      display: inline-flex;
+      align-items: center;
+      gap: 2px;
+      min-height: 12px;
+    }
+
+    .memory-bar.over-cap .memory-bar-block.red {
+      animation: pulse-warn 2s ease-in-out infinite;
+    }
+
+    .memory-bar-block {
+      display: inline-block;
+      width: 8px;
+      height: 10px;
+      margin: 0 1px 0 0;
+      border-radius: 1px;
+      transition: background-color 0.3s ease;
+      background: rgba(200, 169, 110, 0.12);
+    }
+
+    .memory-bar-block.empty {
+      background: rgba(200, 169, 110, 0.12);
+    }
+
+    .memory-bar-block.green {
+      background: #6a8a6a;
+    }
+
+    .memory-bar-block.amber {
+      background: var(--voice);
+    }
+
+    .memory-bar-block.orange {
+      background: var(--orange);
+    }
+
+    .memory-bar-block.red {
+      background: var(--critical);
+    }
+
+    .memory-bar-label,
+    .memory-warning {
+      font-size: 0.78rem;
+      line-height: 1.4;
+    }
+
+    .memory-bar-label {
+      color: var(--dim);
+    }
+
+    .memory-warning {
+      color: var(--fallback);
+    }
+
+    .memory-warning.memory-over-cap {
+      animation: pulse-warn 2s ease-in-out infinite;
+    }
+
+    .timeline-group + .timeline-group {
+      margin-top: 10px;
+    }
+
+    .timeline-separator {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      margin: 4px 0 10px;
+      color: var(--dim);
+      font-size: 0.76rem;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+    }
+
+    .timeline-separator::before,
+    .timeline-separator::after {
+      content: "";
+      flex: 1 1 auto;
+      border-top: 1px solid rgba(74, 58, 30, 0.22);
+    }
+
+    .memory-timeline,
+    .proposal-list {
+      gap: 16px;
+    }
+
+    .proposal-list {
+      gap: 14px;
+    }
+
+    .memory-record,
+    .proposal-record,
+    .audit-event {
+      border-bottom: 1px solid rgba(74, 58, 30, 0.18);
+      padding-bottom: 12px;
+    }
+
+    .memory-row {
+      display: grid;
+      grid-template-columns: 1fr auto;
+      gap: 12px;
+      align-items: start;
+    }
+
+    .memory-main {
+      min-width: 0;
+      cursor: pointer;
+    }
+
+    .memory-headline {
+      display: flex;
+      align-items: flex-start;
+      gap: 8px;
+      color: var(--text);
+      font-size: 0.8rem;
+      letter-spacing: 0.04em;
+      line-height: 1.45;
+    }
+
+    .memory-headline .section-toggle {
+      margin-top: 1px;
+      color: var(--dim);
+    }
+
+    .memory-meta {
+      color: var(--dim);
+      font-size: 0.76rem;
+      line-height: 1.4;
+      margin-top: 4px;
+    }
+
+    .memory-preview {
+      color: var(--text);
+      font-size: 0.88rem;
+      line-height: 1.5;
+      margin-top: 8px;
+      white-space: pre-wrap;
+      word-break: break-word;
+    }
+
+    .memory-more {
+      color: var(--dim);
+      font-size: 0.76rem;
+      margin-top: 4px;
+    }
+
+    .record-list {
+      margin: 8px 0 0 20px;
+      padding: 0;
+      color: var(--text);
+      display: grid;
+      gap: 4px;
+      font-size: 0.88rem;
+    }
+
+    .record-list li {
+      white-space: pre-wrap;
+      word-break: break-word;
+      line-height: 1.5;
+    }
+
+    .proposal-record-header {
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      gap: 12px;
+      font-size: 0.78rem;
+      color: var(--dim);
+      line-height: 1.4;
+    }
+
+    .record-id {
+      color: var(--text);
+    }
+
+    .proposal-title {
+      margin-top: 8px;
+      color: var(--text);
+      font-size: 0.9rem;
+      line-height: 1.45;
+      white-space: pre-wrap;
+      word-break: break-word;
+    }
+
+    .proposal-why {
+      margin-top: 6px;
+      color: var(--dim);
+      font-size: 0.8rem;
+      line-height: 1.45;
+      white-space: pre-wrap;
+      word-break: break-word;
+    }
+
+    .proposal-status {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      padding: 2px 8px;
+      border: 1px solid currentColor;
+      border-radius: 999px;
+      font-size: 0.7rem;
+      letter-spacing: 0.12em;
+      text-transform: uppercase;
+      white-space: nowrap;
+    }
+
+    .proposal-status.pending {
+      color: var(--voice);
+    }
+
+    .proposal-status.approved {
+      color: var(--connected);
+    }
+
+    .proposal-status.rejected {
+      color: var(--dim);
+    }
+
+    .proposal-actions {
+      margin-top: 10px;
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+    }
+
+    .faculty-entry {
+      padding: 6px 0 10px;
+      border-bottom: 1px solid rgba(74, 58, 30, 0.12);
+    }
+
+    .faculty-top {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+    }
+
+    .faculty-name {
+      color: var(--voice);
+      font-size: 0.82rem;
+      letter-spacing: 0.1em;
+    }
+
+    .faculty-mode {
+      font-size: 0.76rem;
+      letter-spacing: 0.06em;
+      white-space: nowrap;
+    }
+
+    .faculty-mode.connected {
+      color: var(--connected);
+    }
+
+    .faculty-mode.fallback {
+      color: var(--fallback);
+    }
+
+    .faculty-mode.ready {
+      color: #7a8a7a;
+    }
+
+    .faculty-mode.unavailable {
+      color: var(--dim);
+    }
+
+    .faculty-stats {
+      margin-top: 4px;
+      color: var(--dim);
+      font-size: 0.78rem;
+      line-height: 1.4;
+    }
+
+    .faculty-role {
+      color: var(--dim);
+      font-size: 0.76rem;
+      margin-top: 2px;
+      line-height: 1.4;
+    }
+
+    .guardian-room {
+      display: grid;
+      gap: 14px;
+    }
+
+    .guardian-controls {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+    }
+
+    .guardian-section-title {
+      color: #7a6a8a;
+      font-size: 0.76rem;
+      letter-spacing: 0.14em;
+      text-transform: uppercase;
+      margin-bottom: 8px;
+    }
+
+    .guardian-last-inspection,
+    .guardian-body-summary {
+      color: var(--dim);
+      font-size: 0.78rem;
+      line-height: 1.5;
+    }
+
+    .guardian-alert {
+      display: grid;
+      grid-template-columns: auto 1fr;
+      gap: 10px;
+      padding: 4px 0;
+      font-size: 0.82rem;
+      line-height: 1.4;
+    }
+
+    .guardian-alert-badge {
+      letter-spacing: 0.08em;
+      text-transform: lowercase;
+      white-space: nowrap;
+    }
+
+    .guardian-alert.info {
+      color: var(--dim);
+    }
+
+    .guardian-alert.warn {
+      color: var(--fallback);
+    }
+
+    .guardian-alert.critical {
+      color: var(--critical);
+    }
+
+    .guardian-alert-code {
+      letter-spacing: 0.08em;
+    }
+
+    .guardian-alert-message {
+      margin-top: 2px;
+      line-height: 1.45;
+    }
+
+    .guardian-event {
+      font-size: 0.78rem;
+      color: var(--dim);
+      padding: 6px 0;
+      border-bottom: 1px solid rgba(74, 58, 30, 0.1);
+      line-height: 1.45;
+    }
+
+    .guardian-event-top {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      flex-wrap: wrap;
+    }
+
+    .guardian-event-badge {
+      letter-spacing: 0.08em;
+      text-transform: lowercase;
+      white-space: nowrap;
+    }
+
+    .decision-block {
+      color: var(--critical);
+    }
+
+    .decision-redirect {
+      color: var(--fallback);
+    }
+
+    .decision-propose {
+      color: #7a8a6a;
+    }
+
+    .decision-tool {
+      color: var(--operator);
+    }
+
+    .audit-event-top {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      flex-wrap: wrap;
+      color: var(--dim);
+      font-size: 0.78rem;
+      line-height: 1.4;
+    }
+
+    .audit-event-type {
+      letter-spacing: 0.1em;
+      text-transform: lowercase;
+      white-space: nowrap;
+    }
+
+    .audit-event.route .audit-event-type {
+      color: var(--dim);
+    }
+
+    .audit-event.block .audit-event-type,
+    .audit-event.access .audit-event-type {
+      color: var(--critical);
+    }
+
+    .audit-event.approve .audit-event-type {
+      color: var(--connected);
+    }
+
+    .audit-event.guardian .audit-event-type {
+      color: var(--guardian);
+    }
+
+    .audit-event.memory .audit-event-type {
+      color: var(--voice);
+    }
+
+    .audit-event.tool .audit-event-type {
+      color: var(--operator);
+    }
+
+    .audit-event.propose .audit-event-type,
+    .audit-event.redirect .audit-event-type,
+    .audit-event.reject .audit-event-type {
+      color: var(--fallback);
+    }
+
+    .audit-event-summary {
+      margin-top: 6px;
+      color: var(--text);
+      font-size: 0.86rem;
+      line-height: 1.45;
+      white-space: pre-wrap;
+      word-break: break-word;
+    }
+
+    .audit-event-detail {
+      margin-top: 4px;
+      color: var(--dim);
+      font-size: 0.78rem;
+      line-height: 1.45;
+      white-space: pre-wrap;
+      word-break: break-word;
+    }
+
+    .input-bar {
+      border-top: 1px solid var(--border);
+      display: grid;
+      grid-template-columns: auto 1fr auto;
+      gap: 12px;
+      align-items: center;
+      padding: 12px 16px;
+    }
+
+    .input-prefix {
+      color: var(--user);
+      font-size: 0.9rem;
+      letter-spacing: 0.1em;
+      text-transform: lowercase;
+      white-space: nowrap;
+    }
+
+    .text-input {
+      width: 100%;
+      border: 1px solid var(--border);
+      background: rgba(10, 10, 15, 0.96);
+      color: var(--text);
+      padding: 11px 12px;
+      min-width: 0;
+    }
+
+    .text-input:focus {
+      outline: none;
+      border-color: var(--voice);
+      color: var(--voice);
+    }
+
+    .send-button {
+      min-width: 88px;
+      text-transform: uppercase;
+      letter-spacing: 0.16em;
+      font-size: 0.78rem;
+      padding: 8px 12px;
+      border: 1px solid var(--border);
+      background: transparent;
+      color: var(--text);
+      cursor: pointer;
+    }
+
+    .send-button:hover,
+    .send-button:focus-visible {
+      outline: none;
+      color: var(--voice);
+      border-color: var(--voice);
+    }
+
+    @keyframes inanna-pulse {
+      0%,
+      100% {
+        opacity: 0.55;
+        text-shadow: 0 0 0 transparent;
+      }
+      50% {
+        opacity: 1;
+        text-shadow: 0 0 14px rgba(200, 169, 110, 0.28);
+      }
+    }
+
+    @keyframes pulse-warn {
+      0%,
+      100% {
+        opacity: 1;
+      }
+      50% {
+        opacity: 0.5;
+      }
+    }
+
+    @media (max-width: 1100px) {
+      .workspace {
+        grid-template-columns: 1fr;
+      }
+
+      .conversation-panel {
+        border-right: 0;
+        border-bottom: 1px solid var(--border);
+      }
+
+      .side-panel {
+        max-height: 42vh;
+      }
+
+      .header {
+        align-items: flex-start;
+        flex-direction: column;
+      }
+
+      .header-meta {
+        justify-content: flex-start;
+        flex-wrap: wrap;
+      }
+    }
+  </style>
+</head>
+<body data-ws-port="__WS_PORT__">
+  <div class="shell">
+    <header class="header">
+      <div class="brand">
+        <div class="brand-indicator" id="brand-indicator">INANNA NYX</div>
+      </div>
+      <div class="header-meta">
+        <div class="header-phase" id="phase-text">loading phase</div>
+        <a class="console-btn" id="console-link" href="/console" target="_blank" rel="noopener noreferrer" hidden>[ console ]</a>
+        <div class="realm-indicator" id="realm-indicator" title="">REALM: DEFAULT</div>
+        <div class="user-indicator" id="user-indicator">USER: ZAERA</div>
+        <div class="body-indicator" id="body-indicator">BODY: OK</div>
+        <div class="mode">
+          <span class="mode-dot" id="mode-dot"></span>
+          <span id="mode-text">fallback</span>
+        </div>
+      </div>
+    </header>
+
+    <main class="workspace">
+      <section class="conversation-panel">
+        <div class="panel-title">Conversation</div>
+        <div class="acting-banner" id="acting-banner" hidden></div>
+        <div class="conversation-log" id="conversation-log"></div>
+      </section>
+
+      <aside class="side-panel" id="side-panel">
+        <section class="section" data-section="admin" hidden>
+          <div class="section-header" data-section-header="admin" tabindex="0" role="button" aria-expanded="false">
+            <div class="section-title-row">
+              <span class="section-toggle" data-section-toggle="admin"></span>
+              <span class="section-title">ADMIN</span>
+              <span class="admin-counts" id="admin-counts"></span>
+            </div>
+            <div class="section-header-right">
+              <span class="section-badge" id="admin-badge">0</span>
+            </div>
+          </div>
+          <div class="section-body" id="admin-body">
+            <div class="admin-panel" id="admin-panel"></div>
+          </div>
+        </section>
+
+        <section class="section" data-section="memory">
+          <div class="section-header" data-section-header="memory" tabindex="0" role="button" aria-expanded="false">
+            <div class="section-title-row">
+              <span class="section-toggle" data-section-toggle="memory"></span>
+              <span class="section-title">MEMORY</span>
+            </div>
+            <div class="section-header-right">
+              <span class="section-badge" id="memory-badge">0</span>
+              <div class="section-actions">
+                <button class="panel-btn warn" id="memory-clear-button" type="button">[ clear all ]</button>
+              </div>
+            </div>
+          </div>
+          <div class="section-body" id="memory-body">
+            <div class="memory-summary">
+              <div class="memory-bar" id="memory-bar"></div>
+              <div class="memory-bar-label" id="memory-bar-label"></div>
+              <div class="memory-warning" id="memory-warning" hidden></div>
+            </div>
+            <div class="memory-timeline" id="memory-panel"></div>
+          </div>
+        </section>
+
+        <section class="section" data-section="proposals">
+          <div class="section-header" data-section-header="proposals" tabindex="0" role="button" aria-expanded="true">
+            <div class="section-title-row">
+              <span class="section-toggle" data-section-toggle="proposals"></span>
+              <span class="section-title">PROPOSALS</span>
+            </div>
+            <div class="section-header-right">
+              <span class="section-badge" id="proposal-badge">0</span>
+              <div class="section-actions">
+                <button class="panel-btn" id="load-history-button" type="button">[ load full history ]</button>
+              </div>
+            </div>
+          </div>
+          <div class="section-body" id="proposal-body">
+            <div class="filter-tabs" id="proposal-filter-tabs">
+              <button class="panel-btn filter-tab active" type="button" data-filter="all">[ all ]</button>
+              <button class="panel-btn filter-tab" type="button" data-filter="pending">[ pending ]</button>
+              <button class="panel-btn filter-tab" type="button" data-filter="approved">[ approved ]</button>
+              <button class="panel-btn filter-tab" type="button" data-filter="rejected">[ rejected ]</button>
+            </div>
+            <div class="proposal-list" id="proposal-panel"></div>
+          </div>
+        </section>
+
+        <section class="section" data-section="faculties">
+          <div class="section-header" data-section-header="faculties" tabindex="0" role="button" aria-expanded="false">
+            <div class="section-title-row">
+              <span class="section-toggle" data-section-toggle="faculties"></span>
+              <span class="section-title">FACULTIES</span>
+            </div>
+            <div class="section-header-right">
+              <span class="section-badge" id="faculty-badge">0</span>
+            </div>
+          </div>
+          <div class="section-body" id="faculty-body">
+            <div class="faculty-list" id="faculty-panel"></div>
+          </div>
+        </section>
+
+        <section class="section" data-section="guardian">
+          <div class="section-header" data-section-header="guardian" tabindex="0" role="button" aria-expanded="false">
+            <div class="section-title-row">
+              <span class="section-toggle" data-section-toggle="guardian"></span>
+              <span class="section-title">GUARDIAN ROOM</span>
+            </div>
+            <div class="section-header-right">
+              <span class="section-badge" id="guardian-badge">0</span>
+            </div>
+          </div>
+          <div class="section-body" id="guardian-body">
+            <div class="guardian-room">
+              <div class="guardian-controls">
+                <button class="panel-btn" id="guardian-inspect-button" type="button">[ inspect ]</button>
+                <button class="panel-btn" id="guardian-dismiss-button" type="button">[ dismiss ]</button>
+                <button class="panel-btn warn" id="guardian-clear-events-button" type="button">[ clear events ]</button>
+              </div>
+
+              <div>
+                <div class="guardian-section-title">Alert Status</div>
+                <div class="guardian-last-inspection" id="guardian-last-inspection">Last inspection: never</div>
+                <div class="guardian-alert-list" id="guardian-alerts"></div>
+              </div>
+
+              <div>
+                <div class="guardian-section-title">Governance Events (last 10)</div>
+                <div class="guardian-event-list" id="guardian-events"></div>
+              </div>
+
+              <div>
+                <div class="guardian-section-title">Body Health</div>
+                <div class="guardian-body-summary" id="guardian-body-summary"></div>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <section class="section" data-section="audit">
+          <div class="section-header" data-section-header="audit" tabindex="0" role="button" aria-expanded="false">
+            <div class="section-title-row">
+              <span class="section-toggle" data-section-toggle="audit"></span>
+              <span class="section-title">AUDIT</span>
+            </div>
+            <div class="section-header-right">
+              <span class="section-badge" id="audit-badge">0</span>
+            </div>
+          </div>
+          <div class="section-body" id="audit-body">
+            <div class="audit-list" id="audit-panel"></div>
+          </div>
+        </section>
+      </aside>
+    </main>
+
+    <form class="input-bar" id="input-form">
+      <div class="input-prefix">you :</div>
+      <input class="text-input" id="text-input" type="text" autocomplete="off" spellcheck="false">
+      <button class="send-button" type="submit">Send</button>
+    </form>
+  </div>
+
+  <script>
+    const MEMORY_DISPLAY_CAP = 100;
+    const PROPOSAL_DEFAULT_VISIBLE = 5;
+    const MEMORY_DEFAULT_VISIBLE = 5;
+    const GUARDIAN_EVENTS_DEFAULT_VISIBLE = 5;
+    const AUDIT_DEFAULT_VISIBLE = 10;
+    const SECTION_STORAGE_KEY = "inanna.ui.section-state";
+    const DEFAULT_SECTIONS = {
+      admin: false,
+      memory: false,
+      proposals: true,
+      faculties: false,
+      guardian: false,
+      audit: false,
+    };
+    const FACULTY_ORDER = ["crown", "analyst", "operator", "guardian"];
+    const commandPrefixes = new Set([
+      "users",
+      "create-user",
+      "login",
+      "logout",
+      "whoami",
+      "reflect",
+      "audit",
+      "audit-log",
+      "guardian",
+      "guardian-log",
+      "guardian-dismiss",
+      "guardian-clear-events",
+      "faculties",
+      "realms",
+      "create-realm",
+      "realm-context",
+      "switch-user",
+      "assign-realm",
+      "unassign-realm",
+      "my-log",
+      "user-log",
+      "invite",
+      "join",
+      "invites",
+      "admin-surface",
+      "history",
+      "proposal-history",
+      "routing-log",
+      "nammu-log",
+      "memory-log",
+      "memory-map",
+      "memory-clear-all",
+      "body",
+      "status",
+      "diagnostics",
+      "approve",
+      "reject",
+      "forget",
+      "exit"
+    ]);
+
+    const state = {
+      ws: null,
+      thinking: false,
+      status: {
+        phase: "",
+        realm: "default",
+        mode: "fallback",
+        active_user: null,
+        acting_as: null,
+        original_user: null,
+        body: {},
+        faculties: [],
+      },
+      messages: [],
+      adminVisible: false,
+      adminData: {
+        users: [],
+        invites: [],
+        realms: [],
+        total_users: 0,
+        total_invites: 0,
+        total_realms: 0,
+      },
+      adminForms: {
+        inviteOpen: false,
+        inviteRole: "user",
+        inviteRealm: "default",
+        realmOpen: false,
+        realmName: "",
+        realmPurpose: "",
+      },
+      memoryRecords: [],
+      proposalRecords: [],
+      proposalHistoryRecords: [],
+      proposalFilter: "all",
+      fullHistoryLoaded: false,
+      proposalExpanded: false,
+      faculties: [],
+      guardianAlerts: [],
+      guardianTimestamp: "",
+      guardianEvents: [],
+      guardianLogLoaded: false,
+      guardianExpanded: false,
+      auditEvents: [],
+      auditLogLoaded: false,
+      clientAuditEvents: [],
+      auditExpanded: false,
+      sections: loadSectionState(),
+      expandedMemoryIds: new Set(),
+      memoryExpanded: false,
+      startupContextShown: false,
+      auditSequence: 0,
+    };
+
+    const brandIndicator = document.getElementById("brand-indicator");
+    const phaseText = document.getElementById("phase-text");
+    const consoleLink = document.getElementById("console-link");
+    const realmIndicator = document.getElementById("realm-indicator");
+    const userIndicator = document.getElementById("user-indicator");
+    const bodyIndicator = document.getElementById("body-indicator");
+    const modeDot = document.getElementById("mode-dot");
+    const modeText = document.getElementById("mode-text");
+    const actingBanner = document.getElementById("acting-banner");
+    const conversationLog = document.getElementById("conversation-log");
+    const adminPanel = document.getElementById("admin-panel");
+    const adminCounts = document.getElementById("admin-counts");
+    const memoryPanel = document.getElementById("memory-panel");
+    const memoryBar = document.getElementById("memory-bar");
+    const memoryBarLabel = document.getElementById("memory-bar-label");
+    const memoryWarning = document.getElementById("memory-warning");
+    const proposalPanel = document.getElementById("proposal-panel");
+    const proposalFilterTabs = document.getElementById("proposal-filter-tabs");
+    const facultyPanel = document.getElementById("faculty-panel");
+    const guardianAlerts = document.getElementById("guardian-alerts");
+    const guardianLastInspection = document.getElementById("guardian-last-inspection");
+    const guardianEvents = document.getElementById("guardian-events");
+    const guardianBodySummary = document.getElementById("guardian-body-summary");
+    const auditPanel = document.getElementById("audit-panel");
+    const inputForm = document.getElementById("input-form");
+    const textInput = document.getElementById("text-input");
+    const adminBadge = document.getElementById("admin-badge");
+    const memoryBadge = document.getElementById("memory-badge");
+    const proposalBadge = document.getElementById("proposal-badge");
+    const facultyBadge = document.getElementById("faculty-badge");
+    const guardianBadge = document.getElementById("guardian-badge");
+    const auditBadge = document.getElementById("audit-badge");
+    const loadHistoryButton = document.getElementById("load-history-button");
+    const memoryClearButton = document.getElementById("memory-clear-button");
+    const guardianInspectButton = document.getElementById("guardian-inspect-button");
+    const guardianDismissButton = document.getElementById("guardian-dismiss-button");
+    const guardianClearEventsButton = document.getElementById("guardian-clear-events-button");
+
+    const sectionRefs = {
+      admin: {
+        root: document.querySelector('[data-section="admin"]'),
+        header: document.querySelector('[data-section-header="admin"]'),
+        toggle: document.querySelector('[data-section-toggle="admin"]'),
+      },
+      memory: {
+        root: document.querySelector('[data-section="memory"]'),
+        header: document.querySelector('[data-section-header="memory"]'),
+        toggle: document.querySelector('[data-section-toggle="memory"]'),
+      },
+      proposals: {
+        root: document.querySelector('[data-section="proposals"]'),
+        header: document.querySelector('[data-section-header="proposals"]'),
+        toggle: document.querySelector('[data-section-toggle="proposals"]'),
+      },
+      faculties: {
+        root: document.querySelector('[data-section="faculties"]'),
+        header: document.querySelector('[data-section-header="faculties"]'),
+        toggle: document.querySelector('[data-section-toggle="faculties"]'),
+      },
+      guardian: {
+        root: document.querySelector('[data-section="guardian"]'),
+        header: document.querySelector('[data-section-header="guardian"]'),
+        toggle: document.querySelector('[data-section-toggle="guardian"]'),
+      },
+      audit: {
+        root: document.querySelector('[data-section="audit"]'),
+        header: document.querySelector('[data-section-header="audit"]'),
+        toggle: document.querySelector('[data-section-toggle="audit"]'),
+      },
+    };
+
+    function loadSectionState() {
+      try {
+        const raw = window.localStorage.getItem(SECTION_STORAGE_KEY);
+        if (!raw) {
+          return { ...DEFAULT_SECTIONS };
+        }
+        const parsed = JSON.parse(raw);
+        return { ...DEFAULT_SECTIONS, ...parsed };
+      } catch {
+        return { ...DEFAULT_SECTIONS };
+      }
+    }
+
+    function saveSectionState() {
+      window.localStorage.setItem(SECTION_STORAGE_KEY, JSON.stringify(state.sections));
+    }
+
+    function escapeHtml(text) {
+      return String(text || "")
+        .replace(/&/g, "&amp;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;");
+    }
+
+    function renderMarkdown(text) {
+      return escapeHtml(text)
+        .replace(/\*\*(.*?)\*\*/g, "<strong>$1</strong>")
+        .replace(/\n/g, "<br>");
+    }
+
+    function parseIsoDate(value) {
+      const date = new Date(value);
+      return Number.isNaN(date.getTime()) ? null : date;
+    }
+
+    function formatTimestamp(iso) {
+      const date = parseIsoDate(iso);
+      if (!date) {
+        return iso || "never";
+      }
+      const months = ["Jan", "Feb", "Mar", "Apr", "May", "Jun",
+                      "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+      const hour = String(date.getHours()).padStart(2, "0");
+      const minute = String(date.getMinutes()).padStart(2, "0");
+      return `${months[date.getMonth()]} ${date.getDate()} ${hour}:${minute}`;
+    }
+
+    function formatDayLabel(iso) {
+      const date = parseIsoDate(iso);
+      if (!date) {
+        return "Undated";
+      }
+      const months = ["Jan", "Feb", "Mar", "Apr", "May", "Jun",
+                      "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+      return `${months[date.getMonth()]} ${date.getDate()}`;
+    }
+
+    function shortProposalId(proposalId) {
+      const clean = String(proposalId || "").replace(/^proposal-/, "");
+      return clean.slice(0, 8) || String(proposalId || "");
+    }
+
+    function shortSessionId(sessionId) {
+      return String(sessionId || "").slice(0, 14);
+    }
+
+    function formatRealmNames(realms) {
+      if (!Array.isArray(realms) || realms.length === 0) {
+        return "(none)";
+      }
+      return realms.map((realm) => String(realm || "").trim()).filter(Boolean).join(", ") || "(none)";
+    }
+
+    function extractProposalId(text) {
+      const match = String(text || "").match(/\bproposal-[a-z0-9-]+\b/i);
+      return match ? match[0] : "";
+    }
+
+    function extractToolProposalTimestamp(text) {
+      const match = String(text || "").match(/\[TOOL PROPOSAL\]\s+([^|]+?)\s+\|/i);
+      return match ? match[1].trim() : "";
+    }
+
+    function findToolProposalId(text) {
+      const directId = extractProposalId(text);
+      if (directId) {
+        return directId;
+      }
+      if (!/\[TOOL PROPOSAL\]/i.test(String(text || ""))) {
+        return "";
+      }
+      const timestamp = extractToolProposalTimestamp(text);
+      if (!timestamp) {
+        return "";
+      }
+      const match = (state.proposalRecords || []).find((record) => {
+        return (
+          String(record.timestamp || "") === timestamp &&
+          String(record.status || "pending") === "pending"
+        );
+      });
+      return match ? String(match.proposal_id || match.id || "") : "";
+    }
+
+    function sortByTimestamp(records, key) {
+      return [...records].sort((a, b) => {
+        const left = parseIsoDate(a[key])?.getTime() || 0;
+        const right = parseIsoDate(b[key])?.getTime() || 0;
+        return left - right;
+      });
+    }
+
+    function newestFirst(records, key) {
+      return [...records].sort((a, b) => {
+        const left = parseIsoDate(a[key])?.getTime() || 0;
+        const right = parseIsoDate(b[key])?.getTime() || 0;
+        return right - left;
+      });
+    }
+
+    function appendListToggle(container, label, onClick) {
+      const row = document.createElement("div");
+      row.className = "list-toggle-row";
+
+      const button = document.createElement("button");
+      button.className = "panel-btn";
+      button.type = "button";
+      button.textContent = label;
+      button.addEventListener("click", (event) => {
+        event.stopPropagation();
+        onClick();
+      });
+
+      row.appendChild(button);
+      container.appendChild(row);
+    }
+
+    function memoryTotalLines() {
+      if (typeof state.status.memory_total_lines === "number") {
+        return state.status.memory_total_lines;
+      }
+      return state.memoryRecords.reduce((total, record) => {
+        return total + (Array.isArray(record.summary_lines) ? record.summary_lines.length : 0);
+      }, 0);
+    }
+
+    function connectedFacultyCount() {
+      return state.faculties.filter((faculty) => faculty.mode === "connected").length;
+    }
+
+    function guardianAlertCount() {
+      return state.guardianAlerts.filter((alert) => alert.code !== "SYSTEM_HEALTHY").length;
+    }
+
+    function adminInviteCount() {
+      return Number(state.adminData.total_invites || 0);
+    }
+
+    function hasConsoleAccess(activeUser) {
+      const role = String(activeUser && activeUser.role || "").toLowerCase();
+      return role === "guardian" || role === "operator";
+    }
+
+    function resetAdminForms() {
+      state.adminForms.inviteOpen = false;
+      state.adminForms.inviteRole = "user";
+      state.adminForms.inviteRealm = state.status.realm || "default";
+      state.adminForms.realmOpen = false;
+      state.adminForms.realmName = "";
+      state.adminForms.realmPurpose = "";
+    }
+
+    function updateAdminVisibility(activeUser) {
+      state.adminVisible = hasConsoleAccess(activeUser);
+      sectionRefs.admin.root.hidden = !state.adminVisible;
+      if (!state.adminVisible) {
+        state.adminData = {
+          users: [],
+          invites: [],
+          realms: [],
+          total_users: 0,
+          total_invites: 0,
+          total_realms: 0,
+        };
+        resetAdminForms();
+      }
+    }
+
+    function auditEventRecords() {
+      if (state.auditLogLoaded && state.auditEvents.length > 0) {
+        return newestFirst(state.auditEvents, "timestamp");
+      }
+      return newestFirst(state.clientAuditEvents, "timestamp");
+    }
+
+    function visibleAuditEvents() {
+      const events = auditEventRecords();
+      if (state.auditExpanded) {
+        return events;
+      }
+      return events.slice(0, AUDIT_DEFAULT_VISIBLE);
+    }
+
+    function ensureSectionData(sectionName) {
+      if (sectionName === "admin" && state.adminVisible) {
+        requestAdminSurface();
+      }
+      if (sectionName === "guardian") {
+        requestGuardianLog();
+      }
+      if (sectionName === "audit") {
+        requestAuditLog();
+      }
+    }
+
+    function toggleSection(sectionName) {
+      state.sections[sectionName] = !state.sections[sectionName];
+      saveSectionState();
+      renderSections();
+      if (state.sections[sectionName]) {
+        ensureSectionData(sectionName);
+      }
+    }
+
+    function sendCommand(cmd, extra) {
+      if (!state.ws || state.ws.readyState !== WebSocket.OPEN) {
+        return;
+      }
+      state.ws.send(JSON.stringify({ type: "command", cmd, ...(extra || {}) }));
+    }
+
+    function requestProposalHistory() {
+      sendCommand("proposal-history");
+    }
+
+    function requestGuardianLog() {
+      sendCommand("guardian-log");
+    }
+
+    function requestAdminSurface() {
+      if (!state.adminVisible) {
+        return;
+      }
+      sendCommand("admin-surface");
+    }
+
+    function requestAuditLog() {
+      sendCommand("audit-log");
+    }
+
+    function addClientAudit(eventType, summary, detail) {
+      state.auditSequence += 1;
+      state.clientAuditEvents.unshift({
+        id: `client-${state.auditSequence}`,
+        timestamp: new Date().toISOString(),
+        event_type: eventType,
+        summary,
+        detail: detail || "",
+      });
+      state.clientAuditEvents = newestFirst(state.clientAuditEvents, "timestamp");
+      if (!state.auditLogLoaded || state.auditEvents.length === 0) {
+        renderAudit();
+        renderSectionBadges();
+      }
+    }
+
+    function normalizeSystemAccess(text) {
+      return String(text || "").replace(/^access\s*>\s*/i, "").trim();
+    }
+
+    function parseGuardianReport(text) {
+      const lines = String(text || "").split(/\r?\n/);
+      const alerts = [];
+      for (let index = 0; index < lines.length; index += 1) {
+        const match = lines[index].match(/^\s*\[(info|warn|critical)\]\s+([A-Z0-9_]+)/i);
+        if (!match) {
+          continue;
+        }
+        const messageLine = lines[index + 1] ? lines[index + 1].trim() : "";
+        alerts.push({
+          level: match[1].toLowerCase(),
+          code: match[2],
+          message: messageLine,
+        });
+      }
+      if (alerts.length > 0) {
+        state.guardianAlerts = alerts;
+        state.guardianTimestamp = new Date().toISOString();
+        renderGuardian();
+        renderSectionBadges();
+      }
+    }
+
+    function connect() {
+      const protocol = window.location.protocol === "https:" ? "wss" : "ws";
+      const wsPort = document.body.dataset.wsPort || "8081";
+      state.ws = new WebSocket(`${protocol}://localhost:${wsPort}`);
+
+      state.ws.addEventListener("open", () => {
+        Object.keys(state.sections).forEach((sectionName) => {
+          if (state.sections[sectionName]) {
+            ensureSectionData(sectionName);
+          }
+        });
+      });
+
+      state.ws.addEventListener("message", (event) => {
+        const payload = JSON.parse(event.data);
+        handleServerMessage(payload);
+      });
+
+      state.ws.addEventListener("close", () => {
+        addMessage("system", "Connection closed. Attempting to reconnect...");
+        setTimeout(connect, 1000);
+      });
+    }
+
+    function handleServerMessage(payload) {
+      if (payload.type === "assistant") {
+        addMessage("assistant", payload.text);
+        return;
+      }
+
+      if (payload.type === "analyst") {
+        addMessage("analyst", payload.text);
+        return;
+      }
+
+      if (payload.type === "nammu") {
+        addMessage("nammu", payload.text);
+        addClientAudit("route", payload.text, payload.route || "");
+        return;
+      }
+
+      if (payload.type === "governance") {
+        addMessage("governance", payload.text);
+        addClientAudit(payload.decision || "governance", payload.text, "");
+        return;
+      }
+
+      if (payload.type === "operator") {
+        addMessage("operator", payload.text);
+        addClientAudit("tool", payload.text, "");
+        return;
+      }
+
+      if (payload.type === "guardian") {
+        addMessage("guardian", payload.text);
+        addClientAudit("guardian", payload.text.split(/\r?\n/, 1)[0], payload.text);
+        parseGuardianReport(payload.text);
+        requestGuardianLog();
+        return;
+      }
+
+      if (payload.type === "guardian_status") {
+        state.guardianAlerts = payload.alerts || [];
+        state.guardianTimestamp = payload.timestamp || "";
+        renderGuardian();
+        renderSectionBadges();
+        return;
+      }
+
+      if (payload.type === "guardian_log") {
+        state.guardianEvents = newestFirst(payload.events || [], "timestamp");
+        state.guardianLogLoaded = true;
+        renderGuardian();
+        return;
+      }
+
+      if (payload.type === "audit_log") {
+        state.auditEvents = newestFirst(payload.events || [], "timestamp");
+        state.auditLogLoaded = true;
+        renderAudit();
+        renderSectionBadges();
+        return;
+      }
+
+      if (payload.type === "admin_data") {
+        state.adminData = {
+          users: payload.users || [],
+          invites: payload.invites || [],
+          realms: payload.realms || [],
+          total_users: payload.total_users || 0,
+          total_invites: payload.total_invites || 0,
+          total_realms: payload.total_realms || 0,
+        };
+        renderAdmin();
+        renderSectionBadges();
+        return;
+      }
+
+      if (payload.type === "access") {
+        const text = normalizeSystemAccess(payload.text);
+        addMessage("access", text);
+        addClientAudit("access", text, "");
+        return;
+      }
+
+      if (payload.type === "system") {
+        const systemText = String(payload.text || "");
+        if (/^access\s*>/i.test(systemText)) {
+          const accessText = normalizeSystemAccess(systemText);
+          addMessage("access", accessText);
+          addClientAudit("access", accessText, "");
+        } else {
+          addMessage("system", systemText);
+          if (/^(login|logout|join|invite|switch-user|assign-realm|unassign-realm)\s*>/i.test(systemText)) {
+            const eventType = systemText.split(">", 1)[0].trim().toLowerCase();
+            addClientAudit(eventType, systemText, "");
+          }
+        }
+        return;
+      }
+
+      if (payload.type === "thinking") {
+        state.thinking = Boolean(payload.active);
+        renderHeader();
+        return;
+      }
+
+      if (payload.type === "status") {
+        state.status = payload.data || {};
+        state.faculties = payload.data && Array.isArray(payload.data.faculties)
+          ? payload.data.faculties
+          : [];
+        if (!state.startupContextShown) {
+          const memoryCount = payload.data ? payload.data.memory_count || 0 : 0;
+          if (memoryCount > 0) {
+            addMessage(
+              "system",
+              `Session started. INANNA is carrying ${memoryCount} approved memory record(s) into this conversation.`
+            );
+          } else {
+            addMessage("system", "Session started. No prior approved memory yet.");
+          }
+          state.startupContextShown = true;
+        }
+        updateAdminVisibility(state.status.active_user);
+        renderHeader();
+        renderActingBanner();
+        renderAdmin();
+        renderMemorySummary();
+        renderFaculties();
+        renderGuardian();
+        renderSections();
+        renderSectionBadges();
+        if (state.adminVisible && state.sections.admin) {
+          requestAdminSurface();
+        }
+        return;
+      }
+
+      if (payload.type === "memory_update") {
+        state.memoryRecords = payload.records || [];
+        renderMemory();
+        renderMemorySummary();
+        renderSectionBadges();
+        return;
+      }
+
+      if (payload.type === "proposal") {
+        state.proposalRecords = payload.records || [];
+        if (state.fullHistoryLoaded) {
+          requestProposalHistory();
+        }
+        renderProposals();
+        renderMessages();
+        renderSectionBadges();
+        return;
+      }
+
+      if (payload.type === "proposal_history") {
+        state.proposalHistoryRecords = payload.records || [];
+        state.fullHistoryLoaded = true;
+        renderProposals();
+        renderSectionBadges();
+      }
+    }
+
+    function addMessage(role, text) {
+      state.messages.push({ role, text });
+      renderMessages();
+    }
+
+    function renderHeader() {
+      const activeUser = state.status.active_user;
+      const actingAs = state.status.acting_as;
+      const originalUser = state.status.original_user;
+      const body = state.status.body || {};
+
+      phaseText.textContent = state.status.phase || "loading phase";
+      realmIndicator.textContent = `REALM: ${(state.status.realm || "default").toUpperCase()}`;
+      realmIndicator.title = state.status.realm_purpose || "";
+
+      if (activeUser && actingAs && originalUser) {
+        userIndicator.textContent = `USER: ${actingAs.display_name} [as ${originalUser.display_name}]`;
+        userIndicator.classList.remove("dim");
+        userIndicator.title = `${actingAs.role} acting under ${originalUser.display_name}`;
+      } else if (activeUser) {
+        userIndicator.textContent = `USER: ${activeUser.display_name}`;
+        userIndicator.classList.remove("dim");
+        userIndicator.title = activeUser.role || "";
+      } else {
+        userIndicator.textContent = "USER: NONE";
+        userIndicator.classList.add("dim");
+        userIndicator.title = "";
+      }
+
+      consoleLink.hidden = !hasConsoleAccess(activeUser);
+
+      const isFallback = (body.model_mode || state.status.mode) === "fallback";
+      const isWarn =
+        (typeof body.memory_used_pct === "number" && body.memory_used_pct >= 80) ||
+        (typeof body.disk_free_gb === "number" && body.disk_free_gb < 1);
+
+      let bodyLabel = "BODY: OK";
+      if (isFallback) {
+        bodyLabel = "BODY: FALLBACK";
+      } else if (isWarn) {
+        bodyLabel = "BODY: WARN";
+      }
+
+      bodyIndicator.textContent = bodyLabel;
+      bodyIndicator.classList.toggle("warn", isFallback || isWarn);
+      bodyIndicator.title = [
+        body.platform ? `platform: ${body.platform}` : "",
+        body.python_version ? `python: ${body.python_version}` : "",
+        typeof body.disk_free_gb === "number" ? `disk free: ${body.disk_free_gb.toFixed(1)} GB` : "",
+      ].filter(Boolean).join(" | ");
+
+      modeText.textContent = state.status.mode || "fallback";
+      modeDot.style.color = state.status.mode === "connected" ? "var(--connected)" : "var(--fallback)";
+      brandIndicator.classList.toggle("pulsing", state.thinking);
+    }
+
+    function renderActingBanner() {
+      const actingAs = state.status.acting_as;
+      const originalUser = state.status.original_user;
+      if (!actingAs || !originalUser) {
+        actingBanner.hidden = true;
+        actingBanner.textContent = "";
+        return;
+      }
+      actingBanner.hidden = false;
+      actingBanner.innerHTML =
+        `<strong>Operating as ${escapeHtml(actingAs.display_name)} (${escapeHtml(actingAs.role)})</strong>` +
+        ` \u2014 Guardian context suspended`;
+    }
+
+    function renderMessages() {
+      conversationLog.innerHTML = "";
+      state.messages.forEach((message) => {
+        const article = document.createElement("article");
+        article.className = `message message-${message.role}`;
+
+        const prefix = document.createElement("div");
+        prefix.className = "message-prefix";
+        prefix.textContent = {
+          assistant: "inanna :",
+          analyst: "analyst :",
+          nammu: "nammu :",
+          governance: "governance :",
+          operator: "operator :",
+          guardian: "guardian :",
+          access: "access :",
+          user: "you :",
+          system: "system :",
+        }[message.role] || "system :";
+
+        const content = document.createElement("div");
+        content.className = "message-content";
+        if (message.role === "assistant" || message.role === "analyst") {
+          content.innerHTML = renderMarkdown(message.text);
+        } else {
+          content.textContent = message.text;
+        }
+
+        article.append(prefix, content);
+
+        if (
+          message.role === "system" &&
+          /\[TOOL PROPOSAL\]/i.test(String(message.text || "")) &&
+          /status:\s*pending/i.test(String(message.text || ""))
+        ) {
+          const proposalId = findToolProposalId(message.text);
+          if (proposalId) {
+            const actions = document.createElement("div");
+            actions.className = "message-actions";
+
+            const approveButton = document.createElement("button");
+            approveButton.className = "panel-btn";
+            approveButton.type = "button";
+            approveButton.textContent = "[ approve ]";
+            approveButton.addEventListener("click", () => {
+              sendCommand("approve", { proposal_id: proposalId });
+            });
+
+            const rejectButton = document.createElement("button");
+            rejectButton.className = "panel-btn warn";
+            rejectButton.type = "button";
+            rejectButton.textContent = "[ decline ]";
+            rejectButton.addEventListener("click", () => {
+              sendCommand("reject", { proposal_id: proposalId });
+            });
+
+            actions.append(approveButton, rejectButton);
+            article.appendChild(actions);
+          }
+        }
+
+        conversationLog.appendChild(article);
+      });
+      conversationLog.scrollTop = conversationLog.scrollHeight;
+    }
+
+    function renderSections() {
+      Object.entries(sectionRefs).forEach(([sectionName, refs]) => {
+        const open = Boolean(state.sections[sectionName]);
+        refs.root.classList.toggle("collapsed", !open);
+        refs.toggle.textContent = open ? "\u25BE" : "\u25B8";
+        refs.header.setAttribute("aria-expanded", open ? "true" : "false");
+      });
+    }
+
+    function renderSectionBadges() {
+      adminCounts.textContent = state.adminVisible
+        ? `(${state.adminData.total_users || 0} users  ${state.adminData.total_realms || 0} realms)`
+        : "";
+      adminBadge.textContent = String(adminInviteCount());
+      adminBadge.className = `section-badge${adminInviteCount() > 0 ? " warn" : ""}`;
+
+      const totalLines = memoryTotalLines();
+      memoryBadge.textContent = String(state.memoryRecords.length);
+      memoryBadge.className = `section-badge${totalLines > MEMORY_DISPLAY_CAP ? " warn" : ""}`;
+
+      const pendingCount = state.status.pending_count ?? state.status.pending_proposals ?? 0;
+      proposalBadge.textContent = String(pendingCount);
+      proposalBadge.className = `section-badge${pendingCount > 0 ? " warn" : ""}`;
+
+      const connectedCount = connectedFacultyCount();
+      facultyBadge.textContent = String(connectedCount);
+      facultyBadge.className = `section-badge${connectedCount > 0 ? " good" : ""}`;
+
+      const alertCount = guardianAlertCount();
+      guardianBadge.textContent = String(alertCount);
+      guardianBadge.className = `section-badge${alertCount > 0 ? " warn" : ""}`;
+
+      const auditCount = auditEventRecords().length;
+      auditBadge.textContent = String(auditCount);
+      auditBadge.className = "section-badge";
+    }
+
+    function focusCommandInput(prefix) {
+      textInput.value = prefix;
+      textInput.focus();
+      textInput.setSelectionRange(textInput.value.length, textInput.value.length);
+    }
+
+    function openInviteForm(role, realmName) {
+      state.adminForms.realmOpen = false;
+      state.adminForms.inviteOpen = true;
+      state.adminForms.inviteRole = String(role || "user").toLowerCase();
+      state.adminForms.inviteRealm = String(realmName || state.status.realm || "default");
+      renderAdmin();
+    }
+
+    function openRealmForm() {
+      state.adminForms.inviteOpen = false;
+      state.adminForms.realmOpen = true;
+      renderAdmin();
+    }
+
+    function renderAdmin() {
+      if (!state.adminVisible) {
+        adminPanel.innerHTML = "";
+        adminCounts.textContent = "";
+        return;
+      }
+
+      adminPanel.innerHTML = "";
+
+      const usersSection = document.createElement("div");
+      usersSection.className = "admin-subsection";
+
+      const usersTitle = document.createElement("div");
+      usersTitle.className = "admin-sub-title";
+      const usersLabel = document.createElement("span");
+      usersLabel.textContent = "USERS";
+      const usersActions = document.createElement("div");
+      usersActions.className = "section-actions";
+      const addUserButton = document.createElement("button");
+      addUserButton.className = "panel-btn";
+      addUserButton.type = "button";
+      addUserButton.textContent = "[ + user ]";
+      addUserButton.addEventListener("click", () => {
+        focusCommandInput("create-user ");
+      });
+      usersActions.appendChild(addUserButton);
+      usersTitle.append(usersLabel, usersActions);
+      usersSection.appendChild(usersTitle);
+
+      if ((state.adminData.users || []).length === 0) {
+        const empty = document.createElement("div");
+        empty.className = "empty-state";
+        empty.textContent = "No visible users.";
+        usersSection.appendChild(empty);
+      } else {
+        state.adminData.users.forEach((user) => {
+          const row = document.createElement("div");
+          row.className = "admin-user-row";
+
+          const head = document.createElement("div");
+          head.className = "admin-user-head";
+
+          const identity = document.createElement("div");
+          identity.className = "admin-user-identity";
+          const name = document.createElement("div");
+          name.className = "admin-user-name";
+          name.textContent = user.display_name || "";
+          const role = document.createElement("div");
+          role.className = "admin-user-role";
+          role.textContent = `[${String(user.role || "").toLowerCase()}]`;
+          identity.append(name, role);
+
+          const actions = document.createElement("div");
+          actions.className = "section-actions";
+          const inviteButton = document.createElement("button");
+          inviteButton.className = "panel-btn";
+          inviteButton.type = "button";
+          inviteButton.textContent = "[ invite ]";
+          inviteButton.addEventListener("click", () => {
+            const defaultRealm = Array.isArray(user.assigned_realms) && user.assigned_realms.length > 0
+              ? user.assigned_realms[0]
+              : (state.status.realm || "default");
+            openInviteForm(user.role || "user", defaultRealm);
+          });
+          actions.appendChild(inviteButton);
+
+          head.append(identity, actions);
+          row.appendChild(head);
+
+          const realms = document.createElement("div");
+          realms.className = "admin-user-realms";
+          realms.textContent =
+            `realms: ${formatRealmNames(user.assigned_realms || [])}   log: ${user.log_count || 0}`;
+          row.appendChild(realms);
+
+          const status = document.createElement("div");
+          status.className = `admin-user-status ${String(user.status || "active").toLowerCase()}`;
+          status.textContent = `status: ${user.status || "active"}`;
+          row.appendChild(status);
+
+          usersSection.appendChild(row);
+        });
+      }
+
+      adminPanel.appendChild(usersSection);
+
+      const invitesSection = document.createElement("div");
+      invitesSection.className = "admin-subsection";
+
+      const invitesTitle = document.createElement("div");
+      invitesTitle.className = "admin-sub-title";
+      const invitesLabel = document.createElement("span");
+      invitesLabel.textContent = "INVITES";
+      const invitesActions = document.createElement("div");
+      invitesActions.className = "section-actions";
+      const addInviteButton = document.createElement("button");
+      addInviteButton.className = "panel-btn";
+      addInviteButton.type = "button";
+      addInviteButton.textContent = "[ + invite ]";
+      addInviteButton.addEventListener("click", () => {
+        openInviteForm("user", state.status.realm || "default");
+      });
+      invitesActions.appendChild(addInviteButton);
+      invitesTitle.append(invitesLabel, invitesActions);
+      invitesSection.appendChild(invitesTitle);
+
+      if ((state.adminData.invites || []).length === 0) {
+        const empty = document.createElement("div");
+        empty.className = "empty-state";
+        empty.textContent = "No visible invites.";
+        invitesSection.appendChild(empty);
+      } else {
+        state.adminData.invites.forEach((invite) => {
+          const row = document.createElement("div");
+          row.className = "admin-invite-row";
+
+          const head = document.createElement("div");
+          head.className = "admin-invite-head";
+
+          const code = document.createElement("div");
+          code.className = "admin-invite-code";
+          code.textContent = invite.invite_code || "";
+
+          const status = document.createElement("div");
+          status.className = "admin-user-status";
+          status.textContent = `[${invite.status || "pending"}]`;
+
+          head.append(code, status);
+          row.appendChild(head);
+
+          const meta = document.createElement("div");
+          meta.className = "admin-invite-meta";
+          meta.textContent =
+            `${invite.role || "user"}/${formatRealmNames(invite.assigned_realms || [])}   ${formatTimestamp(invite.created_at)}`;
+          row.appendChild(meta);
+
+          invitesSection.appendChild(row);
+        });
+      }
+
+      if (state.adminForms.inviteOpen) {
+        const form = document.createElement("div");
+        form.className = "admin-inline-form";
+
+        const fields = document.createElement("div");
+        fields.className = "admin-inline-fields";
+
+        const roleSelect = document.createElement("select");
+        ["user", "operator", "guardian"].forEach((roleName) => {
+          const option = document.createElement("option");
+          option.value = roleName;
+          option.textContent = roleName;
+          if (roleName === state.adminForms.inviteRole) {
+            option.selected = true;
+          }
+          roleSelect.appendChild(option);
+        });
+        roleSelect.addEventListener("change", () => {
+          state.adminForms.inviteRole = roleSelect.value;
+        });
+
+        const realmInput = document.createElement("input");
+        realmInput.type = "text";
+        realmInput.placeholder = "realm";
+        realmInput.value = state.adminForms.inviteRealm || "";
+        realmInput.addEventListener("input", () => {
+          state.adminForms.inviteRealm = realmInput.value;
+        });
+
+        const actions = document.createElement("div");
+        actions.className = "admin-inline-actions";
+
+        const createInviteButton = document.createElement("button");
+        createInviteButton.className = "panel-btn";
+        createInviteButton.type = "button";
+        createInviteButton.textContent = "[ create invite ]";
+        createInviteButton.addEventListener("click", () => {
+          const realmName = String(state.adminForms.inviteRealm || "").trim();
+          if (!realmName) {
+            realmInput.focus();
+            return;
+          }
+          sendCommand(`invite ${state.adminForms.inviteRole} ${realmName}`);
+          resetAdminForms();
+          renderAdmin();
+        });
+
+        realmInput.addEventListener("keydown", (event) => {
+          if (event.key === "Enter") {
+            event.preventDefault();
+            createInviteButton.click();
+          }
+        });
+
+        fields.append(roleSelect, realmInput);
+        form.appendChild(fields);
+
+        const cancelInviteButton = document.createElement("button");
+        cancelInviteButton.className = "panel-btn warn";
+        cancelInviteButton.type = "button";
+        cancelInviteButton.textContent = "[ cancel ]";
+        cancelInviteButton.addEventListener("click", () => {
+          resetAdminForms();
+          renderAdmin();
+        });
+
+        actions.append(createInviteButton, cancelInviteButton);
+        form.appendChild(actions);
+        invitesSection.appendChild(form);
+      }
+
+      adminPanel.appendChild(invitesSection);
+
+      const realmsSection = document.createElement("div");
+      realmsSection.className = "admin-subsection";
+
+      const realmsTitle = document.createElement("div");
+      realmsTitle.className = "admin-sub-title";
+      const realmsLabel = document.createElement("span");
+      realmsLabel.textContent = "REALMS";
+      const realmsActions = document.createElement("div");
+      realmsActions.className = "section-actions";
+      const addRealmButton = document.createElement("button");
+      addRealmButton.className = "panel-btn";
+      addRealmButton.type = "button";
+      addRealmButton.textContent = "[ + realm ]";
+      addRealmButton.addEventListener("click", () => {
+        openRealmForm();
+      });
+      realmsActions.appendChild(addRealmButton);
+      realmsTitle.append(realmsLabel, realmsActions);
+      realmsSection.appendChild(realmsTitle);
+
+      if ((state.adminData.realms || []).length === 0) {
+        const empty = document.createElement("div");
+        empty.className = "empty-state";
+        empty.textContent = "No visible realms.";
+        realmsSection.appendChild(empty);
+      } else {
+        state.adminData.realms.forEach((realm) => {
+          const row = document.createElement("div");
+          row.className = "admin-realm-row";
+
+          const head = document.createElement("div");
+          head.className = "admin-realm-head";
+
+          const name = document.createElement("div");
+          name.className = "admin-realm-name";
+          name.textContent = realm.name || "";
+
+          const sensitivity = document.createElement("div");
+          sensitivity.className = "admin-user-role";
+          sensitivity.textContent = `[${realm.governance_sensitivity || "open"}]`;
+
+          head.append(name, sensitivity);
+          row.appendChild(head);
+
+          const meta = document.createElement("div");
+          meta.className = "admin-realm-meta";
+          meta.textContent =
+            `${realm.purpose || "No purpose set."}   users: ${realm.user_count || 0}   memory: ${realm.memory_count || 0}`;
+          row.appendChild(meta);
+
+          realmsSection.appendChild(row);
+        });
+      }
+
+      if (state.adminForms.realmOpen) {
+        const form = document.createElement("div");
+        form.className = "admin-inline-form";
+
+        const fields = document.createElement("div");
+        fields.className = "admin-inline-fields";
+
+        const nameInput = document.createElement("input");
+        nameInput.type = "text";
+        nameInput.placeholder = "realm name";
+        nameInput.value = state.adminForms.realmName || "";
+        nameInput.addEventListener("input", () => {
+          state.adminForms.realmName = nameInput.value;
+        });
+
+        const purposeInput = document.createElement("input");
+        purposeInput.type = "text";
+        purposeInput.placeholder = "purpose";
+        purposeInput.value = state.adminForms.realmPurpose || "";
+        purposeInput.addEventListener("input", () => {
+          state.adminForms.realmPurpose = purposeInput.value;
+        });
+        purposeInput.addEventListener("keydown", (event) => {
+          if (event.key === "Enter") {
+            event.preventDefault();
+            createRealmButton.click();
+          }
+        });
+
+        fields.append(nameInput, purposeInput);
+        form.appendChild(fields);
+
+        const actions = document.createElement("div");
+        actions.className = "admin-inline-actions";
+
+        const createRealmButton = document.createElement("button");
+        createRealmButton.className = "panel-btn";
+        createRealmButton.type = "button";
+        createRealmButton.textContent = "[ create realm ]";
+        createRealmButton.addEventListener("click", () => {
+          const realmName = String(state.adminForms.realmName || "").trim();
+          const purpose = String(state.adminForms.realmPurpose || "").trim();
+          if (!realmName) {
+            nameInput.focus();
+            return;
+          }
+          sendCommand(purpose ? `create-realm ${realmName} ${purpose}` : `create-realm ${realmName}`);
+          resetAdminForms();
+          renderAdmin();
+        });
+
+        const cancelRealmButton = document.createElement("button");
+        cancelRealmButton.className = "panel-btn warn";
+        cancelRealmButton.type = "button";
+        cancelRealmButton.textContent = "[ cancel ]";
+        cancelRealmButton.addEventListener("click", () => {
+          resetAdminForms();
+          renderAdmin();
+        });
+
+        actions.append(createRealmButton, cancelRealmButton);
+        form.appendChild(actions);
+        realmsSection.appendChild(form);
+      }
+
+      adminPanel.appendChild(realmsSection);
+    }
+
+    function renderMemorySummary() {
+      const totalLines = memoryTotalLines();
+      const fillRatio = Math.max(0, totalLines) / MEMORY_DISPLAY_CAP;
+      const filledBlocks = Math.min(20, Math.ceil(Math.min(fillRatio, 1) * 20));
+      const percent = Math.min(999, Math.round(fillRatio * 100));
+      const overCap = totalLines > MEMORY_DISPLAY_CAP;
+
+      memoryBar.innerHTML = "";
+      memoryBar.classList.toggle("over-cap", overCap);
+
+      for (let index = 1; index <= 20; index += 1) {
+        const block = document.createElement("span");
+        block.className = "memory-bar-block";
+        if (index > filledBlocks) {
+          block.classList.add("empty");
+        } else if (overCap) {
+          block.classList.add("red");
+        } else {
+          const blockPercent = index * 5;
+          if (blockPercent <= 40) {
+            block.classList.add("green");
+          } else if (blockPercent <= 70) {
+            block.classList.add("amber");
+          } else if (blockPercent <= 90) {
+            block.classList.add("orange");
+          } else {
+            block.classList.add("red");
+          }
+        }
+        memoryBar.appendChild(block);
+      }
+
+      if (overCap) {
+        memoryBarLabel.textContent = `${totalLines}/${MEMORY_DISPLAY_CAP} lines \u2014 consider forgetting older records`;
+        memoryWarning.hidden = false;
+        memoryWarning.classList.add("memory-over-cap");
+        memoryWarning.textContent = `${totalLines}/${MEMORY_DISPLAY_CAP} lines \u2014 consider forgetting older records`;
+      } else {
+        memoryBarLabel.textContent = `${totalLines} lines used (${percent}% of ${MEMORY_DISPLAY_CAP} line capacity)`;
+        memoryWarning.hidden = true;
+        memoryWarning.classList.remove("memory-over-cap");
+        memoryWarning.textContent = "";
+      }
+    }
+
+    function renderMemory() {
+      renderMemorySummary();
+      if (state.memoryRecords.length === 0) {
+        memoryPanel.innerHTML = '<div class="empty-state">No approved memory records yet.</div>';
+        return;
+      }
+
+      const sortedRecords = sortByTimestamp(state.memoryRecords, "approved_at");
+      const visibleRecords = state.memoryExpanded
+        ? sortedRecords
+        : sortedRecords.slice(-MEMORY_DEFAULT_VISIBLE);
+      memoryPanel.innerHTML = "";
+
+      let currentDay = "";
+      visibleRecords.forEach((record) => {
+        const recordDay = formatDayLabel(record.approved_at);
+        if (recordDay !== currentDay) {
+          currentDay = recordDay;
+          const separator = document.createElement("div");
+          separator.className = "timeline-separator";
+          separator.textContent = recordDay;
+          memoryPanel.appendChild(separator);
+        }
+
+        const expanded = state.expandedMemoryIds.has(record.memory_id);
+        const summaryLines = Array.isArray(record.summary_lines) ? record.summary_lines : [];
+        const previewLine = summaryLines[0] || "No summary lines.";
+        const remainingLines = Math.max(0, summaryLines.length - 1);
+
+        const wrapper = document.createElement("div");
+        wrapper.className = "memory-record";
+
+        const row = document.createElement("div");
+        row.className = "memory-row";
+
+        const main = document.createElement("div");
+        main.className = "memory-main";
+        main.addEventListener("click", () => {
+          if (expanded) {
+            state.expandedMemoryIds.delete(record.memory_id);
+          } else {
+            state.expandedMemoryIds.add(record.memory_id);
+          }
+          renderMemory();
+        });
+
+        const headline = document.createElement("div");
+        headline.className = "memory-headline";
+
+        const toggle = document.createElement("span");
+        toggle.className = "section-toggle";
+        toggle.textContent = expanded ? "\u25BE" : "\u25B8";
+
+        const title = document.createElement("div");
+        const approvedAt = formatTimestamp(record.approved_at);
+        title.innerHTML =
+          `<span class="record-id">[${escapeHtml(record.memory_id || "")}]</span>` +
+          ` &nbsp; session: ${escapeHtml(shortSessionId(record.session_id || ""))}` +
+          ` &nbsp; ${escapeHtml(approvedAt)}`;
+
+        headline.append(toggle, title);
+        main.appendChild(headline);
+
+        const meta = document.createElement("div");
+        meta.className = "memory-meta";
+        meta.textContent = record.realm_name ? `realm: ${record.realm_name}` : "realm: default";
+        main.appendChild(meta);
+
+        const preview = document.createElement("div");
+        preview.className = "memory-preview";
+        preview.textContent = expanded ? "" : previewLine;
+        if (!expanded) {
+          main.appendChild(preview);
+        }
+
+        if (!expanded && remainingLines > 0) {
+          const more = document.createElement("div");
+          more.className = "memory-more";
+          more.textContent = `[+${remainingLines} more lines]`;
+          main.appendChild(more);
+        }
+
+        if (expanded) {
+          const list = document.createElement("ol");
+          list.className = "record-list";
+          summaryLines.forEach((line) => {
+            const item = document.createElement("li");
+            item.textContent = line;
+            list.appendChild(item);
+          });
+          main.appendChild(list);
+        }
+
+        const forgetButton = document.createElement("button");
+        forgetButton.className = "panel-btn warn";
+        forgetButton.type = "button";
+        forgetButton.textContent = "[ forget ]";
+        forgetButton.addEventListener("click", (event) => {
+          event.stopPropagation();
+          sendCommand("forget", { memory_id: record.memory_id });
+        });
+
+        row.append(main, forgetButton);
+        wrapper.appendChild(row);
+        memoryPanel.appendChild(wrapper);
+      });
+
+      if (sortedRecords.length > MEMORY_DEFAULT_VISIBLE) {
+        appendListToggle(
+          memoryPanel,
+          state.memoryExpanded ? "[ show less ]" : "[ load more ]",
+          () => {
+            state.memoryExpanded = !state.memoryExpanded;
+            renderMemory();
+          }
+        );
+      }
+    }
+
+    function visibleProposals() {
+      const source = state.fullHistoryLoaded ? state.proposalHistoryRecords : state.proposalRecords;
+      if (state.proposalFilter === "all") {
+        return source;
+      }
+      return source.filter((record) => record.status === state.proposalFilter);
+    }
+
+    function displayedProposalRecords(records) {
+      if (state.proposalFilter === "pending" || state.proposalExpanded) {
+        return records;
+      }
+
+      if (state.proposalFilter === "all") {
+        const pending = records.filter((record) => (record.status || "pending") === "pending");
+        const nonPending = records.filter((record) => (record.status || "pending") !== "pending");
+        return newestFirst(
+          [...pending, ...nonPending.slice(0, PROPOSAL_DEFAULT_VISIBLE)],
+          "timestamp"
+        );
+      }
+
+      return records.slice(0, PROPOSAL_DEFAULT_VISIBLE);
+    }
+
+    function proposalToggleVisible(records) {
+      if (state.proposalFilter === "pending") {
+        return false;
+      }
+
+      if (state.proposalFilter === "all") {
+        const nonPendingCount = records.filter(
+          (record) => (record.status || "pending") !== "pending"
+        ).length;
+        return state.proposalExpanded || nonPendingCount > PROPOSAL_DEFAULT_VISIBLE;
+      }
+
+      return state.proposalExpanded || records.length > PROPOSAL_DEFAULT_VISIBLE;
+    }
+
+    function renderProposalFilters() {
+      proposalFilterTabs.querySelectorAll(".filter-tab").forEach((button) => {
+        button.classList.toggle("active", button.dataset.filter === state.proposalFilter);
+      });
+    }
+
+    function renderProposals() {
+      renderProposalFilters();
+      const records = newestFirst(visibleProposals(), "timestamp");
+      const displayedRecords = displayedProposalRecords(records);
+      if (records.length === 0) {
+        proposalPanel.innerHTML = `<div class="empty-state">${
+          state.proposalFilter === "all"
+            ? "No proposals available."
+            : `No ${state.proposalFilter} proposals.`
+        }</div>`;
+        return;
+      }
+
+      proposalPanel.innerHTML = "";
+      displayedRecords.forEach((record) => {
+        const wrapper = document.createElement("div");
+        wrapper.className = "proposal-record";
+
+        const header = document.createElement("div");
+        header.className = "proposal-record-header";
+
+        const meta = document.createElement("div");
+        meta.innerHTML =
+          `<div class="record-id">[${escapeHtml(shortProposalId(record.proposal_id || record.id || ""))}]</div>` +
+          `<div>${escapeHtml(formatTimestamp(record.timestamp))}</div>`;
+
+        const status = document.createElement("div");
+        status.className = `proposal-status ${record.status || "pending"}`;
+        status.textContent = record.status || "pending";
+
+        header.append(meta, status);
+        wrapper.appendChild(header);
+
+        const title = document.createElement("div");
+        title.className = "proposal-title";
+        title.textContent = record.what || "No proposal summary.";
+        wrapper.appendChild(title);
+
+        if (record.why) {
+          const why = document.createElement("div");
+          why.className = "proposal-why";
+          why.textContent = record.why;
+          wrapper.appendChild(why);
+        }
+
+        if ((record.status || "pending") === "pending") {
+          const actions = document.createElement("div");
+          actions.className = "proposal-actions";
+
+          const approveButton = document.createElement("button");
+          approveButton.className = "panel-btn";
+          approveButton.type = "button";
+          approveButton.textContent = "[ approve ]";
+          approveButton.addEventListener("click", () => {
+            sendCommand("approve", { proposal_id: record.proposal_id || record.id });
+          });
+
+          const rejectButton = document.createElement("button");
+          rejectButton.className = "panel-btn warn";
+          rejectButton.type = "button";
+          rejectButton.textContent = "[ decline ]";
+          rejectButton.addEventListener("click", () => {
+            sendCommand("reject", { proposal_id: record.proposal_id || record.id });
+          });
+
+          actions.append(approveButton, rejectButton);
+          wrapper.appendChild(actions);
+        }
+
+        proposalPanel.appendChild(wrapper);
+      });
+
+      if (proposalToggleVisible(records)) {
+        appendListToggle(
+          proposalPanel,
+          state.proposalExpanded ? "[ show less ]" : "[ load more ]",
+          () => {
+            state.proposalExpanded = !state.proposalExpanded;
+            renderProposals();
+          }
+        );
+      }
+    }
+
+    function renderFaculties() {
+      const faculties = [...state.faculties].sort((left, right) => {
+        return FACULTY_ORDER.indexOf(left.name) - FACULTY_ORDER.indexOf(right.name);
+      });
+
+      if (faculties.length === 0) {
+        facultyPanel.innerHTML = '<div class="empty-state">No faculty status reported yet.</div>';
+        return;
+      }
+
+      facultyPanel.innerHTML = "";
+      faculties.forEach((faculty) => {
+        const entry = document.createElement("div");
+        entry.className = "faculty-entry";
+
+        const top = document.createElement("div");
+        top.className = "faculty-top";
+
+        const name = document.createElement("div");
+        name.className = "faculty-name";
+        name.textContent = faculty.display_name || String(faculty.name || "").toUpperCase();
+
+        const mode = document.createElement("div");
+        const modeClass = faculty.mode || "unavailable";
+        mode.className = `faculty-mode ${modeClass}`;
+        mode.textContent = `[${modeClass}]`;
+
+        top.append(name, mode);
+        entry.appendChild(top);
+
+        const stats = document.createElement("div");
+        stats.className = "faculty-stats";
+        stats.textContent =
+          `calls: ${faculty.call_count || 0}   last: ${faculty.last_called_at ? formatTimestamp(faculty.last_called_at) : "never"}`;
+        entry.appendChild(stats);
+
+        const role = document.createElement("div");
+        role.className = "faculty-role";
+        role.textContent = faculty.role || "";
+        entry.appendChild(role);
+
+        facultyPanel.appendChild(entry);
+      });
+    }
+
+    function renderGuardian() {
+      const body = state.status.body || {};
+      const alerts = state.guardianAlerts;
+      guardianLastInspection.textContent = `Last inspection: ${state.guardianTimestamp ? formatTimestamp(state.guardianTimestamp) : "never"}`;
+
+      if (alerts.length === 0) {
+        guardianAlerts.innerHTML = '<div class="empty-state">No Guardian inspection recorded yet.</div>';
+      } else {
+        guardianAlerts.innerHTML = "";
+        alerts.forEach((alert) => {
+          const item = document.createElement("div");
+          item.className = `guardian-alert ${alert.level || "info"}`;
+
+          const badge = document.createElement("div");
+          badge.className = "guardian-alert-badge";
+          badge.textContent = `[${(alert.level || "info").toLowerCase()}]`;
+
+          const copy = document.createElement("div");
+          const code = document.createElement("div");
+          code.className = "guardian-alert-code";
+          code.textContent = alert.code || "UNKNOWN";
+          const message = document.createElement("div");
+          message.className = "guardian-alert-message";
+          message.textContent = alert.message || "";
+          copy.append(code, message);
+
+          item.append(badge, copy);
+          guardianAlerts.appendChild(item);
+        });
+      }
+
+      const allEvents = newestFirst(state.guardianEvents, "timestamp");
+      const visibleEvents = state.guardianExpanded
+        ? allEvents
+        : allEvents.slice(0, GUARDIAN_EVENTS_DEFAULT_VISIBLE);
+
+      if (allEvents.length === 0) {
+        guardianEvents.innerHTML = '<div class="empty-state">No governance events loaded yet.</div>';
+      } else {
+        guardianEvents.innerHTML = "";
+        visibleEvents.forEach((event) => {
+          const row = document.createElement("div");
+          row.className = "guardian-event";
+
+          const top = document.createElement("div");
+          top.className = "guardian-event-top";
+
+          const decision = document.createElement("span");
+          const decisionName = String(event.decision || event.event_type || "info").toLowerCase();
+          decision.className = `guardian-event-badge decision-${decisionName}`;
+          decision.textContent = `[${decisionName}]`;
+
+          const time = document.createElement("span");
+          time.textContent = formatTimestamp(event.timestamp);
+
+          const preview = document.createElement("span");
+          preview.textContent = event.input_preview || event.summary || event.reason || "";
+
+          top.append(decision, time, preview);
+          row.appendChild(top);
+
+          if (event.reason) {
+            const detail = document.createElement("div");
+            detail.className = "audit-event-detail";
+            detail.textContent = event.reason;
+            row.appendChild(detail);
+          }
+
+          guardianEvents.appendChild(row);
+        });
+
+        if (allEvents.length > GUARDIAN_EVENTS_DEFAULT_VISIBLE) {
+          appendListToggle(
+            guardianEvents,
+            state.guardianExpanded ? "[ show less ]" : "[ show all ]",
+            () => {
+              state.guardianExpanded = !state.guardianExpanded;
+              renderGuardian();
+            }
+          );
+        }
+      }
+
+      const diskFree = typeof body.disk_free_gb === "number" ? `${body.disk_free_gb.toFixed(1)} GB` : "unknown";
+      const modelMode = body.model_mode || state.status.mode || "unknown";
+      guardianBodySummary.innerHTML =
+        `Platform: ${escapeHtml(body.platform || "unknown")} &nbsp;&nbsp; ` +
+        `Python: ${escapeHtml(body.python_version || "unknown")}<br>` +
+        `Disk free: ${escapeHtml(diskFree)} &nbsp;&nbsp; ` +
+        `Mode: ${escapeHtml(modelMode)}`;
+    }
+
+    function renderAudit() {
+      const allEvents = auditEventRecords();
+      const events = visibleAuditEvents();
+      if (allEvents.length === 0) {
+        auditPanel.innerHTML = '<div class="empty-state">No audit events available yet.</div>';
+        return;
+      }
+
+      auditPanel.innerHTML = "";
+      events.forEach((event) => {
+        const typeName = String(event.event_type || "system").toLowerCase();
+        const row = document.createElement("div");
+        row.className = `audit-event ${typeName}`;
+
+        const top = document.createElement("div");
+        top.className = "audit-event-top";
+
+        const type = document.createElement("span");
+        type.className = "audit-event-type";
+        type.textContent = `${typeName} :`;
+
+        const time = document.createElement("span");
+        time.textContent = formatTimestamp(event.timestamp);
+
+        top.append(type, time);
+        row.appendChild(top);
+
+        const summary = document.createElement("div");
+        summary.className = "audit-event-summary";
+        summary.textContent = event.summary || "";
+        row.appendChild(summary);
+
+        if (event.detail) {
+          const detail = document.createElement("div");
+          detail.className = "audit-event-detail";
+          detail.textContent = event.detail;
+          row.appendChild(detail);
+        }
+
+        auditPanel.appendChild(row);
+      });
+
+      if (allEvents.length > AUDIT_DEFAULT_VISIBLE) {
+        appendListToggle(
+          auditPanel,
+          state.auditExpanded ? "[ show less ]" : "[ show all ]",
+          () => {
+            state.auditExpanded = !state.auditExpanded;
+            renderAudit();
+          }
+        );
+      }
+    }
+
+    inputForm.addEventListener("submit", (event) => {
+      event.preventDefault();
+      const raw = textInput.value.trim();
+      if (!raw || !state.ws || state.ws.readyState !== WebSocket.OPEN) {
+        return;
+      }
+
+      addMessage("user", raw);
+
+      const firstToken = raw.split(/\s+/, 1)[0].toLowerCase();
+      if (firstToken === "analyse") {
+        state.ws.send(JSON.stringify({ type: "input", text: raw }));
+      } else if (commandPrefixes.has(firstToken)) {
+        sendCommand(raw);
+      } else {
+        state.ws.send(JSON.stringify({ type: "input", text: raw }));
+      }
+
+      textInput.value = "";
+    });
+
+    proposalFilterTabs.querySelectorAll(".filter-tab").forEach((button) => {
+      button.addEventListener("click", () => {
+        state.proposalFilter = button.dataset.filter || "all";
+        state.proposalExpanded = false;
+        renderProposals();
+      });
+    });
+
+    loadHistoryButton.addEventListener("click", (event) => {
+      event.stopPropagation();
+      requestProposalHistory();
+    });
+
+    memoryClearButton.addEventListener("click", (event) => {
+      event.stopPropagation();
+      sendCommand("memory-clear-all");
+    });
+
+    guardianInspectButton.addEventListener("click", () => {
+      sendCommand("guardian");
+      requestGuardianLog();
+    });
+
+    guardianDismissButton.addEventListener("click", () => {
+      state.guardianAlerts = [];
+      renderGuardian();
+      renderSectionBadges();
+      sendCommand("guardian-dismiss");
+    });
+
+    guardianClearEventsButton.addEventListener("click", () => {
+      sendCommand("guardian-clear-events");
+    });
+
+    Object.entries(sectionRefs).forEach(([sectionName, refs]) => {
+      refs.header.addEventListener("click", () => toggleSection(sectionName));
+      refs.header.addEventListener("keydown", (event) => {
+        if (event.key === "Enter" || event.key === " ") {
+          event.preventDefault();
+          toggleSection(sectionName);
+        }
+      });
+    });
+
+    connect();
+    updateAdminVisibility(state.status.active_user);
+    renderHeader();
+    renderActingBanner();
+    renderAdmin();
+    renderSections();
+    renderMessages();
+    renderMemorySummary();
+    renderMemory();
+    renderProposals();
+    renderFaculties();
+    renderGuardian();
+    renderAudit();
+    renderSectionBadges();
+  </script>
+</body>
+</html>

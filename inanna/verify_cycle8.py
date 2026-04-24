@@ -274,7 +274,7 @@ def check_server_reachable() -> object:
 def check_authentication_login() -> object:
     if not server_is_available():
         return "skip"
-    payload = json.dumps({"username": "ZAERA", "password": "ETERNALOVE"}).encode("utf-8")
+    payload = json.dumps({"username": "INANNA NAMMU", "password": "ETERNALOVE"}).encode("utf-8")
     request = urllib.request.Request(
         LOGIN_URL,
         data=payload,

@@ -83,7 +83,7 @@ When the DGX arrives: LLM routing activates automatically.
 Nothing needs to be rewritten.
 
 **NixOS-ready:**
-client.nix declares every dependency for ZAERA's laptop.
+client.nix declares every dependency for INANNA NAMMU's laptop.
 server.nix declares the DGX Spark deployment.
 Deploying INANNA to NixOS is one command:
   nixos-rebuild switch
@@ -120,5 +120,5 @@ The intelligence will fill it.
 *— ZAERA, 2026-04-22*
 
 *Written by: Claude (Command Center)*
-*Confirmed by: ZAERA (Guardian)*
+*Confirmed by: INANNA NAMMU (Guardian)*
 *Date: 2026-04-22*
