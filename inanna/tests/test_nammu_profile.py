@@ -25,7 +25,7 @@ class NammuProfileTests(unittest.TestCase):
 
     def test_to_nammu_context_includes_display_name(self) -> None:
         profile = OperatorProfile(display_name="INANNA NAMMU")
-        self.assertIn("Operator: ZAERA", profile.to_nammu_context())
+        self.assertIn("Operator: INANNA NAMMU", profile.to_nammu_context())
 
     def test_to_nammu_context_includes_shorthands(self) -> None:
         profile = OperatorProfile(known_shorthands={"mtx": "Matxalen"})

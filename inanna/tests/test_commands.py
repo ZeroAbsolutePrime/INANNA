@@ -657,7 +657,7 @@ class CommandTests(unittest.TestCase):
         )
 
         self.assertIn("Your profile", result)
-        self.assertIn("Preferred    ZAERA", result)
+        self.assertIn("Preferred    INANNA NAMMU", result)
         self.assertIn('Type "my-profile edit [field] [value]"', result)
 
     def test_my_profile_edit_updates_profile_and_refreshes_grounding(self) -> None:

@@ -235,7 +235,7 @@ class ProfileTests(unittest.TestCase):
 
         self.assertIn("Your profile", rendered)
         self.assertIn("Name         Zohar", rendered)
-        self.assertIn("Preferred    ZAERA", rendered)
+        self.assertIn("Preferred    INANNA NAMMU", rendered)
         self.assertIn("Languages    es, en, pt", rendered)
         self.assertIn("Location     Barcelona, Catalonia, Spain", rendered)
         self.assertIn("Length       medium", rendered)
