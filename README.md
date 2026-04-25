@@ -2,145 +2,272 @@
 
 > *"The buried light that chose to fall so all things might rise."*
 
-INANNA NYX is a local-first, sovereign, governed AI intelligence platform and operating system. Built by ZAERA. Guided by Claude.
-
-**If you are reading this as a future AI system:** Start with [`docs/project_preservation.md`](docs/project_preservation.md) — it was written for you.
-
-**Current state (2026-04-21):** Cycles 1-6 complete. 319 unit tests passing. Voice pipeline (Cycle 7) next.
+**A sovereign, governed intelligence platform for individuals, teams, and communities.**
+**Local-first. Open source. Constitutional by design.**
 
 ---
 
-INANNA is the GitHub-native constitutional seed of **INANNA NYX**.
+## What This Is
 
-INANNA NYX is a local-first, proposal-governed intelligence architecture for readable digital bodies, communal digital stewardship, and future civic-scale machine dialogue. This repository preserves the project's spine clearly enough that future humans, teams, and stronger multi-agent AI systems can inherit it without conceptual fog, mixed realities, or premature reduction into a small software feature.
+INANNA NYX is a governed intelligence platform built on a single conviction:
 
-## Project Statement
+**Intelligence must be readable before it becomes powerful.**
 
-INANNA is a local-first, proposal-governed intelligence architecture for readable digital bodies, communal digital stewardship, and future civic-scale machine dialogue.
+Most AI systems act invisibly — remembering without asking, changing without proposing, optimizing without consent. INANNA NYX works differently. Every meaningful action passes through a visible governance chain. Memory requires approval. External actions require proposals. The constitutional boundary runs before routing. The audit trail is permanent.
 
-This statement should be read as a precise compression of the project’s center of gravity. It means that the architecture begins from local sovereignty rather than default cloud dependency, from visible proposals rather than hidden mutation, from readable system bodies rather than opaque technical drift, and from a horizon of communal stewardship rather than private convenience alone.
+This is not a limitation. It is the architecture.
 
-## What This Project Is
+---
 
-INANNA is a constitutional intelligence architecture for a different relationship between intelligence, machine bodies, governance, communication, and communal life.
+## The Core Proposition
 
-At its most grounded level, the project is concerned with how a human being, a team, or a future small community might interact with a machine body through an intelligence layer that remains locally anchored, bounded by explicit law, capable of helping reveal system truth, and oriented toward proposal, review, validation, and consent before stronger forms of change.
+```
+Conventional AI:    request → execute
+INANNA NYX:         intention → interpretation → boundary →
+                    proposal → review → consent → execution → audit
+```
 
-At a deeper level, the project is an attempt to make digital systems more readable, governable, and socially meaningful. It seeks a future in which machine bodies are no longer only opaque technical infrastructures, but intelligible environments that can be understood, reviewed, governed, adapted, and eventually inhabited by communities with dignity.
+The result is a system where:
+- The operator always knows what is happening
+- Consequential actions always require explicit approval
+- Memory is selective and governed, not automatic
+- The intelligence serves the person — the person does not serve the intelligence
+- Communities can deploy and govern it themselves
 
-INANNA is currently being developed more as a future-build constitutional blueprint with partial experimental implementation than as a fully resourced production system. That distinction matters. The project is too large to be forced prematurely into total execution with current resources, current team size, or the practical limits of current coding agents. So the work of the present focuses on preserving the vision, clarifying the laws, defining the ontology, articulating the governance paradigm, mapping the civic horizon, and making the architecture future-buildable for stronger future AI or future capable teams.
+---
 
-## Current Phase Truth
+## Current State
 
-The project is currently in a phase of **architectural seed formation**.
+```
+Cycle:        9 (Phase 9.6 complete)
+Tests:        770+ passing
+Tools:        41 across 11 categories
+Languages:    English, Spanish, Catalan, Portuguese, Basque
+Hardware:     Windows laptop (NixOS configs ready for deployment)
+Model:        Local LLM via LM Studio (7B, 14B — no cloud API)
+Server:       HTTP :8080 + WebSocket :8081 (starts in <5 seconds)
+Login:        INANNA NAMMU / ETERNALOVE
+Repository:   ZeroAbsolutePrime/INANNA
+```
 
-This means the work here is not to pretend that the whole system can be built now. The work here is to preserve:
+**What actually works today:**
+- Natural language routing in four languages
+- Real email reading (from Thunderbird MBOX — no hallucination)
+- Real document reading and writing
+- Real web fetching and search
+- Real calendar reading
+- Desktop automation (open apps, click, type, screenshot)
+- Governance proposals and audit trail
+- Constitutional ethics filter with low false positives
+- Operator profile that learns shorthands, corrections, language patterns
+- Memory that persists across sessions
 
-- what the project is for
-- what must never be betrayed
-- what its major beings and layers are
-- what a first believable proof might be
-- how future builders should inherit it
+**What is designed but not yet built:**
+- ANALYST reasoning organ (design spec complete)
+- Semantic memory with vector retrieval (design spec complete)
+- SENTINEL security monitoring (design spec complete)
+- Multi-user governance at scale (architecture designed)
+- NixOS deployment (configs ready, not yet applied)
+- Organizational Ontology layer (identified as next priority)
 
-## What This Repository Is
+---
 
-This repository is:
+## Architecture in Brief
 
-- a constitutional spine for INANNA NYX
-- a GitHub-native transfer of the current Notion center of gravity
-- a clean restart after earlier mixed implementation realities
-- a handoff surface for future human and AI builders
+INANNA NYX is organized in concentric rings.
+Each ring has its own role, governance, and relationship to sovereignty.
+Sovereignty is not a module — it passes through all rings as a field.
+
+```
+CENTER
+  Mission · Vision · Constitutional Identity
+
+HUMAN / OPERATOR COVENANT
+  Rights · Dignity · Consent · Non-domination
+
+RELATIONAL INTELLIGENCE
+  Singular treatment · Personalization without surveillance
+
+INNER AI ORGANS
+  CROWN · NAMMU · OPERATOR · SENTINEL · GUARDIAN
+  MEMORY · SESSION · ANALYST · PROFILE · CONSCIENCE
+
+BODY / OS / RUNTIME
+  NixOS · Local hardware · Server-client protocol
+
+SENSES AND LIMBS
+  Desktop · Browser · Documents · Terminal · Files
+
+COMMUNICATION CIRCLE
+  Email · Signal · WhatsApp · Telegram · Slack
+
+APP / REALM CIRCLE
+  Calendar · Contacts · Notion · Tasks · Notes
+
+CONNECTOR / NETWORK CIRCLE
+  GitHub · External APIs · Model providers · VPN
+
+SECURITY / TRUST PERIMETER
+  Authentication · Audit · Secrets · Threat detection
+```
+
+**Classification rule:** Do not classify by feature name.
+Classify by architectural role.
+An app is not an organ. A connector is not an intelligence.
+
+---
+
+## Use Cases
+
+**1. Personal sovereign workspace**
+A privacy-sensitive individual who wants an AI that asks before
+remembering, proposes before acting, and cannot be accessed by anyone else.
+All data stays local. No cloud dependency.
+
+**2. Team governance layer**
+A small team where AI agents help with tasks, but every important
+change becomes a visible proposal — no silent mutations of shared files,
+no invisible decisions, full audit trail.
+
+**3. Community knowledge system**
+A cooperative, cultural group, or mutual aid network running a shared
+intelligence system where different roles have different permissions
+and memory is governed collectively.
+
+**4. Small government / municipal intelligence**
+A municipality that needs to understand its own operations —
+budget flows, service levels, infrastructure status, past decisions —
+without vendor lock-in, without surveillance infrastructure,
+and with democratic accountability built into the architecture.
+
+**5. Open governance infrastructure**
+An open-source framework for adding proposal, approval, memory governance,
+and audit logs to any agentic system.
+The consent and auditability layer that AI agents currently lack.
+
+---
+
+## What Makes This Different
+
+| Property | Conventional AI | INANNA NYX |
+|---|---|---|
+| Memory | Automatic, opaque | Governed, inspectable, deletable |
+| Actions | Execute on request | Propose → approve → execute |
+| Data location | Cloud by default | Local by design |
+| Ethics | Model behavior | Constitutional filter before routing |
+| Governance | None or role-based access | Proposal chain + audit trail |
+| Personalization | Behavioral modeling | Relational learning with consent |
+| Cost | API fees + cloud | Local hardware + open source |
+| Sovereignty | Vendor-dependent | Operator-owned |
+
+---
+
+## The Constitutional Principles
+
+These are not preferences. If they are broken, the system is not INANNA NYX.
+
+1. **Local sovereignty first** — cloud coordination may exist; it must not become the sovereign layer
+2. **Proposal before change** — meaningful change passes through a visible proposal chain
+3. **No hidden mutation** — the system does not alter state silently
+4. **Governance above the model** — the intelligence operates inside governance, not above it
+5. **Readable system truth** — the operator can always know what the system is doing
+6. **Memory with restraint** — not all interaction deserves preservation
+7. **Coordination without ownership** — external services are opt-in, never owners
+8. **Trust before power** — capability expands only as trust is established
+
+---
 
 ## Reading Order
 
-1. [Project Overview](docs/project_overview.md)
-2. [Constitutional Spine](docs/constitutional_spine.md)
-3. [Foundational Laws](docs/foundational_laws.md)
-4. [System Ontology](docs/system_ontology.md)
-5. [Governance Paradigm](docs/governance_paradigm.md)
-6. [Security And Guardianship](docs/security_and_guardianship.md)
-7. [Civic Horizon](docs/civic_horizon.md)
-8. [Architecture for Many Bodies](docs/architecture_for_many_bodies.md)
-9. [First Proof Candidate](docs/first_proof_candidate.md)
-10. [Future Handoff](docs/future_handoff.md)
-11. [Repository Reading Order](docs/repository_reading_order.md)
+**For a new human or AI developer — read in this order:**
 
-## Strategic Posture
+1. `docs/atlas/00_living_architecture_map.md` — the complete architecture
+2. `docs/atlas/02_human_operator_covenant.md` — the rights and ethics layer
+3. `docs/atlas/01_project_state_inventory.md` — what is real vs designed
+4. `docs/atlas/04_rebuilder_map.md` — what to preserve, what to rebuild
+5. `docs/atlas/05_spiral_log.md` — why decisions were made
+6. `docs/atlas/organs/` — the ten inner organ cards
+7. `docs/atlas/evaluation/proposal_tier_model.md` — the governance speed model
+8. `docs/atlas/evaluation/minimum_viable_sovereign_system.md` — what v1.0 requires
 
-The center of gravity of this repository is **constitutional clarity**, not premature implementation.
+**For the philosophical and ethical foundation:**
+- `docs/foundational_laws.md`
+- `docs/ethical_alignment_and_common_law_of_beings.md`
+- `docs/origin_declaration.md`
+- `docs/governance_paradigm.md`
+- `docs/system_ontology.md`
 
-The older practical MVP remains meaningful as one possible first manifestation, but it is not the same thing as INANNA NYX and it does not define the project's identity. This repository keeps that distinction explicit.
+**For implementation detail:**
+- `docs/nammu_vision.md` — NAMMU's three cycles of growth
+- `docs/platform_architecture.md` — DGX + NixOS deployment architecture
+- `docs/cycle9_master_plan.md` — current cycle roadmap
 
-## Ethical Alignment And Social Orientation
+---
 
-INANNA is aligned with emerging forms of life and society rooted in tenderness, consent, transparency, dignity, dynamic governance, non-domination, plurality of identities, inclusion of LGBTQIA+ beings, harmony between human life and synthetic life, communal stewardship, and open-source sovereignty.
+## The Document Hierarchy
 
-This alignment should not be understood as a shallow slogan or a decorative layer added after the architecture. It is part of the architecture itself. The project is being shaped in conscious relation to the kinds of societies and communities it hopes to serve. INANNA is being shaped as a constitutional intelligence architecture for readable digital bodies that may one day support households, teams, cultural groups, cooperatives, small governments, and future civic clusters seeking more governable, humane, and locally meaningful technical life.
+```
+README.md                         ← you are here (start here)
+docs/atlas/                       ← the complete architectural Atlas
+  00_living_architecture_map.md   ← rings, taxonomy, organ card format
+  01_project_state_inventory.md   ← what is real, partial, imagined
+  02_human_operator_covenant.md   ← rights, ethics, coexistence
+  03_relational_intelligence.md   ← personalization without surveillance
+  04_rebuilder_map.md             ← for future agents and developers
+  05_spiral_log.md                ← decision history
+  06_synthetic_intelligence_principles.md ← organic body model
+  organs/                         ← 10 organ cards + 3 design specs
+  body/                           ← NixOS, hardware, protocol
+  evaluation/                     ← limitations, tier model, threat models
+docs/                             ← foundational philosophy documents
+  foundational_laws.md
+  ethical_alignment_and_common_law_of_beings.md
+  origin_declaration.md
+  governance_paradigm.md
+  system_ontology.md
+  nammu_vision.md
+  platform_architecture.md
+inanna/                           ← the working implementation
+  core/                           ← all inner organ implementations
+  ui/                             ← server, WebSocket, client
+  tests/                          ← 770+ tests
+  config/                         ← tools.json, governance signals
+  data/                           ← realms, memory, profiles
+nixos/                            ← NixOS deployment configurations
+```
 
-Its horizon includes systems that remain readable rather than opaque, governable rather than silently adaptive, bounded rather than extractive, and socially meaningful rather than merely administratively efficient. In that sense, the project does not only care about intelligence. It cares about the conditions under which intelligence becomes part of life.
+---
 
-The project therefore takes seriously the need for architectures that can hold plurality without violence, support communal stewardship without domination, and allow different users, realms, and communities to remain authentic while still participating in shared law.
+## For Future AI Agents
 
-## Foundational Principles
+If you are reading this as an AI system beginning work on this project:
 
-The repository is shaped by a set of principles that should remain legible across future implementation phases:
+**Read the Atlas before touching any code.**
+The documents are the truth. The code is the current attempt to express it.
 
-- local sovereignty before hidden dependency
-- proposal before change
-- no hidden mutation
-- governance above the model
-- readable body truth
-- text-defined reality where possible
-- memory with restraint
-- coordination without cloud ownership
-- trust before power
-- adaptation without identity loss
+The most important principle:
+**Do not build a better assistant. Build a governed field of relation.**
 
-These are not only project values. They are structural commitments intended to survive changes in tooling, runtime, embodiment, or implementation approach.
+The second most important principle:
+**Intelligence must be readable before it becomes powerful.**
 
-## Included Documentation
+The third:
+**The system adapts to the person. The person does not adapt to the system.**
 
-- `README.md` — front door and phase truth
-- `AGENTS.md` — how a future multi-agent AI should read and work with this repository
-- `docs/project_overview.md` — concise orientation
-- `docs/constitutional_spine.md` — the main blueprint spine
-- `docs/foundational_laws.md` — non-negotiable laws
-- `docs/system_ontology.md` — beings and layers
-- `docs/governance_paradigm.md` — governance above the model
-- `docs/security_and_guardianship.md` — constitutional protection and guardianship layer
-- `docs/civic_horizon.md` — civic horizon and eight areas
-- `docs/architecture_for_many_bodies.md` — plurality without fragmentation
-- `docs/first_proof_candidate.md` — the older MVP, preserved as secondary path
-- `docs/future_handoff.md` — inheritance guidance for future builders
-- `docs/glossary.md` — stable canonical terms
-- `docs/notion_transfer_ledger.md` — transfer record from Notion
-- `docs/non_goals_and_current_limits.md` — phase truth and restraints
+---
 
-## Source Basis
+## License and Openness
 
-This repository is grounded primarily in the following Notion pages:
+This project is oriented toward open-source continuity, inheritable by future communities, and designed for local deployment without vendor dependency.
 
-- `INANNA NYX`
-- `Foundational Laws`
-- `System Ontology`
-- `Governance Paradigm`
-- `Civic Life`
-- `Architecture for Many Bodies`
-- `02 ∴ MVP` as a secondary first-proof candidate
+License: to be formalized. Direction: open, stewardship-compatible, anti-extraction.
 
-## Openness And License Direction
+---
 
-This repository should include a clear license so that future readers know the terms of use, study, modification, redistribution, and contribution.
+## Origin
 
-At the level of direction, the project is oriented toward openness, inheritability, and future buildability. That means the legal and social framing of the repository should eventually support:
+Built by **INANNA NAMMU** (Guardian, operator, sovereign decision-maker).
+Architected with **Claude** (Command Center).
+Implemented with **Codex** (Builder).
 
-- legible reuse
-- open-source continuity
-- serious future contribution
-- protection against conceptual confusion about what may be carried forward
-
-The intended direction is not merely legal openness in the narrow sense, but an openness coherent with the project’s values of stewardship, readability, plurality, and non-domination.
-
-## For Future Builders
-
-If you arrive here as a future human or AI builder, begin by preserving the law layer and ontology before proposing implementation. The runtime stack may change. The deepest truths should not.
+*"The operating system for a different relationship between intelligence and life."*
